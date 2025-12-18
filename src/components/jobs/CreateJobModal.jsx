@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../supabase/client';
+import { supabase } from '../../supabase/client'; // Verifique se o caminho está correto
 import { Modal, Box, Typography, TextField, Button, CircularProgress, Alert } from '@mui/material';
-import AreaSelect from '../AreaSelect'; // Importando o novo componente
+import AreaSelect from '../AreaSelect'; // Verifique se o caminho está correto
 
 const style = {
   position: 'absolute',
   top: '50%',
   left: '50%',
   transform: 'translate(-50%, -50%)',
-  width: 450, // Aumentei um pouco a largura
+  width: 450,
   bgcolor: 'background.paper',
   boxShadow: 24,
   p: 4,
@@ -17,24 +17,41 @@ const style = {
 
 const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
   const [jobTitle, setJobTitle] = useState('');
-  const [departmentId, setDepartmentId] = useState(null); // Novo estado
-  const [tenantId, setTenantId] = useState(null); // Para passar ao AreaSelect
+  const [departmentId, setDepartmentId] = useState(null);
+  const [tenantId, setTenantId] = useState(null); // O ID da Empresa
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Busca o tenantId ao abrir o modal para carregar as áreas corretas
+  // --- CORREÇÃO AQUI: Busca robusta do Tenant ID ---
   useEffect(() => {
     if (open) {
-      const getSessionData = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        // Assume que o tenantId está nos metadados ou você ajusta conforme sua auth
-        if (session?.user?.user_metadata?.tenantId) {
-            setTenantId(session.user.user_metadata.tenantId);
-        } else if (session?.user?.app_metadata?.tenantId) {
-            setTenantId(session.user.app_metadata.tenantId);
+      const fetchTenantId = async () => {
+        try {
+          // 1. Pega o usuário logado
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+
+          // 2. Busca o tenantId na tabela 'users' (Fonte da verdade)
+          const { data: userData, error } = await supabase
+            .from('users')
+            .select('tenantId')
+            .eq('id', user.id)
+            .single();
+
+          if (error) {
+            console.error('Erro ao buscar perfil:', error);
+            return;
+          }
+
+          if (userData?.tenantId) {
+            setTenantId(userData.tenantId);
+          }
+        } catch (err) {
+          console.error('Erro fatal ao buscar tenant:', err);
         }
       };
-      getSessionData();
+      
+      fetchTenantId();
     }
   }, [open]);
 
@@ -47,16 +64,16 @@ const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Você não está autenticado.");
 
+      // Envia para a API (que já corrigimos no passo anterior)
       const response = await fetch('/api/createJob', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        // AQUI ESTÁ A MUDANÇA: Enviando o departmentId
         body: JSON.stringify({ 
             title: jobTitle, 
-            company_department_id: departmentId 
+            company_department_id: departmentId // Pode ser null se não selecionado
         }),
       });
 
@@ -65,6 +82,7 @@ const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
         throw new Error(errorData.error || "Não foi possível criar a vaga.");
       }
 
+      // Sucesso
       setJobTitle('');
       setDepartmentId(null);
       onJobCreated(); 
@@ -98,19 +116,28 @@ const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
           autoFocus
           value={jobTitle}
           onChange={(e) => setJobTitle(e.target.value)}
+          disabled={loading}
         />
 
-        {/* Componente de Seleção de Área */}
-        <AreaSelect 
-            currentTenantId={tenantId}
-            selectedAreaId={departmentId}
-            onSelectArea={setDepartmentId}
-        />
+        {/* Passamos o tenantId recuperado do banco.
+            Se tenantId for null (ainda carregando), o AreaSelect saberá lidar/esperar 
+        */}
+        {tenantId ? (
+            <AreaSelect 
+                currentTenantId={tenantId}
+                selectedAreaId={departmentId}
+                onSelectArea={setDepartmentId}
+            />
+        ) : (
+            <Typography variant="caption" color="text.secondary">
+                Carregando áreas...
+            </Typography>
+        )}
 
         {error && <Alert severity="error" sx={{mt: 2}}>{error}</Alert>}
         
         <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-          <Button onClick={handleClose}>Cancelar</Button>
+          <Button onClick={handleClose} disabled={loading}>Cancelar</Button>
           <Button type="submit" variant="contained" disabled={loading || !jobTitle}>
             {loading ? <CircularProgress size={24} /> : 'Criar Vaga'}
           </Button>
