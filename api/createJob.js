@@ -1,4 +1,4 @@
-// api/createJob.js (Versão Final "Plan-Aware")
+// api/createJob.js (Versão Final "Area-Aware")
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(request, response) {
@@ -40,14 +40,22 @@ export default async function handler(request, response) {
       }
     }
 
-    const { title } = request.body;
+    // --- MUDANÇA AQUI: Recebendo também o ID do departamento ---
+    const { title, company_department_id } = request.body; 
+    
     if (!title) { return response.status(400).json({ error: 'O título da vaga é obrigatório.' }); }
     
     const { data: newJob, error: insertError } = await supabaseAdmin
       .from('jobs')
-      .insert({ title: title, tenantId: tenantId, status: 'active' })
+      .insert({ 
+          title: title, 
+          tenantId: tenantId, 
+          status: 'active',
+          company_department_id: company_department_id || null // Salva o ID ou null se não vier
+      })
       .select()
       .single();
+      
     if (insertError) throw insertError;
     
     return response.status(201).json({ newJob });

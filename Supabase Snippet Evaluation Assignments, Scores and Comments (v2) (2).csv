@@ -1,0 +1,101 @@
+table_name,column_name,data_type,udt_name
+applications,id,bigint,int8
+applications,created_at,timestamp with time zone,timestamptz
+applications,jobId,bigint,int8
+applications,candidateId,bigint,int8
+applications,formData,jsonb,jsonb
+applications,resumeUrl,text,text
+applications,evaluation,jsonb,jsonb
+applications,isHired,boolean,bool
+applications,hiredAt,timestamp with time zone,timestamptz
+candidates,id,bigint,int8
+candidates,created_at,timestamp with time zone,timestamptz
+candidates,name,text,text
+candidates,email,text,text
+candidates,phone,text,text
+candidates,linkedinProfile,text,text
+candidates,githubProfile,text,text
+company_departments,id,bigint,int8
+company_departments,name,text,text
+company_departments,created_at,timestamp with time zone,timestamptz
+evaluation_assignments_v2,id,uuid,uuid
+evaluation_assignments_v2,application_id,bigint,int8
+evaluation_assignments_v2,evaluator_id,uuid,uuid
+evaluation_assignments_v2,status,character varying,varchar
+evaluation_assignments_v2,created_at,timestamp with time zone,timestamptz
+evaluation_assignments_v2,updated_at,timestamp with time zone,timestamptz
+evaluation_assignments_v2,completed_at,timestamp with time zone,timestamptz
+evaluation_comments_v2,id,uuid,uuid
+evaluation_comments_v2,assignment_id,uuid,uuid
+evaluation_comments_v2,target_type,character varying,varchar
+evaluation_comments_v2,reference_id,text,text
+evaluation_comments_v2,comment,text,text
+evaluation_comments_v2,created_at,timestamp with time zone,timestamptz
+evaluation_criteria_v2,id,uuid,uuid
+evaluation_criteria_v2,job_id,bigint,int8
+evaluation_criteria_v2,name,text,text
+evaluation_criteria_v2,pillar,character varying,varchar
+evaluation_criteria_v2,weight,integer,int4
+evaluation_criteria_v2,created_at,timestamp with time zone,timestamptz
+evaluation_scores_v2,id,uuid,uuid
+evaluation_scores_v2,assignment_id,uuid,uuid
+evaluation_scores_v2,criteria_id,uuid,uuid
+evaluation_scores_v2,score,numeric,numeric
+evaluation_scores_v2,weight_snapshot,integer,int4
+evaluation_scores_v2,created_at,timestamp with time zone,timestamptz
+jobs,id,bigint,int8
+jobs,created_at,timestamp with time zone,timestamptz
+jobs,title,text,text
+jobs,status,text,text
+jobs,tenantId,text,text
+jobs,parameters,jsonb,jsonb
+jobs,company_department_id,bigint,int8
+plans,created_at,timestamp with time zone,timestamptz
+plans,id,text,text
+plans,name,text,text
+plans,user_limit,bigint,int8
+plans,candidate_limit,bigint,int8
+plans,job_limit,bigint,int8
+plans,price,numeric,numeric
+tenants,id,bigint,int8
+tenants,created_at,timestamp with time zone,timestamptz
+tenants,companyName,text,text
+tenants,planId,text,text
+tenants,cnpj,text,text
+users,id,uuid,uuid
+users,instance_id,uuid,uuid
+users,id,uuid,uuid
+users,created_at,timestamp with time zone,timestamptz
+users,name,text,text
+users,aud,character varying,varchar
+users,role,text,text
+users,role,character varying,varchar
+users,tenantId,text,text
+users,email,character varying,varchar
+users,encrypted_password,character varying,varchar
+users,isAdmin,boolean,bool
+users,email_confirmed_at,timestamp with time zone,timestamptz
+users,invited_at,timestamp with time zone,timestamptz
+users,confirmation_token,character varying,varchar
+users,confirmation_sent_at,timestamp with time zone,timestamptz
+users,recovery_token,character varying,varchar
+users,recovery_sent_at,timestamp with time zone,timestamptz
+users,email_change_token_new,character varying,varchar
+users,email_change,character varying,varchar
+users,email_change_sent_at,timestamp with time zone,timestamptz
+users,last_sign_in_at,timestamp with time zone,timestamptz
+users,raw_app_meta_data,jsonb,jsonb
+users,raw_user_meta_data,jsonb,jsonb
+users,is_super_admin,boolean,bool
+users,created_at,timestamp with time zone,timestamptz
+users,updated_at,timestamp with time zone,timestamptz
+users,phone,text,text
+users,phone_confirmed_at,timestamp with time zone,timestamptz
+users,phone_change,text,text
+users,phone_change_token,character varying,varchar
+users,phone_change_sent_at,timestamp with time zone,timestamptz
+users,confirmed_at,timestamp with time zone,timestamptz
+users,email_change_token_current,character varying,varchar
+users,email_change_confirm_status,smallint,int2
+users,banned_until,timestamp with time zone,timestamptz
+users,reauthentication_token,character varying,varchar

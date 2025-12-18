@@ -1,4 +1,4 @@
-// api/jobs.js (VERSÃO FINAL com CRUD completo)
+// api/jobs.js (VERSÃO FINAL com Join de Áreas)
 import { createClient } from '@supabase/supabase-js';
 
 // Função de middleware de segurança (reutilizada)
@@ -32,19 +32,42 @@ export default async function handler(request, response) {
       const { id } = request.query;
 
       if (id) {
-        // Busca UMA vaga
-        const { data: job, error: jobError } = await supabaseAdmin.from('jobs').select('*').eq('id', Number(id)).eq('tenantId', tenantId).single();
+        // Busca UMA vaga (Detalhes)
+        // Incluindo o nome do departamento aqui também
+        const { data: job, error: jobError } = await supabaseAdmin
+            .from('jobs')
+            .select(`
+                *,
+                company_departments ( name )
+            `)
+            .eq('id', Number(id))
+            .eq('tenantId', tenantId)
+            .single();
+
         if (jobError || !job) return response.status(404).json({ error: 'Vaga não encontrada.' });
         return response.status(200).json({ job });
       } 
       else {
-        // Busca TODAS as vagas
+        // Busca TODAS as vagas (Dashboard)
         const { data: tenant, error: tenantError } = await supabaseAdmin.from('tenants').select('planId').eq('id', tenantId).single();
         if (tenantError) throw tenantError;
 
-        const { data: jobs, error: jobsError } = await supabaseAdmin.from('jobs').select(`id, title, status, tenantId, applications ( count )`).eq('tenantId', tenantId);
+        // --- MUDANÇA AQUI: Trazendo o nome do departamento ---
+        const { data: jobs, error: jobsError } = await supabaseAdmin
+            .from('jobs')
+            .select(`
+                id, title, status, tenantId, created_at,
+                applications ( count ),
+                company_departments ( name )
+            `)
+            .eq('tenantId', tenantId);
+
         if (jobsError) throw jobsError;
-        const formattedJobs = jobs.map(job => ({ ...job, candidateCount: job.applications[0] ? job.applications[0].count : 0 }));
+        
+        const formattedJobs = jobs.map(job => ({ 
+            ...job, 
+            candidateCount: job.applications[0] ? job.applications[0].count : 0 
+        }));
         
         return response.status(200).json({ 
           jobs: formattedJobs,
@@ -66,7 +89,7 @@ export default async function handler(request, response) {
             .from('jobs')
             .update({ status: newStatus })
             .eq('id', jobId)
-            .eq('tenantId', tenantId) // Segurança: só pode atualizar as próprias vagas
+            .eq('tenantId', tenantId) // Segurança
             .select()
             .single();
           
@@ -76,7 +99,7 @@ export default async function handler(request, response) {
         case 'deleteJob':
           if (!jobId) { return response.status(400).json({ error: 'jobId é obrigatório.' }); }
 
-          // 1. (Segurança) Deleta as candidaturas primeiro para evitar erro de FK
+          // 1. (Segurança) Deleta as candidaturas
           await supabaseAdmin.from('applications').delete().eq('jobId', jobId);
 
           // 2. Deleta a vaga
@@ -94,7 +117,6 @@ export default async function handler(request, response) {
       }
     }
 
-    // Se não for GET nem POST
     response.setHeader('Allow', ['GET', 'POST']);
     return response.status(405).json({ error: `Método ${request.method} não permitido.` });
 
@@ -102,9 +124,6 @@ export default async function handler(request, response) {
     console.error("Erro na API de Vagas:", error.message);
     if (error.message.includes('Não autorizado') || error.message.includes('Token inválido')) {
       return response.status(401).json({ error: error.message });
-    }
-    if (error.message.includes('Acesso negado')) {
-      return response.status(403).json({ error: error.message });
     }
     return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
   }
