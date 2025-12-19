@@ -1,16 +1,16 @@
-// src/supabase/client.js (Versão de Depuração)
-import { createClient } from '@supabase/supabase-js'
+// src/supabase/client.js (Versão Limpa e Segura)
+import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// --- NOSSO TESTE DE DEPURAÇÃO ---
-// Estas linhas irão imprimir no console do seu navegador as chaves que o app está realmente usando.
-console.log("--- INICIANDO VERIFICAÇÃO DE CHAVES SUPABASE ---");
-console.log("URL EM USO:", supabaseUrl);
-console.log("CHAVE ANON EM USO:", supabaseAnonKey);
-console.log("-------------------------------------------");
-// --- FIM DO TESTE ---
+// Validação de Segurança:
+// Impede que a aplicação inicie "pela metade" se as chaves não existirem.
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error(
+    'ERRO CRÍTICO: As chaves de configuração do Supabase não foram encontradas. ' +
+    'Verifique se o arquivo .env existe na raiz do projeto e contém as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.'
+  );
+}
 
-// Se a URL ou a Chave estiverem vazias, o comando abaixo irá falhar.
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
