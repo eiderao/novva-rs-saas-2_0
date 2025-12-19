@@ -1,456 +1,391 @@
-// src/pages/JobDetails.jsx (VERSÃO FINAL com Status Traduzido)
-import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
-import { supabase } from '../supabase/client';
-import { format, parseISO } from 'date-fns';
+import { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { supabase } from '../supabaseClient';
 import { 
-    Container, Typography, Box, AppBar, Toolbar, Button, CircularProgress, 
-    Alert, Paper, Tabs, Tab, TextField, IconButton, Snackbar, InputAdornment,
-    List, ListItem, ListItemText, Divider, Grid,
-    Table, TableHead, TableRow, TableCell, TableBody, Checkbox,
-    FormControl, InputLabel, Select, MenuItem, Modal,
-    Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle
-} from '@mui/material';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import DeleteIcon from '@mui/icons-material/Delete';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import FileCopyIcon from '@mui/icons-material/FileCopy';
-import ClassificationChart from '../components/charts/ClassificationChart';
-import { formatStatus } from '../utils/formatters'; // IMPORTA NOSSO TRADUTOR
+  ArrowLeft, 
+  User, 
+  Calendar, 
+  MapPin, 
+  Briefcase, 
+  CheckCircle, 
+  XCircle, 
+  Clock, 
+  Share2,
+  Download,
+  Settings,
+  Plus,
+  Trash2,
+  Save
+} from 'lucide-react';
 
-const modalStyle = {
-  position: 'absolute',
-  top: '50%',
-  left: '50%',
-  transform: 'translate(-50%, -50%)',
-  width: 500,
-  bgcolor: 'background.paper',
-  boxShadow: 24,
-  p: 4,
-};
-
-const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
-  const [jobs, setJobs] = useState([]);
-  const [selectedJobId, setSelectedJobId] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [isCopying, setIsCopying] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      const fetchJobsList = async () => {
-        setLoading(true);
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (!session) throw new Error("Sessão não encontrada.");
-          const response = await fetch('/api/jobs', { headers: { 'Authorization': `Bearer ${session.access_token}` } });
-          const data = await response.json();
-          const copyableJobs = (data.jobs || []).filter(
-            (job) => job.id.toString() !== currentJobId && job.status === 'active'
-          );
-          setJobs(copyableJobs);
-        } catch (err) {
-          console.error("Erro ao buscar lista de vagas:", err);
-        } finally {
-          setLoading(false);
-        }
-      };
-      fetchJobsList();
-    }
-  }, [open, currentJobId]);
-
-  const handleConfirmCopy = async () => {
-    if (!selectedJobId) return;
-    setIsCopying(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Sessão não encontrada.");
-      const response = await fetch(`/api/jobs?id=${selectedJobId}`, { headers: { 'Authorization': `Bearer ${session.access_token}` } });
-      const data = await response.json();
-      if (data.job && data.job.parameters) {
-        onCopy(data.job.parameters);
-      }
-      onClose();
-    } catch (err) {
-      console.error("Erro ao copiar parâmetros:", err);
-    } finally {
-      setIsCopying(false);
-    }
-  };
-
-  return (
-    <Modal open={open} onClose={onClose}>
-      <Box sx={modalStyle}>
-        <Typography variant="h6" gutterBottom>Copiar Parâmetros de outra Vaga</Typography>
-        <Typography variant="body2" gutterBottom>
-          Selecione uma vaga ativa para copiar todos os seus parâmetros (Triagem, Cultura, Técnico e Notas) para esta vaga.
-        </Typography>
-        {loading ? (
-          <CircularProgress />
-        ) : (
-          <FormControl fullWidth margin="normal" required>
-            <InputLabel id="copy-job-label">Selecionar Vaga</InputLabel>
-            <Select
-              labelId="copy-job-label"
-              value={selectedJobId}
-              label="Selecionar Vaga"
-              onChange={(e) => setSelectedJobId(e.target.value)}
-            >
-              {jobs.length > 0 ? (
-                jobs.map(job => (
-                  <MenuItem key={job.id} value={job.id}>{job.title}</MenuItem>
-                ))
-              ) : (
-                <MenuItem disabled>Nenhuma outra vaga ativa encontrada.</MenuItem>
-              )}
-            </Select>
-          </FormControl>
-        )}
-        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-          <Button onClick={onClose} disabled={isCopying}>Cancelar</Button>
-          <Button variant="contained" onClick={handleConfirmCopy} disabled={loading || isCopying || !selectedJobId}>
-            {isCopying ? <CircularProgress size={24} /> : 'Copiar'}
-          </Button>
-        </Box>
-      </Box>
-    </Modal>
-  );
-};
-
-const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
-  const handleItemChange = (index, field, value) => { const newCriteria = [...criteria]; const numericValue = field === 'weight' ? Number(value) || 0 : value; newCriteria[index] = { ...newCriteria[index], [field]: numericValue }; onCriteriaChange(newCriteria); };
-  const addCriterion = () => { if (criteria.length < 10) { onCriteriaChange([...criteria, { name: '', weight: 0 }]); } };
-  const removeCriterion = (index) => { const newCriteria = criteria.filter((_, i) => i !== index); onCriteriaChange(newCriteria); };
-  const totalWeight = criteria.reduce((sum, item) => sum + (item.weight || 0), 0);
-  return (
-    <Box sx={{ mt: 2 }}>
-      {criteria.map((item, index) => (
-        <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-          <TextField label={`Critério ${index + 1}`} value={item.name} onChange={(e) => handleItemChange(index, 'name', e.target.value)} fullWidth variant="standard" />
-          <TextField label="Peso (%)" type="number" value={item.weight} onChange={(e) => handleItemChange(index, 'weight', e.target.value)} sx={{ width: '120px' }} variant="standard" />
-          <IconButton onClick={() => removeCriterion(index)} color="error"><DeleteIcon /></IconButton>
-        </Box>
-      ))}
-      <Button startIcon={<AddCircleOutlineIcon />} onClick={addCriterion} disabled={criteria.length >= 10} sx={{ mt: 2 }}>Adicionar Critério</Button>
-      <Typography variant="h6" sx={{ mt: 3, p: 1, borderRadius: 1, bgcolor: totalWeight === 100 ? '#e8f5e9' : '#ffebee', color: totalWeight === 100 ? 'green' : 'red' }}> Soma dos Pesos: {totalWeight}% </Typography>
-    </Box>
-  );
-};
-
-const JobDetails = () => {
-  const { jobId } = useParams();
-  const navigate = useNavigate();
+export default function JobDetails() {
+  const { id } = useParams();
+  
+  // Estados de Dados
   const [job, setJob] = useState(null);
-  const [parameters, setParameters] = useState(null);
+  const [candidates, setCandidates] = useState([]);
+  
+  // Estados de Controle
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [tabValue, setTabValue] = useState(0);
-  const [isSaving, setIsSaving] = useState(false);
-  const [feedback, setFeedback] = useState({ open: false, message: '', severity: 'success' });
-  const [applicantData, setApplicantData] = useState({ loading: true, data: [], error: null });
-  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
-  const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [activeTab, setActiveTab] = useState('details'); // 'details', 'candidates', 'evaluation'
+  const [shareUrl, setShareUrl] = useState('');
+  const [savingParams, setSavingParams] = useState(false);
+
+  // Estado Local para Edição dos Parâmetros de Avaliação (V2)
+  const [evalParams, setEvalParams] = useState({
+    triagem: [], // Perguntas de Yes/No
+    tecnico: [], // Critérios de 1 a 5
+    cultura: []  // Critérios de Fit Cultural
+  });
 
   useEffect(() => {
-    const fetchJobDetails = async () => {
-      if (!jobId) { setLoading(false); setError("ID da vaga não encontrado."); return; }
-      setLoading(true);
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) throw new Error("Sessão não encontrada.");
-        const response = await fetch(`/api/jobs?id=${jobId}`, { headers: { 'Authorization': `Bearer ${session.access_token}` } });
-        if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.error || "Não foi possível buscar os detalhes da vaga."); }
-        const data = await response.json();
-        if (data.job && data.job.parameters) { setJob(data.job); setParameters(data.job.parameters); } 
-        else { throw new Error("Os dados da vaga recebidos são inválidos."); }
-      } catch (err) { console.error("Erro ao buscar detalhes da vaga:", err); setError(err.message); } 
-      finally { setLoading(false); }
-    };
     fetchJobDetails();
-  }, [jobId]);
+  }, [id]);
 
   useEffect(() => {
-    const fetchApplicants = async () => {
-      if (!jobId) return;
-      setApplicantData({ loading: true, data: [], error: null });
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) throw new Error("Sessão não encontrada.");
-        const response = await fetch(`/api/getApplicantsForJob?jobId=${jobId}`, { headers: { 'Authorization': `Bearer ${session.access_token}` } });
-        if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.error || "Não foi possível buscar os candidatos."); }
-        const data = await response.json();
-        setApplicantData({ loading: false, data: data.applicants || [], error: null });
-      } catch (err) { console.error("Erro ao buscar candidatos:", err); setApplicantData({ loading: false, data: [], error: err.message }); }
-    };
-    fetchApplicants();
-  }, [jobId]);
+    const url = `${window.location.origin}/vagas/${id}/candidatar`;
+    setShareUrl(url);
+  }, [id]);
 
-  const classifiedApplicants = useMemo(() => {
-    if (!applicantData.data) return [];
-    return [...applicantData.data].sort((a, b) => b.notaGeral - a.notaGeral);
-  }, [applicantData.data]);
-  
-  const handleHiredToggle = async (applicationId, currentStatus) => {
-    const newStatus = !currentStatus;
-    setApplicantData(prev => ({
-      ...prev,
-      data: prev.data.map(app => 
-        app.applicationId === applicationId ? { ...app, isHired: newStatus } : app
-      ),
-    }));
+  const fetchJobDetails = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Sessão não encontrada.");
-      await fetch('/api/updateHiredStatus', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-        body: JSON.stringify({ applicationId, isHired: newStatus }),
-      });
-    } catch (err) {
-      setFeedback({ open: true, message: 'Erro ao atualizar status.', severity: 'error' });
-      setApplicantData(prev => ({
-        ...prev,
-        data: prev.data.map(app => 
-          app.applicationId === applicationId ? { ...app, isHired: currentStatus } : app
-        ),
-      }));
-    }
-  };
+      setLoading(true);
 
-  const handleTabChange = (event, newValue) => { setTabValue(newValue); };
-  const handleParametersChange = (section, newCriteria) => { setParameters(prevParams => ({ ...prevParams, [section]: newCriteria })); };
-  const handleNoteChange = (index, field, value) => {
-    const newNotes = [...parameters.notas];
-    const numericValue = field === 'valor' ? Number(value) || 0 : value;
-    newNotes[index] = { ...newNotes[index], [field]: numericValue };
-    setParameters(prevParams => ({ ...prevParams, notas: newNotes }));
-  };
-  const handleSaveParameters = async () => {
-    setIsSaving(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Você não está autenticado.");
-      const response = await fetch('/api/updateJobParameters', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-        body: JSON.stringify({ jobId: jobId, parameters: parameters }),
-      });
-      if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.error || "Não foi possível salvar os parâmetros."); }
-      setFeedback({ open: true, message: 'Parâmetros salvos com sucesso!', severity: 'success' });
-    } catch (err) {
-      setFeedback({ open: true, message: err.message, severity: 'error' });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-  const handleCloseFeedback = () => { setFeedback({ open: false, message: '' }); };
-  const applicationUrl = `${window.location.origin}/vaga/${jobId}/apply`;
-  const handleCopyLink = () => { navigator.clipboard.writeText(applicationUrl); setFeedback({ open: true, message: 'Link copiado!', severity: 'info' }); };
-  const handleParametersCopied = (newParameters) => {
-    setParameters(newParameters);
-    setFeedback({ open: true, message: 'Parâmetros copiados! Clique em "Salvar Parâmetros" para confirmar.', severity: 'info' });
-  };
-  
-  const handleStatusChange = async (event) => {
-    const newStatus = event.target.value;
-    const oldStatus = job.status;
-    setJob(prev => ({ ...prev, status: newStatus }));
-    setIsSaving(true);
-    try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) throw new Error("Sessão não encontrada.");
-        const response = await fetch('/api/jobs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-            body: JSON.stringify({ action: 'updateJobStatus', jobId: jobId, newStatus: newStatus })
+      // 1. Busca Vaga e Parâmetros
+      const { data: jobData, error: jobError } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (jobError) throw jobError;
+      
+      setJob(jobData);
+      
+      // Carrega os parâmetros existentes ou inicia vazios
+      if (jobData.parameters) {
+        setEvalParams({
+          triagem: jobData.parameters.triagem || [],
+          tecnico: jobData.parameters.tecnico || [],
+          cultura: jobData.parameters.cultura || []
         });
-        if (!response.ok) throw new Error("Não foi possível atualizar o status.");
-        setFeedback({ open: true, message: 'Status atualizado!', severity: 'success' });
-    } catch (err) {
-        console.error(err);
-        setFeedback({ open: true, message: 'Erro ao atualizar status.', severity: 'error' });
-        setJob(prev => ({ ...prev, status: oldStatus })); 
+      }
+
+      // 2. Busca Candidatos (com Join V2)
+      const { data: appsData, error: appsError } = await supabase
+        .from('applications')
+        .select(`
+          *,
+          candidate:candidates (
+            name, email, phone, city, state, resume_url
+          )
+        `)
+        .eq('jobId', id)
+        .order('created_at', { ascending: false });
+
+      if (appsError) throw appsError;
+      setCandidates(appsData || []);
+
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
     } finally {
-        setIsSaving(false);
+      setLoading(false);
     }
   };
 
-  const handleDeleteJob = async () => {
-    setIsDeleting(true);
+  // --- LÓGICA DE AVALIAÇÃO (V2) ---
+
+  const handleAddCriteria = (type) => {
+    const newCriteria = prompt(`Digite o novo critério para ${type}:`);
+    if (!newCriteria) return;
+
+    setEvalParams(prev => ({
+      ...prev,
+      [type]: [...prev[type], { id: crypto.randomUUID(), text: newCriteria, weight: 1 }]
+    }));
+  };
+
+  const handleRemoveCriteria = (type, criteriaId) => {
+    setEvalParams(prev => ({
+      ...prev,
+      [type]: prev[type].filter(item => item.id !== criteriaId)
+    }));
+  };
+
+  const handleWeightChange = (type, criteriaId, newWeight) => {
+    setEvalParams(prev => ({
+      ...prev,
+      [type]: prev[type].map(item => 
+        item.id === criteriaId ? { ...item, weight: parseInt(newWeight) } : item
+      )
+    }));
+  };
+
+  const handleSaveParameters = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Sessão não encontrada.");
-      const response = await fetch('/api/jobs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-          body: JSON.stringify({ action: 'deleteJob', jobId: jobId })
-      });
-      if (!response.ok) throw new Error("Não foi possível excluir a vaga.");
-      setOpenDeleteDialog(false);
-      navigate('/');
+      setSavingParams(true);
+      const { error } = await supabase
+        .from('jobs')
+        .update({ parameters: evalParams })
+        .eq('id', id);
+
+      if (error) throw error;
+      alert('Parâmetros de avaliação atualizados com sucesso!');
     } catch (err) {
-      console.error(err);
-      setFeedback({ open: true, message: 'Erro ao excluir vaga.', severity: 'error' });
+      console.error('Erro ao salvar parâmetros:', err);
+      alert('Erro ao salvar. Tente novamente.');
     } finally {
-      setIsDeleting(false);
+      setSavingParams(false);
     }
   };
-  
-  const renderContent = () => {
-    if (loading) { return <Box sx={{ display: 'flex', justifyContent: 'center', my: 5 }}><CircularProgress /></Box>; }
-    if (error) { return <Alert severity="error">{error}</Alert>; }
-    if (job && parameters) {
-      return (
-        <>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-            <Box>
-                <Typography variant="h4">{job.title}</Typography>
-                {/* CORREÇÃO APLICADA AQUI */}
-                <Typography variant="subtitle1" color="text.secondary" gutterBottom sx={{ textTransform: 'capitalize' }}>
-                  Status: {formatStatus(job.status)}
-                </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                <FormControl sx={{ minWidth: 150 }} size="small">
-                  <InputLabel id="status-select-label">Alterar Status</InputLabel>
-                  <Select
-                    labelId="status-select-label"
-                    value={job.status}
-                    label="Alterar Status"
-                    onChange={handleStatusChange}
-                    disabled={isSaving}
-                  >
-                    {/* CORREÇÃO APLICADA AQUI */}
-                    <MenuItem value="active">Ativa</MenuItem>
-                    <MenuItem value="inactive">Inativa</MenuItem>
-                    <MenuItem value="filled">Preenchida</MenuItem>
-                  </Select>
-                </FormControl>
-                <Button 
-                  variant="outlined" 
-                  color="error"
-                  startIcon={<DeleteIcon />}
-                  onClick={() => setOpenDeleteDialog(true)}
-                  disabled={isDeleting}
-                >
-                  Excluir Vaga
-                </Button>
-            </Box>
-          </Box>
-          
-          <Box sx={{ mt: 4, mb: 4 }}>
-            <Typography variant="h6" gutterBottom>Link Público de Candidatura</Typography>
-            <TextField fullWidth variant="outlined" value={applicationUrl} InputProps={{ readOnly: true, endAdornment: ( <InputAdornment position="end"><IconButton onClick={handleCopyLink}><ContentCopyIcon /></IconButton></InputAdornment> )}}/>
-          </Box>
-          
-          <Paper sx={{ width: '100%' }}>
-            <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-              <Tabs value={tabValue} onChange={handleTabChange}>
-                <Tab label="Candidatos" />
-                <Tab label="Parâmetros" />
-                <Tab label="Classificação" />
-              </Tabs>
-            </Box>
-            <Box p={3} hidden={tabValue !== 0}>
-              <Typography variant="h5" gutterBottom>Candidatos Inscritos</Typography>
-              {applicantData.loading ? <CircularProgress /> : applicantData.error ? <Alert severity="error">{applicantData.error}</Alert> : (
-                <List>
-                  {applicantData.data.length > 0 ? applicantData.data.map((app, index) => (
-                    <React.Fragment key={app.applicationId}>
-                      <ListItem button component={RouterLink} to={`/vaga/${jobId}/candidato/${app.applicationId}`}>
-                        <ListItemText primary={app.candidateName} secondary={app.candidateEmail} />
-                      </ListItem>
-                      {index < applicantData.data.length - 1 && <Divider />}
-                    </React.Fragment>
-                  )) : ( <Typography>Nenhum candidato inscrito para esta vaga ainda.</Typography> )}
-                </List>
-              )}
-            </Box>
-            <Box p={3} hidden={tabValue !== 1}>
-               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                 <Typography variant="h5" gutterBottom>Parâmetros de Avaliação</Typography>
-                 <Button
-                    variant="outlined"
-                    startIcon={<FileCopyIcon />}
-                    onClick={() => setIsCopyModalOpen(true)}
-                 >
-                    Copiar Parâmetros
-                 </Button>
-               </Box>
-               <Paper variant="outlined" sx={{ p: 2, mt: 2 }}><Typography>Critérios de Triagem</Typography><ParametersSection criteria={parameters.triagem} onCriteriaChange={(newCriteria) => handleParametersChange('triagem', newCriteria)} /></Paper>
-               <Paper variant="outlined" sx={{ p: 2, mt: 2 }}><Typography>Cultura</Typography><ParametersSection criteria={parameters.cultura} onCriteriaChange={(newCriteria) => handleParametersChange('cultura', newCriteria)} /></Paper>
-               <Paper variant="outlined" sx={{ p: 2, mt: 2 }}><Typography>Técnico</Typography><ParametersSection criteria={parameters.técnico} onCriteriaChange={(newCriteria) => handleParametersChange('técnico', newCriteria)} /></Paper>
-               <Paper variant="outlined" sx={{ p: 2, mt: 3 }}><Typography variant="h6" gutterBottom sx={{p: 1}}>Definição de Notas</Typography><Grid container spacing={2} sx={{p: 2}}>{parameters.notas && parameters.notas.map((nota, index) => ( <React.Fragment key={index}><Grid item xs={6}><TextField label={`Nome da Nota ${index + 1}`} value={nota.nome} onChange={(e) => handleNoteChange(index, 'nome', e.target.value)} fullWidth variant="standard" disabled={nota.fixed} /></Grid><Grid item xs={6}><TextField label={`Valor da Nota ${index + 1}`} type="number" value={nota.valor} onChange={(e) => handleNoteChange(index, 'valor', e.target.value)} fullWidth variant="standard" disabled={nota.fixed} /></Grid></React.Fragment> ))}</Grid></Paper>
-               <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}><Button variant="contained" size="large" onClick={handleSaveParameters} disabled={isSaving}>{isSaving ? <CircularProgress size={24} /> : 'Salvar Parâmetros'}</Button></Box>
-            </Box>
-            <Box p={3} hidden={tabValue !== 2}>
-              <Typography variant="h5" gutterBottom>Classificação dos Candidatos</Typography>
-              {tabValue === 2 && !applicantData.loading && applicantData.data.length > 0 && (
-                <ClassificationChart data={classifiedApplicants} />
-              )}
-              {applicantData.loading ? <CircularProgress sx={{mt: 4}} /> : applicantData.error ? <Alert severity="error">{applicantData.error}</Alert> : (
-                <Table sx={{ mt: 4 }}>
-                  <TableHead><TableRow><TableCell sx={{ fontWeight: 'bold' }}>Nome</TableCell><TableCell sx={{ fontWeight: 'bold' }}>Data da Inscrição</TableCell><TableCell align="right" sx={{ fontWeight: 'bold' }}>Nota Triagem</TableCell><TableCell align="right" sx={{ fontWeight: 'bold' }}>Nota Cultura</TableCell><TableCell align="right" sx={{ fontWeight: 'bold' }}>Nota Técnico</TableCell><TableCell align="right" sx={{ fontWeight: 'bold' }}>Nota Geral</TableCell><TableCell align="center" sx={{ fontWeight: 'bold' }}>Contratado?</TableCell></TableRow></TableHead>
-                  <TableBody>
-                    {classifiedApplicants.map(applicant => (
-                      <TableRow hover key={applicant.applicationId} sx={{ backgroundColor: applicant.isHired ? '#e8f5e9' : 'transparent' }}>
-                        <TableCell>{applicant.candidateName}</TableCell>
-                        <TableCell>{format(parseISO(applicant.submissionDate), 'dd/MM/yyyy')}</TableCell>
-                        <TableCell align="right">{applicant.notaTriagem.toFixed(1)}</TableCell>
-                        <TableCell align="right">{applicant.notaCultura.toFixed(1)}</TableCell>
-                        <TableCell align="right">{applicant.notaTecnico.toFixed(1)}</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 'bold' }}>{applicant.notaGeral.toFixed(1)}</TableCell>
-                        <TableCell align="center">
-                          <Checkbox
-                            checked={applicant.isHired || false}
-                            onChange={() => handleHiredToggle(applicant.applicationId, applicant.isHired)}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </Box>
-          </Paper>
-        </>
-      );
-    }
-    return null;
+
+  // --- LÓGICA DE UTILIDADES ---
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(shareUrl);
+    alert('Link copiado!');
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!job) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-10 text-center">
+        <h2 className="text-2xl font-bold text-gray-900">Vaga não encontrada</h2>
+        <Link to="/jobs" className="mt-4 inline-flex items-center text-blue-600">
+          <ArrowLeft className="h-4 w-4 mr-2" /> Voltar
+        </Link>
+      </div>
+    );
+  }
 
   return (
-    <Box>
-      <AppBar position="static"><Toolbar><Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>{job ? `Vaga: ${job.title}` : 'Carregando Vaga...'}</Typography><Button color="inherit" component={RouterLink} to="/">Voltar para o Painel</Button></Toolbar></AppBar>
-      <Container sx={{ mt: 4 }}>
-        {renderContent()}
-      </Container>
-      
-      <CopyParametersModal 
-        open={isCopyModalOpen}
-        onClose={() => setIsCopyModalOpen(false)}
-        currentJobId={jobId}
-        onCopy={handleParametersCopied}
-      />
-      
-      <Dialog open={openDeleteDialog} onClose={() => setOpenDeleteDialog(false)}>
-        <DialogTitle>Confirmar Exclusão</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Você tem certeza que deseja excluir a vaga <strong>"{job?.title}"</strong>? Esta ação é irreversível e excluirá todas as candidaturas e avaliações associadas.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenDeleteDialog(false)} disabled={isDeleting}>Cancelar</Button>
-          <Button onClick={handleDeleteJob} color="error" disabled={isDeleting}>
-            {isDeleting ? <CircularProgress size={24} /> : 'Excluir'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-      
-      <Snackbar open={feedback.open} autoHideDuration={4000} onClose={handleCloseFeedback}><Alert onClose={handleCloseFeedback} severity={feedback.severity} sx={{ width: '100%' }}>{feedback.message}</Alert></Snackbar>
-    </Box>
-  );
-};
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* HEADER DA PÁGINA */}
+      <div className="mb-8">
+        <Link to="/jobs" className="inline-flex items-center text-gray-500 hover:text-gray-700 mb-4">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Voltar para Painel
+        </Link>
+        
+        <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">{job.title}</h1>
+            <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-500">
+              <span className="flex items-center"><MapPin className="h-4 w-4 mr-1"/> {job.location || 'Remoto'}</span>
+              <span className="flex items-center"><Briefcase className="h-4 w-4 mr-1"/> {job.type || 'CLT'}</span>
+              <span className="flex items-center"><Calendar className="h-4 w-4 mr-1"/> {new Date(job.created_at).toLocaleDateString()}</span>
+            </div>
+          </div>
+          
+          <button
+            onClick={handleCopyLink}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+          >
+            <Share2 className="h-4 w-4 mr-2" /> Compartilhar Link
+          </button>
+        </div>
+      </div>
 
-export default JobDetails;
+      {/* NAVEGAÇÃO DE ABAS */}
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab('details')}
+            className={`${activeTab === 'details' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+          >
+            Detalhes da Vaga
+          </button>
+          <button
+            onClick={() => setActiveTab('candidates')}
+            className={`${activeTab === 'candidates' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
+          >
+            Candidatos
+            <span className="ml-2 bg-gray-100 text-gray-600 py-0.5 px-2.5 rounded-full text-xs">{candidates.length}</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('evaluation')}
+            className={`${activeTab === 'evaluation' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
+          >
+            <Settings className="w-4 h-4 mr-2" />
+            Configuração de Avaliação
+          </button>
+        </nav>
+      </div>
+
+      {/* CONTEÚDO DAS ABAS */}
+      
+      {/* 1. ABA DETALHES */}
+      {activeTab === 'details' && (
+        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+          <div className="px-4 py-5 sm:px-6">
+            <h3 className="text-lg leading-6 font-medium text-gray-900">Descrição do Cargo</h3>
+            <div className="mt-2 text-sm text-gray-500 whitespace-pre-wrap">{job.description || 'N/A'}</div>
+          </div>
+          <div className="border-t border-gray-200 px-4 py-5 sm:px-6">
+            <h3 className="text-lg leading-6 font-medium text-gray-900">Requisitos</h3>
+            <div className="mt-2 text-sm text-gray-500 whitespace-pre-wrap">{job.requirements || 'N/A'}</div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. ABA CANDIDATOS (Com Correção Visual) */}
+      {activeTab === 'candidates' && (
+        <div className="space-y-4">
+          {candidates.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-lg border border-dashed border-gray-300">
+              <User className="mx-auto h-12 w-12 text-gray-400" />
+              <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum candidato inscrito ainda</h3>
+              <p className="mt-1 text-sm text-gray-500">Divulgue o link para começar a receber currículos.</p>
+            </div>
+          ) : (
+            <div className="bg-white shadow overflow-hidden sm:rounded-md">
+              <ul className="divide-y divide-gray-200">
+                {candidates.map((app) => (
+                  <li key={app.id}>
+                    <div className="px-4 py-4 sm:px-6 hover:bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center min-w-0">
+                          <div className="flex-shrink-0">
+                            <span className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
+                              {app.candidate?.name?.charAt(0).toUpperCase() || '?'}
+                            </span>
+                          </div>
+                          <div className="ml-4 truncate">
+                            <p className="text-sm font-medium text-blue-600 truncate">{app.candidate?.name || 'Sem Nome'}</p>
+                            <div className="flex text-sm text-gray-500 mt-1 gap-4">
+                              <span className="flex items-center"><User className="w-4 h-4 mr-1"/> {app.candidate?.email}</span>
+                              <span className="flex items-center"><MapPin className="w-4 h-4 mr-1"/> {app.candidate?.city || 'N/A'}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {(app.resumeUrl || app.candidate?.resume_url) && (
+                            <a href={app.resumeUrl || app.candidate?.resume_url} target="_blank" rel="noreferrer" className="p-2 text-gray-400 hover:text-gray-600 border rounded-full">
+                              <Download className="w-5 h-5" />
+                            </a>
+                          )}
+                          <Link to={`/evaluations/${app.id}`} className="px-3 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200">
+                            Avaliar
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3. ABA AVALIAÇÃO (Funcionalidade Restaurada) */}
+      {activeTab === 'evaluation' && (
+        <div className="bg-white shadow sm:rounded-lg p-6 space-y-8">
+          
+          <div className="border-b border-gray-200 pb-4">
+            <h2 className="text-xl font-bold text-gray-900">Definição de Notas e Critérios</h2>
+            <p className="text-sm text-gray-500">Configure aqui o que será avaliado nos candidatos desta vaga.</p>
+          </div>
+
+          {/* Seção 1: Critérios Técnicos (Hard Skills) */}
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                <Briefcase className="w-5 h-5 mr-2 text-blue-500"/> Critérios Técnicos (1 a 5)
+              </h3>
+              <button onClick={() => handleAddCriteria('tecnico')} className="text-sm text-blue-600 hover:text-blue-800 flex items-center">
+                <Plus className="w-4 h-4 mr-1"/> Adicionar Critério
+              </button>
+            </div>
+            
+            {evalParams.tecnico.length === 0 ? (
+              <p className="text-sm text-gray-400 italic">Nenhum critério técnico definido.</p>
+            ) : (
+              <div className="space-y-3">
+                {evalParams.tecnico.map((item) => (
+                  <div key={item.id} className="flex items-center gap-3 bg-gray-50 p-3 rounded-md">
+                    <span className="flex-1 font-medium text-gray-700">{item.text}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">Peso:</span>
+                      <select 
+                        className="text-sm border-gray-300 rounded-md"
+                        value={item.weight}
+                        onChange={(e) => handleWeightChange('tecnico', item.id, e.target.value)}
+                      >
+                        <option value="1">1x</option>
+                        <option value="2">2x</option>
+                        <option value="3">3x</option>
+                      </select>
+                    </div>
+                    <button onClick={() => handleRemoveCriteria('tecnico', item.id)} className="text-red-500 hover:text-red-700">
+                      <Trash2 className="w-4 h-4"/>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Seção 2: Fit Cultural (Soft Skills) */}
+          <div className="pt-6 border-t border-gray-100">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                <User className="w-5 h-5 mr-2 text-purple-500"/> Fit Cultural (Comportamental)
+              </h3>
+              <button onClick={() => handleAddCriteria('cultura')} className="text-sm text-blue-600 hover:text-blue-800 flex items-center">
+                <Plus className="w-4 h-4 mr-1"/> Adicionar Critério
+              </button>
+            </div>
+            
+            {evalParams.cultura.length === 0 ? (
+              <p className="text-sm text-gray-400 italic">Nenhum critério cultural definido.</p>
+            ) : (
+              <div className="space-y-3">
+                {evalParams.cultura.map((item) => (
+                  <div key={item.id} className="flex items-center gap-3 bg-gray-50 p-3 rounded-md">
+                    <span className="flex-1 font-medium text-gray-700">{item.text}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">Peso:</span>
+                      <select 
+                        className="text-sm border-gray-300 rounded-md"
+                        value={item.weight}
+                        onChange={(e) => handleWeightChange('cultura', item.id, e.target.value)}
+                      >
+                        <option value="1">1x</option>
+                        <option value="2">2x</option>
+                        <option value="3">3x</option>
+                      </select>
+                    </div>
+                    <button onClick={() => handleRemoveCriteria('cultura', item.id)} className="text-red-500 hover:text-red-700">
+                      <Trash2 className="w-4 h-4"/>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Botão de Salvar Global */}
+          <div className="pt-8 border-t border-gray-200 flex justify-end">
+            <button
+              onClick={handleSaveParameters}
+              disabled={savingParams}
+              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none disabled:opacity-50"
+            >
+              <Save className="w-5 h-5 mr-2" />
+              {savingParams ? 'Salvando...' : 'Salvar Configurações de Avaliação'}
+            </button>
+          </div>
+
+        </div>
+      )}
+    </div>
+  );
+}
