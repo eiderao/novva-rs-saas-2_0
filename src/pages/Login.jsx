@@ -1,53 +1,94 @@
-// src/pages/Login.jsx
-import React, { useState } from 'react';
-import { supabase } from '../supabase/client'; // Importa nosso novo cliente Supabase
-import { Container, Box, TextField, Button, Typography, CircularProgress, Alert } from '@mui/material';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { supabase } from '../supabase/client';
 
-const LoginPage = () => {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
+export default function Login() {
+  const navigate = useNavigate();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
-    const handleLogin = async (e) => {
-        e.preventDefault();
-        setLoading(true);
-        setError('');
+  const handleLogin = async (e) => {
+    e.preventDefault(); // Impede a página de recarregar
+    setLoading(true);
+    setErrorMsg('');
 
-        try {
-            // A nova função de login do Supabase
-            const { error } = await supabase.auth.signInWithPassword({
-                email: email,
-                password: password,
-            });
+    try {
+      // 1. Tenta logar no Supabase
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-            if (error) throw error;
-            // O redirecionamento para o Dashboard é tratado automaticamente pelo AuthContext
-        } catch (err) {
-            setError('E-mail ou senha inválidos. Por favor, tente novamente.');
-            console.error("Erro de autenticação:", err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
+      if (error) throw error;
 
-    // O restante do JSX (a parte visual) continua exatamente o mesmo
-    return (
-        <Container component="main" maxWidth="xs">
-            <Box sx={{ marginTop: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <Typography component="h1" variant="h4" sx={{ mb: 3, fontWeight: 'bold' }}>Novva R&S</Typography>
-                <Typography component="p" variant="subtitle1" color="text.secondary">Bem-vindo(a)!</Typography>
-                <Box component="form" onSubmit={handleLogin} noValidate sx={{ mt: 1 }}>
-                    <TextField margin="normal" required fullWidth id="email" label="Endereço de E-mail" name="email" autoComplete="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
-                    <TextField margin="normal" required fullWidth name="password" label="Senha" type="password" id="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-                    {error && <Alert severity="error" sx={{ mt: 2, width: '100%' }}>{error}</Alert>}
-                    <Button type="submit" fullWidth variant="contained" sx={{ mt: 3, mb: 2, py: 1.5 }} disabled={loading}>
-                        {loading ? <CircularProgress size={24} color="inherit" /> : 'Entrar'}
-                    </Button>
-                </Box>
-            </Box>
-        </Container>
-    );
-};
+      // 2. Se deu certo, redireciona para o Dashboard
+      if (data.user) {
+        console.log("Login sucesso, redirecionando...");
+        navigate('/dashboard');
+      }
+      
+    } catch (error) {
+      console.error('Erro de login:', error);
+      setErrorMsg('Falha ao entrar. Verifique email e senha.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-export default LoginPage;
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="max-w-md w-full bg-white p-8 rounded shadow space-y-6">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold text-gray-900">Acesso Recrutador</h1>
+          <p className="text-gray-500 mt-2">Entre para gerenciar suas vagas</p>
+        </div>
+
+        {errorMsg && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+            {errorMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Email</label>
+            <input
+              type="email"
+              required
+              className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Senha</label>
+            <input
+              type="password"
+              required
+              className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none disabled:opacity-50"
+          >
+            {loading ? 'Entrando...' : 'Entrar'}
+          </button>
+        </form>
+
+        <div className="text-center mt-4">
+          <Link to="/register" className="text-sm text-blue-600 hover:text-blue-500">
+            Não tem uma conta? Cadastre-se
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
