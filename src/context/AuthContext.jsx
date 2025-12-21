@@ -1,63 +1,66 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../supabase/client';
-// Note: NÃO estamos importando useAuth nem useEffect para redirecionamento
 
-export default function Login() {
-  const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+const AuthContext = createContext({});
 
-  // --- SE TIVER ALGUM useEffect AQUI, APAGUE! ---
+// --- A LINHA QUE ESTAVA FALTANDO É ESTA ABAIXO: ---
+export const useAuth = () => useContext(AuthContext);
+// --------------------------------------------------
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+  useEffect(() => {
+    // 1. Verifica a sessão inicial
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setUser(session?.user ?? null);
+      } catch (error) {
+        console.error("Erro ao verificar sessão:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-      if (error) throw error;
+    checkSession();
 
-      // Só redireciona AQUI, após o sucesso do clique
-      navigate('/dashboard');
-      
-    } catch (error) {
-      alert(error.message);
-    } finally {
+    // 2. Escuta mudanças na autenticação
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
       setLoading(false);
-    }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // O valor que será compartilhado com toda a aplicação
+  const value = {
+    signUp: (data) => supabase.auth.signUp(data),
+    signIn: (data) => supabase.auth.signInWithPassword(data),
+    signOut: () => supabase.auth.signOut(),
+    user,
+    loading
   };
 
-  // ... (Restante do HTML do formulário igual ao anterior) ...
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="max-w-md w-full bg-white p-8 rounded shadow space-y-6">
-        <h2 className="text-center text-3xl font-extrabold text-gray-900">Acesso Recrutador</h2>
-        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
-           {/* Seus inputs de email/senha */}
-           <div className="rounded-md shadow-sm -space-y-px">
-            <div>
-              <input type="email" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </div>
-            <div>
-              <input type="password" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} />
-            </div>
-          </div>
-           <div>
-            <button type="submit" disabled={loading} className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none disabled:opacity-50">
-              {loading ? 'Entrando...' : 'Entrar'}
-            </button>
-          </div>
-        </form>
+  // BLOQUEIO DE SEGURANÇA (Resolve o Loop):
+  // Enquanto o Supabase não responde se tem usuário ou não, mostramos "Carregando".
+  // Assim, o PrivateRoute nunca roda com dados incompletos.
+  if (loading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-gray-50">
         <div className="text-center">
-          <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">Criar conta</Link>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Carregando sistema...</p>
         </div>
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
   );
-}
+};
