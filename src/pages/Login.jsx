@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 
@@ -8,42 +8,24 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Verificação inicial para ver se as chaves carregaram
-  useEffect(() => {
-    console.log("URL do Supabase:", import.meta.env.VITE_SUPABASE_URL);
-    if (!import.meta.env.VITE_SUPABASE_URL) {
-      alert("ERRO CRÍTICO: A URL do Supabase não foi encontrada. Verifique as Variáveis de Ambiente na Vercel!");
-    }
-  }, []);
-
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      // 1. Tentativa de Login
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      // 2. Se o Supabase retornou erro (Senha errada, Email não confirmado, etc)
-      if (error) {
-        alert(`ERRO DO SUPABASE: ${error.message}`);
-        throw error;
-      }
+      if (error) throw error;
 
-      // 3. Se chegou aqui, o login foi aceito. Verificamos a sessão.
-      if (data?.user) {
-        alert("LOGIN SUCESSO! O usuário foi autenticado. Redirecionando para /dashboard...");
-        navigate('/dashboard');
-      } else {
-        alert("ALERTA: Login pareceu funcionar, mas nenhum usuário foi retornado.");
-      }
+      // Se passou daqui, o login foi aceito.
+      // O AuthContext vai atualizar automaticamente.
+      navigate('/dashboard');
       
     } catch (error) {
-      console.error('Erro detalhado:', error);
-      // O alert já foi disparado acima no bloco 'if (error)'
+      alert(error.message);
     } finally {
       setLoading(false);
     }
@@ -55,7 +37,6 @@ export default function Login() {
         <h2 className="text-center text-3xl font-extrabold text-gray-900">
           Acesso Recrutador
         </h2>
-        
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
@@ -86,11 +67,10 @@ export default function Login() {
               disabled={loading}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
             >
-              {loading ? 'Processando...' : 'Entrar'}
+              {loading ? 'Entrando...' : 'Entrar'}
             </button>
           </div>
         </form>
-
         <div className="text-center">
           <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">
             Criar conta
