@@ -1,22 +1,14 @@
-// src/components/charts/ClassificationChart.jsx
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList } from 'recharts';
-import { Box } from '@mui/material';
 
 const ClassificationChart = ({ data }) => {
-  // O Recharts espera os dados com os candidatos no eixo Y, então não precisamos de transformações
   return (
-    <Box sx={{ width: '100%', height: 300, mt: 4 }}>
+    <div className="w-full h-[300px] mt-4">
       <ResponsiveContainer>
         <BarChart
           layout="vertical"
           data={data}
-          margin={{
-            top: 5,
-            right: 30,
-            left: 100, // Aumenta o espaço para nomes longos
-            bottom: 5,
-          }}
+          margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
         >
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis type="number" />
@@ -34,7 +26,7 @@ const ClassificationChart = ({ data }) => {
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-    </Box>
+    </div>
   );
 };
 
