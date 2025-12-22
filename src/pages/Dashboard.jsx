@@ -7,7 +7,7 @@ import { formatStatus } from '../utils/formatters';
 import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { Plus, Loader2, Users, Briefcase, Building2, Crown } from 'lucide-react';
+import { Plus, Loader2, Users, Briefcase, Building2, Crown, User } from 'lucide-react';
 import CreateJobModal from '../components/jobs/CreateJobModal';
 
 const STATUS_PRIORITY = { 'active': 1, 'filled': 2, 'inactive': 3 };
@@ -23,11 +23,12 @@ const getStatusVariant = (status) => {
 
 const Dashboard = () => {
     const navigate = useNavigate();
-    const { currentUser } = useAuth(); // Se tiver o objeto user no contexto
+    const { currentUser } = useAuth();
     
     const [jobs, setJobs] = useState([]);
     const [planId, setPlanId] = useState(null);
-    const [companyName, setCompanyName] = useState(''); // Novo estado para nome da empresa
+    const [companyName, setCompanyName] = useState('');
+    const [userName, setUserName] = useState(''); // Novo estado para o nome do usuário
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [openCreateModal, setOpenCreateModal] = useState(false);
@@ -52,21 +53,24 @@ const Dashboard = () => {
             setJobs(data.jobs || []);
             setPlanId(data.planId);
 
-            // 2. Busca Nome da Empresa (Tenant)
-            // Precisamos pegar o tenantId do usuário primeiro para buscar o nome
+            // 2. Busca Dados do Usuário e Tenant
             const { data: userData } = await supabase
                 .from('users')
-                .select('tenantId')
+                .select('tenantId, name') // Buscando o nome do usuário também
                 .eq('id', session.user.id)
                 .single();
 
-            if (userData?.tenantId) {
-                const { data: tenantData } = await supabase
-                    .from('tenants')
-                    .select('companyName')
-                    .eq('id', userData.tenantId)
-                    .single();
-                setCompanyName(tenantData?.companyName || 'Sua Empresa');
+            if (userData) {
+                setUserName(userData.name || 'Usuário'); // Define o nome do usuário
+                
+                if (userData.tenantId) {
+                    const { data: tenantData } = await supabase
+                        .from('tenants')
+                        .select('companyName')
+                        .eq('id', userData.tenantId)
+                        .single();
+                    setCompanyName(tenantData?.companyName || 'Minha Empresa');
+                }
             }
 
         } catch (err) {
@@ -79,7 +83,6 @@ const Dashboard = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // Extrai departamentos únicos para o filtro
     const uniqueDepartments = useMemo(() => {
         const depts = jobs.map(j => j.company_departments?.name).filter(Boolean);
         return [...new Set(depts)];
@@ -100,15 +103,13 @@ const Dashboard = () => {
         });
     }, [jobs, statusFilter, deptFilter]);
 
-    // KPIs Atualizados
     const activeJobsCount = jobs.filter(j => j.status === 'active').length;
     const totalCandidates = jobs.reduce((acc, job) => acc + (job.candidateCount || 0), 0);
-    // KPI 2: Candidatos por Vaga (Média)
     const candidatesPerJob = activeJobsCount > 0 ? (totalCandidates / activeJobsCount).toFixed(1) : '0';
 
     return (
         <div className="space-y-6">
-            {/* Header com Info da Empresa e Plano (Ponto 3) */}
+            {/* Header Ajustado: Tenant | Usuário */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-lg border shadow-sm">
                 <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -116,9 +117,14 @@ const Dashboard = () => {
                         <h1 className="text-2xl font-bold tracking-tight text-gray-900">
                             {loading ? 'Carregando...' : companyName}
                         </h1>
+                        <span className="text-gray-300 text-2xl mx-1 font-light">|</span>
+                        <div className="flex items-center gap-2 text-gray-600 font-medium">
+                            <User className="w-5 h-5" />
+                            {loading ? '...' : userName}
+                        </div>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <span>Painel de Recrutamento</span>
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-2">
+                        <span>Painel de Vagas</span> {/* Texto corrigido */}
                         <span>•</span>
                         <span className="flex items-center text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full font-medium capitalize">
                             <Crown className="w-3 h-3 mr-1" />
@@ -131,7 +137,6 @@ const Dashboard = () => {
                 </Button>
             </div>
 
-            {/* Cards de Métricas */}
             <div className="grid gap-4 md:grid-cols-3">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -148,7 +153,6 @@ const Dashboard = () => {
                         <Users className="h-4 w-4 text-gray-500" />
                     </CardHeader>
                     <CardContent>
-                        {/* Ponto 2: KPI ajustado */}
                         <div className="text-2xl font-bold">{candidatesPerJob}</div>
                         <p className="text-xs text-gray-500 mt-1">Média em vagas ativas</p>
                     </CardContent>
@@ -164,13 +168,11 @@ const Dashboard = () => {
                 </Card>
             </div>
 
-            {/* Filtros e Tabela */}
             <Card>
                 <CardHeader>
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                         <CardTitle>Gerenciar Vagas</CardTitle>
                         <div className="flex gap-2 w-full sm:w-auto">
-                            {/* Filtro de Departamento (Ponto 1) */}
                             <select 
                                 className="text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 h-9"
                                 value={deptFilter}
@@ -182,7 +184,6 @@ const Dashboard = () => {
                                 ))}
                             </select>
 
-                            {/* Filtro de Status */}
                             <select 
                                 className="text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 h-9"
                                 value={statusFilter}
@@ -209,7 +210,6 @@ const Dashboard = () => {
                                 <thead className="[&_tr]:border-b bg-gray-50/50">
                                     <tr className="border-b transition-colors">
                                         <th className="h-10 px-4 align-middle font-medium text-gray-500">Título</th>
-                                        {/* Ponto 1: Coluna Departamento */}
                                         <th className="h-10 px-4 align-middle font-medium text-gray-500">Departamento</th>
                                         <th className="h-10 px-4 align-middle font-medium text-gray-500">Status</th>
                                         <th className="h-10 px-4 align-middle font-medium text-gray-500 text-center">Candidatos</th>
@@ -250,7 +250,7 @@ const Dashboard = () => {
             <CreateJobModal 
                 open={openCreateModal}
                 handleClose={() => setOpenCreateModal(false)}
-                onJobCreated={fetchData} // Atualiza a lista após criar
+                onJobCreated={fetchData} 
             />
         </div>
     );

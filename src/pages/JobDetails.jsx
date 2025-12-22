@@ -60,7 +60,6 @@ export default function JobDetails() {
     finally { setSavingParams(false); }
   };
 
-  // Funções auxiliares para manipulação de critérios (simplificadas)
   const addCriteria = (type) => {
     const text = prompt("Novo critério:");
     if(text) setEvalParams(p => ({...p, [type]: [...p[type], {id: crypto.randomUUID(), text, weight: 1}]}));
@@ -83,7 +82,9 @@ export default function JobDetails() {
                     <span className="flex items-center"><Calendar className="w-4 h-4 mr-1"/> {new Date(job.created_at).toLocaleDateString()}</span>
                 </div>
             </div>
-            <Button variant="outline" onClick={handleCopyLink}><Share2 className="w-4 h-4 mr-2"/> Formulário de Candidatura </Button>
+            <Button variant="outline" onClick={handleCopyLink}>
+                <Share2 className="w-4 h-4 mr-2"/> Compartilhar Formulário de Candidatura
+            </Button>
         </div>
       </div>
 
@@ -128,17 +129,57 @@ export default function JobDetails() {
       )}
 
       {activeTab === 'evaluation' && (
-        <div className="bg-white p-6 rounded-lg border shadow-sm space-y-6">
-            <div className="flex justify-between">
-                <h3 className="font-medium">Critérios Técnicos</h3>
-                <Button size="sm" variant="ghost" onClick={() => addCriteria('tecnico')}><Plus className="w-4 h-4 mr-2"/> Adicionar</Button>
+        <div className="bg-white p-6 rounded-lg border shadow-sm space-y-8">
+            <div className="border-b pb-4">
+                <h2 className="text-lg font-semibold">Configuração da Avaliação</h2>
+                <p className="text-sm text-gray-500">Defina os critérios que serão usados para avaliar os candidatos desta vaga.</p>
             </div>
-            {evalParams.tecnico.map(item => (
-                <div key={item.id} className="flex justify-between items-center bg-gray-50 p-2 rounded">
-                    <span>{item.text}</span>
-                    <button onClick={() => removeCriteria('tecnico', item.id)} className="text-red-500"><Trash2 className="w-4 h-4"/></button>
+
+            {/* CRITÉRIOS DE TRIAGEM */}
+            <div>
+                <div className="flex justify-between items-center mb-3">
+                    <h3 className="font-medium flex items-center"><User className="w-4 h-4 mr-2 text-purple-600"/> Triagem (Ex: Tem disponibilidade?)</h3>
+                    <Button size="sm" variant="ghost" onClick={() => addCriteria('triagem')}><Plus className="w-4 h-4 mr-2"/> Adicionar</Button>
                 </div>
-            ))}
+                {evalParams.triagem.length === 0 && <p className="text-sm text-gray-400 italic">Nenhum critério definido.</p>}
+                {evalParams.triagem.map(item => (
+                    <div key={item.id} className="flex justify-between items-center bg-gray-50 p-2 rounded mb-2">
+                        <span>{item.text}</span>
+                        <button onClick={() => removeCriteria('triagem', item.id)} className="text-red-500"><Trash2 className="w-4 h-4"/></button>
+                    </div>
+                ))}
+            </div>
+
+            {/* CRITÉRIOS TÉCNICOS */}
+            <div>
+                <div className="flex justify-between items-center mb-3">
+                    <h3 className="font-medium flex items-center"><Briefcase className="w-4 h-4 mr-2 text-blue-600"/> Critérios Técnicos (1 a 5)</h3>
+                    <Button size="sm" variant="ghost" onClick={() => addCriteria('tecnico')}><Plus className="w-4 h-4 mr-2"/> Adicionar</Button>
+                </div>
+                {evalParams.tecnico.length === 0 && <p className="text-sm text-gray-400 italic">Nenhum critério definido.</p>}
+                {evalParams.tecnico.map(item => (
+                    <div key={item.id} className="flex justify-between items-center bg-gray-50 p-2 rounded mb-2">
+                        <span>{item.text}</span>
+                        <button onClick={() => removeCriteria('tecnico', item.id)} className="text-red-500"><Trash2 className="w-4 h-4"/></button>
+                    </div>
+                ))}
+            </div>
+
+            {/* CRITÉRIOS DE CULTURA */}
+            <div>
+                <div className="flex justify-between items-center mb-3">
+                    <h3 className="font-medium flex items-center"><User className="w-4 h-4 mr-2 text-green-600"/> Fit Cultural</h3>
+                    <Button size="sm" variant="ghost" onClick={() => addCriteria('cultura')}><Plus className="w-4 h-4 mr-2"/> Adicionar</Button>
+                </div>
+                {evalParams.cultura.length === 0 && <p className="text-sm text-gray-400 italic">Nenhum critério definido.</p>}
+                {evalParams.cultura.map(item => (
+                    <div key={item.id} className="flex justify-between items-center bg-gray-50 p-2 rounded mb-2">
+                        <span>{item.text}</span>
+                        <button onClick={() => removeCriteria('cultura', item.id)} className="text-red-500"><Trash2 className="w-4 h-4"/></button>
+                    </div>
+                ))}
+            </div>
+
             <div className="pt-4 border-t flex justify-end">
                 <Button onClick={handleSaveParameters} disabled={savingParams}>
                     {savingParams ? <Loader2 className="animate-spin w-4 h-4"/> : <><Save className="w-4 h-4 mr-2"/> Salvar Configurações</>}
