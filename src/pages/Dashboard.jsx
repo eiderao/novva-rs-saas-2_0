@@ -6,17 +6,18 @@ import { formatStatus } from '../utils/formatters';
 import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { Plus, Loader2, Users, Briefcase, Building2, Crown, User, Filter } from 'lucide-react';
+import { Plus, Loader2, Users, Briefcase, Building2, Crown, User, AlertTriangle } from 'lucide-react';
 import CreateJobModal from '../components/jobs/CreateJobModal';
 
 const Dashboard = () => {
     const navigate = useNavigate();
     const { currentUser } = useAuth();
     
+    // Estado inicial seguro
     const [jobs, setJobs] = useState([]);
-    const [meta, setMeta] = useState({ companyName: '', userName: '', planId: '' });
+    const [meta, setMeta] = useState({ companyName: 'Carregando...', userName: '...', planId: '...' });
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
+    const [error, setError] = useState(null);
     const [openCreateModal, setOpenCreateModal] = useState(false);
     
     // Filtros
@@ -25,34 +26,44 @@ const Dashboard = () => {
 
     const fetchData = async () => {
         setLoading(true);
+        setError(null);
         try {
             const { data: { session } } = await supabase.auth.getSession();
-            if (!session) return; // AuthContext redireciona
+            if (!session) return; // AuthContext lida com redirect
 
             const response = await fetch('/api/jobs', { 
                 headers: { 'Authorization': `Bearer ${session.access_token}` } 
             });
 
-            if (!response.ok) throw new Error('Falha ao carregar dados.');
-            
             const data = await response.json();
+
+            if (!response.ok) {
+                // Exibe o erro real vindo da API
+                throw new Error(data.details || data.error || 'Erro desconhecido ao buscar dados.');
+            }
+            
             setJobs(data.jobs || []);
-            setMeta(data.meta || {});
+            setMeta(data.meta || { companyName: 'N/A', userName: 'N/A', planId: 'N/A' });
+
         } catch (err) {
-            console.error(err);
+            console.error("Erro no Dashboard:", err);
             setError(err.message);
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => { if (currentUser) fetchData(); }, [currentUser]);
+    useEffect(() => { 
+        if (currentUser) fetchData(); 
+    }, [currentUser]);
 
-    // Extrai departamentos únicos das vagas carregadas
+    // Extrai departamentos únicos
     const uniqueDepartments = useMemo(() => {
-        return [...new Set(jobs.map(j => j.deptName))].sort();
+        const depts = jobs.map(j => j.deptName).filter(Boolean);
+        return [...new Set(depts)].sort();
     }, [jobs]);
 
+    // Filtros
     const processedJobs = useMemo(() => {
         return jobs.filter(job => {
             const matchStatus = statusFilter === 'all' || job.status === statusFilter;
@@ -73,16 +84,18 @@ const Dashboard = () => {
                 <div>
                     <div className="flex items-center gap-2 mb-1">
                         <Building2 className="w-5 h-5 text-gray-400" />
-                        <h1 className="text-2xl font-bold text-gray-900">
-                            {loading ? 'Carregando...' : meta.companyName}
+                        <h1 className="text-2xl font-bold tracking-tight text-gray-900">
+                            {meta.companyName}
                         </h1>
                         <span className="text-gray-300 mx-2">|</span>
-                        <div className="flex items-center gap-2 text-gray-600">
+                        <div className="flex items-center gap-2 text-gray-600 font-medium">
                             <User className="w-4 h-4" /> {meta.userName}
                         </div>
                     </div>
                     <div className="flex items-center gap-2 text-sm text-gray-500 mt-2">
-                        <span className="font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full capitalize flex items-center">
+                        <span>Painel de Vagas</span>
+                        <span>•</span>
+                        <span className="flex items-center text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full font-medium capitalize">
                             <Crown className="w-3 h-3 mr-1" /> Plano {meta.planId}
                         </span>
                     </div>
@@ -91,6 +104,20 @@ const Dashboard = () => {
                     <Plus className="mr-2 h-4 w-4" /> Nova Vaga
                 </Button>
             </div>
+
+            {/* Mensagem de Erro (Se houver) */}
+            {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md flex items-center gap-3">
+                    <AlertTriangle className="w-5 h-5" />
+                    <div>
+                        <p className="font-bold">Não foi possível carregar os dados.</p>
+                        <p className="text-sm">{error}</p>
+                    </div>
+                    <Button variant="outline" size="sm" className="ml-auto bg-white hover:bg-gray-50" onClick={fetchData}>
+                        Tentar Novamente
+                    </Button>
+                </div>
+            )}
 
             {/* KPIs */}
             <div className="grid gap-4 md:grid-cols-3">
@@ -124,10 +151,10 @@ const Dashboard = () => {
             <Card>
                 <CardHeader>
                     <div className="flex flex-col sm:flex-row justify-between gap-4">
-                        <CardTitle>Painel de Vagas</CardTitle>
+                        <CardTitle>Gerenciar Vagas</CardTitle>
                         <div className="flex gap-2">
                             <select 
-                                className="h-9 rounded-md border border-gray-300 text-sm px-3 bg-white"
+                                className="h-9 rounded-md border border-gray-300 text-sm px-3 bg-white focus:ring-2 focus:ring-blue-500"
                                 value={deptFilter}
                                 onChange={(e) => setDeptFilter(e.target.value)}
                             >
@@ -135,7 +162,7 @@ const Dashboard = () => {
                                 {uniqueDepartments.map(d => <option key={d} value={d}>{d}</option>)}
                             </select>
                             <select 
-                                className="h-9 rounded-md border border-gray-300 text-sm px-3 bg-white"
+                                className="h-9 rounded-md border border-gray-300 text-sm px-3 bg-white focus:ring-2 focus:ring-blue-500"
                                 value={statusFilter}
                                 onChange={(e) => setStatusFilter(e.target.value)}
                             >
@@ -149,11 +176,14 @@ const Dashboard = () => {
                 </CardHeader>
                 <CardContent>
                     {loading ? (
-                        <div className="flex justify-center py-10"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>
-                    ) : error ? (
-                        <div className="text-red-500 text-center py-10">{error}</div>
+                        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>
                     ) : processedJobs.length === 0 ? (
-                        <div className="text-center py-10 text-gray-500">Nenhuma vaga encontrada.</div>
+                        <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
+                            <p>Nenhuma vaga encontrada com estes filtros.</p>
+                            {statusFilter !== 'all' && (
+                                <Button variant="link" onClick={() => setStatusFilter('all')} className="mt-2">Limpar filtros</Button>
+                            )}
+                        </div>
                     ) : (
                         <div className="relative w-full overflow-auto">
                             <table className="w-full caption-bottom text-sm text-left">
@@ -169,13 +199,15 @@ const Dashboard = () => {
                                     {processedJobs.map((job) => (
                                         <tr 
                                             key={job.id} 
-                                            className="border-b transition-colors hover:bg-gray-50 cursor-pointer"
+                                            className="border-b transition-colors hover:bg-gray-50 cursor-pointer group"
                                             onClick={() => navigate(`/jobs/${job.id}`)}
                                         >
-                                            <td className="p-4 align-middle font-medium text-gray-600">
-                                                {meta.companyName} <span className="text-gray-300 mx-1">/</span> {job.deptName}
+                                            <td className="p-4 align-middle text-gray-600">
+                                                <span className="font-medium text-gray-900">{meta.companyName}</span> 
+                                                <span className="text-gray-300 mx-2">/</span> 
+                                                {job.deptName}
                                             </td>
-                                            <td className="p-4 align-middle font-medium text-blue-600 hover:underline">
+                                            <td className="p-4 align-middle font-medium text-blue-600 group-hover:underline">
                                                 {job.title}
                                             </td>
                                             <td className="p-4 align-middle">
@@ -184,7 +216,7 @@ const Dashboard = () => {
                                                 </Badge>
                                             </td>
                                             <td className="p-4 align-middle text-center">
-                                                <Badge variant="outline" className="bg-gray-50">
+                                                <Badge variant="outline" className="bg-gray-50 text-gray-700">
                                                     {job.candidateCount}
                                                 </Badge>
                                             </td>
