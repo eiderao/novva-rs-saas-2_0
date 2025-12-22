@@ -3,75 +3,59 @@ import { supabase } from '../../supabase/client';
 import { Modal } from '../ui/modal';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { Textarea } from '../ui/textarea';
 import { Label } from '../ui/label';
 import AreaSelect from '../AreaSelect';
 import { Loader2, AlertCircle } from 'lucide-react';
 
 const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
-  const [jobTitle, setJobTitle] = useState('');
-  const [departmentId, setDepartmentId] = useState(null);
+  const initialState = {
+    title: '', description: '', requirements: '', type: 'CLT',
+    location_type: 'Híbrido', company_department_id: null
+  };
+  const [formData, setFormData] = useState(initialState);
   const [tenantId, setTenantId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Busca o Tenant ID assim que o modal abre
   useEffect(() => {
     if (open) {
-      const fetchTenantId = async () => {
-        try {
-          const { data: { user } } = await supabase.auth.getSession();
-          if (!user) return;
-
-          const { data: userData, error } = await supabase
-            .from('users')
-            .select('tenantId')
-            .eq('id', user.id)
-            .single();
-
-          if (error) throw error;
-          if (userData?.tenantId) setTenantId(userData.tenantId);
-          
-        } catch (err) {
-          console.error('Erro ao buscar tenant:', err);
-          setError("Erro ao carregar configurações da empresa.");
+      const fetchTenant = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if(user) {
+            const { data } = await supabase.from('user_profiles').select('tenantId').eq('id', user.id).single();
+            if(data) setTenantId(data.tenantId);
         }
       };
-      fetchTenantId();
+      fetchTenant();
     }
   }, [open]);
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setLoading(true);
     setError('');
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Você não está autenticado.");
+      if (!formData.title) throw new Error("Título é obrigatório.");
 
-      const response = await fetch('/api/createJob', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ 
-            title: jobTitle, 
-            company_department_id: departmentId 
-        }),
+      // Inserção direta no Supabase
+      const { error: insertError } = await supabase.from('jobs').insert({
+        ...formData,
+        tenantId: tenantId,
+        status: 'active',
+        company_department_id: formData.company_department_id || null,
+        parameters: { 
+            triagem: [], cultura: [], tecnico: [], 
+            notas: [{id:'1',nome:'Abaixo',valor:0},{id:'2',nome:'Atende',valor:50},{id:'3',nome:'Supera',valor:100}] 
+        }
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Não foi possível criar a vaga.");
-      }
+      if (insertError) throw insertError;
 
-      // Sucesso
-      setJobTitle('');
-      setDepartmentId(null);
-      onJobCreated(); 
+      setFormData(initialState);
+      onJobCreated();
       handleClose();
-
     } catch (err) {
       setError(err.message);
     } finally {
@@ -79,63 +63,21 @@ const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
     }
   };
 
+  const handleChange = (e) => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+
   return (
-    <Modal
-      isOpen={open}
-      onClose={handleClose}
-      title="Criar Nova Vaga"
-    >
-      <form onSubmit={handleSubmit} className="space-y-6">
-        
-        <div>
-          <Label htmlFor="jobTitle">Título da Vaga</Label>
-          <Input
-            id="jobTitle"
-            required
-            autoFocus
-            placeholder="Ex: Analista Financeiro"
-            value={jobTitle}
-            onChange={(e) => setJobTitle(e.target.value)}
-            disabled={loading}
-          />
+    <Modal isOpen={open} onClose={handleClose} title="Nova Vaga">
+      <form onSubmit={handleSubmit} className="space-y-4 max-h-[80vh] overflow-y-auto px-1">
+        <div><Label>Título *</Label><Input name="title" value={formData.title} onChange={handleChange} required /></div>
+        {tenantId && <AreaSelect currentTenantId={tenantId} selectedAreaId={formData.company_department_id} onSelectArea={(id) => setFormData(p => ({...p, company_department_id: id}))} />}
+        <div className="grid grid-cols-2 gap-4">
+            <div><Label>Modelo</Label><select name="location_type" className="w-full border rounded h-10 px-2" value={formData.location_type} onChange={handleChange}><option>Presencial</option><option>Híbrido</option><option>Remoto</option></select></div>
+            <div><Label>Contrato</Label><select name="type" className="w-full border rounded h-10 px-2" value={formData.type} onChange={handleChange}><option>CLT</option><option>PJ</option><option>Estágio</option></select></div>
         </div>
-
-        {/* Ponto 4: Área Select agora lida melhor com o estado de loading interno */}
-        <div className="space-y-2">
-            {tenantId ? (
-                <AreaSelect 
-                    currentTenantId={tenantId}
-                    selectedAreaId={departmentId}
-                    onSelectArea={setDepartmentId}
-                />
-            ) : (
-                <div className="flex items-center text-sm text-gray-500 bg-gray-50 p-3 rounded-md">
-                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                   Carregando departamentos...
-                </div>
-            )}
-        </div>
-
-        {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-sm text-red-700">
-                <AlertCircle className="w-4 h-4" />
-                {error}
-            </div>
-        )}
-        
-        <div className="flex justify-end gap-3 pt-2">
-          <Button type="button" variant="outline" onClick={handleClose} disabled={loading}>
-            Cancelar
-          </Button>
-          <Button type="submit" disabled={loading || !jobTitle}>
-            {loading ? (
-                <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" /> 
-                    Criando...
-                </>
-            ) : 'Criar Vaga'}
-          </Button>
-        </div>
+        <div><Label>Descrição</Label><Textarea name="description" value={formData.description} onChange={handleChange} /></div>
+        <div><Label>Requisitos</Label><Textarea name="requirements" value={formData.requirements} onChange={handleChange} /></div>
+        {error && <div className="text-red-500 text-sm">{error}</div>}
+        <div className="flex justify-end gap-2 pt-2 border-t"><Button variant="outline" onClick={handleClose}>Cancelar</Button><Button type="submit" disabled={loading}>{loading ? <Loader2 className="animate-spin"/> : 'Criar'}</Button></div>
       </form>
     </Modal>
   );
