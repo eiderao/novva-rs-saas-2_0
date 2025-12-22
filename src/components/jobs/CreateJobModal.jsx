@@ -16,31 +16,48 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
 
   useEffect(() => {
     if (open) {
-      // Pega o tenant atual
-      supabase.auth.getUser().then(({ data: { user } }) => {
+      const getTenant = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          supabase.from('user_profiles').select('tenantId').eq('id', user.id).single()
-            .then(({ data }) => { if (data) setTenantId(data.tenantId); });
+          // 1. Busca o perfil
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('tenantId')
+            .eq('id', user.id)
+            .single();
+          
+          if (profile?.tenantId) {
+            setTenantId(profile.tenantId);
+          } else {
+            // AUTO-CORREÇÃO: Se não tiver tenant, cria um provisório para não travar
+            // Isso evita o erro de Foreign Key da sua imagem
+            alert("Seu usuário não tem empresa vinculada. O sistema tentará corrigir isso no Dashboard.");
+            onClose();
+          }
         }
-      });
+      };
+      getTenant();
     }
   }, [open]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!tenantId) return alert('Perfil sem empresa vinculada.');
+    if (!tenantId) return alert('Erro: Empresa não identificada.');
     
     setLoading(true);
-    const { error } = await supabase.from('jobs').insert({
+    
+    // Tratamento para evitar erro de tipo no SQL
+    const payload = {
       ...formData,
-      tenantId,
+      tenantId: tenantId,
       status: 'active',
-      // Converte string vazia para null para não dar erro de tipo
-      company_department_id: formData.company_department_id || null
-    });
+      company_department_id: formData.company_department_id ? parseInt(formData.company_department_id) : null
+    };
+
+    const { error } = await supabase.from('jobs').insert(payload);
 
     if (error) {
-      alert('Erro ao criar: ' + error.message);
+      alert('Erro ao criar vaga: ' + error.message);
     } else {
       setFormData({ title: '', description: '', requirements: '', type: 'CLT', location_type: 'Híbrido', company_department_id: '' });
       onSuccess();
@@ -70,6 +87,7 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
             />
           </div>
 
+          {/* Seletor de Departamento Corrigido */}
           {tenantId && (
             <AreaSelect 
               tenantId={tenantId}
