@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import { useAuth } from '../context/AuthContext';
 import { formatStatus } from '../utils/formatters';
@@ -7,7 +7,7 @@ import { formatStatus } from '../utils/formatters';
 import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { Plus, Loader2, Users, Briefcase, Building2, Crown, User } from 'lucide-react';
+import { Plus, Loader2, Users, Briefcase, Building2, Crown, User, AlertTriangle } from 'lucide-react';
 import CreateJobModal from '../components/jobs/CreateJobModal';
 
 const STATUS_PRIORITY = { 'active': 1, 'filled': 2, 'inactive': 3 };
@@ -25,10 +25,10 @@ const Dashboard = () => {
     const navigate = useNavigate();
     const { currentUser } = useAuth();
     
+    // Estados Consolidados
     const [jobs, setJobs] = useState([]);
-    const [planId, setPlanId] = useState(null);
-    const [companyName, setCompanyName] = useState('');
-    const [userName, setUserName] = useState(''); // Novo estado para o nome do usuário
+    const [meta, setMeta] = useState({ companyName: '', userName: '', planId: '' });
+    
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [openCreateModal, setOpenCreateModal] = useState(false);
@@ -39,52 +39,47 @@ const Dashboard = () => {
 
     const fetchData = async () => {
         setLoading(true);
+        setError('');
         try {
             const { data: { session } } = await supabase.auth.getSession();
-            if (!session) throw new Error("Sessão não encontrada.");
+            if (!session) {
+                // Se não tem sessão, força logout/login
+                navigate('/login');
+                return;
+            }
             
-            // 1. Busca Vagas
+            // Chamada ÚNICA e CENTRALIZADA
             const response = await fetch('/api/jobs', { 
                 headers: { 'Authorization': `Bearer ${session.access_token}` } 
             });
 
-            if (!response.ok) throw new Error('Falha ao buscar vagas.');
             const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.details || data.error || 'Falha na comunicação com o servidor.');
+            }
+            
             setJobs(data.jobs || []);
-            setPlanId(data.planId);
-
-            // 2. Busca Dados do Usuário e Tenant
-            const { data: userData } = await supabase
-                .from('users')
-                .select('tenantId, name') // Buscando o nome do usuário também
-                .eq('id', session.user.id)
-                .single();
-
-            if (userData) {
-                setUserName(userData.name || 'Usuário'); // Define o nome do usuário
-                
-                if (userData.tenantId) {
-                    const { data: tenantData } = await supabase
-                        .from('tenants')
-                        .select('companyName')
-                        .eq('id', userData.tenantId)
-                        .single();
-                    setCompanyName(tenantData?.companyName || 'Minha Empresa');
-                }
+            // Preenche os metadados vindos do servidor
+            if (data.meta) {
+                setMeta(data.meta);
             }
 
         } catch (err) {
-            console.error("Erro:", err);
+            console.error("Erro Dashboard:", err);
             setError(err.message);
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => { fetchData(); }, []);
+    useEffect(() => { 
+        if (currentUser) fetchData(); 
+    }, [currentUser]);
 
+    // Extrai departamentos únicos para o filtro (Baseado nos dados recebidos)
     const uniqueDepartments = useMemo(() => {
-        const depts = jobs.map(j => j.company_departments?.name).filter(Boolean);
+        const depts = jobs.map(j => j.deptName).filter(Boolean);
         return [...new Set(depts)];
     }, [jobs]);
 
@@ -92,43 +87,40 @@ const Dashboard = () => {
       return jobs
         .filter(job => {
             const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
-            const matchesDept = deptFilter === 'all' || job.company_departments?.name === deptFilter;
+            const matchesDept = deptFilter === 'all' || job.deptName === deptFilter;
             return matchesStatus && matchesDept;
-        })
-        .sort((a, b) => {
-          const priorityA = STATUS_PRIORITY[a.status] || 99;
-          const priorityB = STATUS_PRIORITY[b.status] || 99;
-          if (priorityA !== priorityB) return priorityA - priorityB;
-          return a.title.localeCompare(b.title);
         });
+        // A ordenação já vem feita do backend (Regra 5), então não precisamos reordenar aqui
+        // a menos que o usuário mude um filtro que exija reordenação visual.
     }, [jobs, statusFilter, deptFilter]);
 
+    // KPIs
     const activeJobsCount = jobs.filter(j => j.status === 'active').length;
     const totalCandidates = jobs.reduce((acc, job) => acc + (job.candidateCount || 0), 0);
     const candidatesPerJob = activeJobsCount > 0 ? (totalCandidates / activeJobsCount).toFixed(1) : '0';
 
     return (
         <div className="space-y-6">
-            {/* Header Ajustado: Tenant | Usuário */}
+            {/* Header com Info da Empresa e Usuário */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-lg border shadow-sm">
                 <div>
                     <div className="flex items-center gap-2 mb-1">
                         <Building2 className="w-5 h-5 text-gray-400" />
                         <h1 className="text-2xl font-bold tracking-tight text-gray-900">
-                            {loading ? 'Carregando...' : companyName}
+                            {loading ? '...' : meta.companyName || 'Empresa não identificada'}
                         </h1>
                         <span className="text-gray-300 text-2xl mx-1 font-light">|</span>
                         <div className="flex items-center gap-2 text-gray-600 font-medium">
                             <User className="w-5 h-5" />
-                            {loading ? '...' : userName}
+                            {loading ? '...' : meta.userName}
                         </div>
                     </div>
                     <div className="flex items-center gap-2 text-sm text-gray-500 mt-2">
-                        <span>Painel de Vagas</span> {/* Texto corrigido */}
+                        <span>Painel de Vagas</span>
                         <span>•</span>
                         <span className="flex items-center text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full font-medium capitalize">
                             <Crown className="w-3 h-3 mr-1" />
-                            Plano {planId || '...'}
+                            Plano {meta.planId || '...'}
                         </span>
                     </div>
                 </div>
@@ -137,6 +129,21 @@ const Dashboard = () => {
                 </Button>
             </div>
 
+            {/* Tratamento de Erro Visual */}
+            {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md flex items-center gap-3">
+                    <AlertTriangle className="w-5 h-5" />
+                    <div>
+                        <p className="font-bold">Não foi possível carregar os dados.</p>
+                        <p className="text-sm">{error}</p>
+                    </div>
+                    <Button variant="outline" size="sm" className="ml-auto bg-white" onClick={fetchData}>
+                        Tentar Novamente
+                    </Button>
+                </div>
+            )}
+
+            {/* Cards de Métricas */}
             <div className="grid gap-4 md:grid-cols-3">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -168,13 +175,14 @@ const Dashboard = () => {
                 </Card>
             </div>
 
+            {/* Filtros e Tabela */}
             <Card>
                 <CardHeader>
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                         <CardTitle>Gerenciar Vagas</CardTitle>
                         <div className="flex gap-2 w-full sm:w-auto">
                             <select 
-                                className="text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 h-9"
+                                className="text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 h-9 bg-white px-2"
                                 value={deptFilter}
                                 onChange={(e) => setDeptFilter(e.target.value)}
                             >
@@ -185,7 +193,7 @@ const Dashboard = () => {
                             </select>
 
                             <select 
-                                className="text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 h-9"
+                                className="text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 h-9 bg-white px-2"
                                 value={statusFilter}
                                 onChange={(e) => setStatusFilter(e.target.value)}
                             >
@@ -199,11 +207,14 @@ const Dashboard = () => {
                 </CardHeader>
                 <CardContent>
                     {loading ? (
-                        <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>
-                    ) : error ? (
-                        <div className="text-red-500 text-center py-4">{error}</div>
+                        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>
                     ) : processedJobs.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">Nenhuma vaga encontrada com estes filtros.</div>
+                        <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
+                            <p>Nenhuma vaga encontrada com estes filtros.</p>
+                            {statusFilter !== 'all' && (
+                                <Button variant="link" onClick={() => setStatusFilter('all')}>Limpar filtros</Button>
+                            )}
+                        </div>
                     ) : (
                         <div className="relative w-full overflow-auto">
                             <table className="w-full caption-bottom text-sm text-left">
@@ -219,14 +230,14 @@ const Dashboard = () => {
                                     {processedJobs.map((job) => (
                                         <tr 
                                             key={job.id} 
-                                            className="border-b transition-colors hover:bg-gray-50 cursor-pointer"
+                                            className="border-b transition-colors hover:bg-gray-50 cursor-pointer group"
                                             onClick={() => navigate(`/jobs/${job.id}`)}
                                         >
-                                            <td className="p-4 align-middle font-medium text-blue-600 hover:underline">
+                                            <td className="p-4 align-middle font-medium text-blue-600 group-hover:underline">
                                                 {job.title}
                                             </td>
                                             <td className="p-4 align-middle text-gray-600">
-                                                {job.company_departments?.name || '-'}
+                                                {job.deptName}
                                             </td>
                                             <td className="p-4 align-middle">
                                                 <Badge variant={getStatusVariant(job.status)}>
@@ -234,7 +245,7 @@ const Dashboard = () => {
                                                 </Badge>
                                             </td>
                                             <td className="p-4 align-middle text-center">
-                                                <Badge variant="outline" className="bg-gray-50">
+                                                <Badge variant="outline" className="bg-gray-50 text-gray-700">
                                                     {job.candidateCount || 0}
                                                 </Badge>
                                             </td>
