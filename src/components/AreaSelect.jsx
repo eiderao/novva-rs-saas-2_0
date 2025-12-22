@@ -1,16 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  FormControl, 
-  InputLabel, 
-  Select, 
-  MenuItem, 
-  TextField, 
-  Button, 
-  Box, 
-  CircularProgress,
-  FormHelperText
-} from '@mui/material';
-import { supabase } from '../supabase/client'; // Ajustei para o caminho que vi na sua árvore
+import { supabase } from '../supabase/client';
+import { Input } from './ui/input';
+import { Button } from './ui/button';
+import { Label } from './ui/label';
+import { Loader2, Plus, X } from 'lucide-react';
 
 export default function AreaSelect({ currentTenantId, selectedAreaId, onSelectArea, error }) {
   const [departments, setDepartments] = useState([]);
@@ -46,7 +39,6 @@ export default function AreaSelect({ currentTenantId, selectedAreaId, onSelectAr
   // Salva nova área
   const handleSaveNew = async () => {
     if (!newDeptName.trim()) return;
-
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -71,69 +63,68 @@ export default function AreaSelect({ currentTenantId, selectedAreaId, onSelectAr
     }
   };
 
-  if (loading && departments.length === 0) return <Box sx={{p: 2}}><CircularProgress size={20} /></Box>;
+  if (loading && departments.length === 0) {
+    return <div className="text-sm text-gray-500 flex items-center"><Loader2 className="w-3 h-3 animate-spin mr-2"/> Carregando áreas...</div>;
+  }
 
   // Modo de Criação (Input de Texto)
   if (isCreatingNew) {
     return (
-      <Box sx={{ mb: 2, mt: 2, p: 2, border: '1px dashed #ccc', borderRadius: 1 }}>
-        <TextField
-          label="Nome da Nova Área"
-          value={newDeptName}
-          onChange={(e) => setNewDeptName(e.target.value)}
-          size="small"
-          fullWidth
-          autoFocus
-          sx={{ mb: 1 }}
-        />
-        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+      <div className="mb-4 p-4 border border-blue-100 bg-blue-50 rounded-md">
+        <Label>Nome da Nova Área</Label>
+        <div className="flex gap-2">
+          <Input
+            value={newDeptName}
+            onChange={(e) => setNewDeptName(e.target.value)}
+            placeholder="Ex: Marketing, TI..."
+            autoFocus
+          />
+        </div>
+        <div className="flex justify-end gap-2 mt-3">
             <Button 
-            variant="text" 
-            color="inherit" 
-            onClick={() => setIsCreatingNew(false)}
-            size="small"
+                type="button"
+                variant="ghost" 
+                size="sm"
+                onClick={() => setIsCreatingNew(false)}
             >
-            Cancelar
+                Cancelar
             </Button>
             <Button 
-            variant="contained" 
-            onClick={handleSaveNew}
-            disabled={!newDeptName.trim()}
-            size="small"
+                type="button"
+                size="sm"
+                onClick={handleSaveNew}
+                disabled={!newDeptName.trim() || loading}
             >
-            Salvar Área
+                {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Salvar'}
             </Button>
-        </Box>
-      </Box>
+        </div>
+      </div>
     );
   }
 
-  // Modo de Seleção (Dropdown)
+  // Modo de Seleção (Dropdown Nativo Estilizado)
   return (
-    <FormControl fullWidth margin="normal" error={!!error}>
-      <InputLabel id="area-select-label">Área / Departamento</InputLabel>
-      <Select
-        labelId="area-select-label"
+    <div className="mb-4">
+      <Label>Área / Departamento</Label>
+      <select
+        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         value={selectedAreaId || ''}
-        label="Área / Departamento"
         onChange={(e) => {
           if (e.target.value === 'NEW') setIsCreatingNew(true);
           else onSelectArea(e.target.value);
         }}
       >
-        <MenuItem value="">
-          <em>Sem área definida</em>
-        </MenuItem>
+        <option value="">Selecione uma área...</option>
         {departments.map((dept) => (
-          <MenuItem key={dept.id} value={dept.id}>
+          <option key={dept.id} value={dept.id}>
             {dept.name}
-          </MenuItem>
+          </option>
         ))}
-        <MenuItem value="NEW" sx={{ color: 'primary.main', fontWeight: 'bold', borderTop: '1px solid #eee' }}>
+        <option value="NEW" className="font-bold text-blue-600 bg-blue-50">
           + Cadastrar Nova Área
-        </MenuItem>
-      </Select>
-      {error && <FormHelperText>{error}</FormHelperText>}
-    </FormControl>
+        </option>
+      </select>
+      {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+    </div>
   );
 }
