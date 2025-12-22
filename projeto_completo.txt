@@ -108,21 +108,19 @@ ARQUIVO: package.json
 {
   "name": "novva-rs-saas",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest"
   },
   "dependencies": {
-    "@emotion/react": "^11.11.1",
-    "@emotion/styled": "^11.11.0",
-    "@mui/icons-material": "^5.14.13",
-    "@mui/material": "^5.14.13",
-    "@mui/x-date-pickers": "^8.12.0",
     "@supabase/supabase-js": "^2.39.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.0.0",
     "date-fns": "^2.30.0",
     "formidable": "^3.5.4",
     "lucide-react": "^0.294.0",
@@ -130,9 +128,12 @@ ARQUIVO: package.json
     "react-dom": "^18.2.0",
     "react-imask": "^7.6.1",
     "react-router-dom": "^6.20.0",
-    "recharts": "^2.10.0"
+    "recharts": "^2.10.0",
+    "tailwind-merge": "^2.0.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.1.4",
+    "@testing-library/react": "^14.1.2",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
     "@vitejs/plugin-react": "^4.0.3",
@@ -141,9 +142,11 @@ ARQUIVO: package.json
     "eslint-plugin-react": "^7.32.2",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.3",
+    "jsdom": "^22.1.0",
     "postcss": "^8.4.31",
     "tailwindcss": "^3.4.1",
-    "vite": "^4.4.5"
+    "vite": "^4.4.5",
+    "vitest": "^0.34.6"
   }
 }
 
@@ -190,6 +193,12 @@ import react from '@vitejs/plugin-react'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.js',
+    css: true,
+  },
 })
 
 ==================================================
@@ -532,7 +541,7 @@ export default async function handler(request, response) {
 ==================================================
 ARQUIVO: api\createJob.js
 ==================================================
-// api/createJob.js (VersÃ£o Final "Area-Aware")
+// api/createJob.js (VersÃ£o V2.0 - Freemium Limit & Full Fields)
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(request, response) {
@@ -542,59 +551,97 @@ export default async function handler(request, response) {
   }
   try {
     const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-
     const authHeader = request.headers['authorization'];
     if (!authHeader) return response.status(401).json({ error: 'NÃ£o autorizado.' });
+    
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
     if (userError) return response.status(401).json({ error: 'Token invÃ¡lido.' });
     
     const { data: userData } = await supabaseAdmin.from('users').select('tenantId').eq('id', user.id).single();
-    if (!userData) return response.status(404).json({ error: 'Perfil de usuÃ¡rio nÃ£o encontrado.' });
+    if (!userData) return response.status(404).json({ error: 'Perfil nÃ£o encontrado.' });
     const tenantId = userData.tenantId;
 
+    // Busca dados do plano e contagem atual
     const { data: tenant, error: tenantError } = await supabaseAdmin
       .from('tenants')
-      .select('plan:plans(job_limit)')
+      .select('plan:plans(id, job_limit)')
       .eq('id', tenantId)
       .single();
+    
     if (tenantError) throw tenantError;
 
+    // REGRA 6: Limite de Vagas Ativas apenas (especialmente Freemium)
     const job_limit = tenant.plan.job_limit;
-
-    // LÃ³gica de limite dinÃ¢mica (job_limit === -1 Ã© ilimitado)
+    
+    // Se o limite for diferente de -1 (ilimitado), verificamos
     if (job_limit !== -1) {
       const { count, error: countError } = await supabaseAdmin
         .from('jobs')
         .select('*', { count: 'exact', head: true })
-        .eq('tenantId', tenantId);
+        .eq('tenantId', tenantId)
+        .eq('status', 'active'); // Conta apenas ativas!
+
       if (countError) throw countError;
+      
       if (count >= job_limit) {
-        return response.status(403).json({ error: `Limite de ${job_limit} vagas atingido para o seu plano.` });
+        return response.status(403).json({ 
+            error: `Limite de ${job_limit} vagas ativas atingido para o plano ${tenant.plan.id}. Arquive ou exclua uma vaga para criar outra.` 
+        });
       }
     }
 
-    // --- MUDANÃ‡A AQUI: Recebendo tambÃ©m o ID do departamento ---
-    const { title, company_department_id } = request.body; 
+    // Recebe todos os campos novos
+    const { 
+        title, 
+        description, 
+        requirements, 
+        type, 
+        location_type, 
+        company_department_id 
+    } = request.body;
+
+    if (!title) return response.status(400).json({ error: 'O tÃ­tulo da vaga Ã© obrigatÃ³rio.' });
     
-    if (!title) { return response.status(400).json({ error: 'O tÃ­tulo da vaga Ã© obrigatÃ³rio.' }); }
+    // Prepara objeto de inserÃ§Ã£o com campos seguros
+    const insertData = {
+        title,
+        tenantId,
+        status: 'active',
+        description: description || '',
+        requirements: requirements || '',
+        type: type || 'CLT',
+        location_type: location_type || 'HÃ­brido',
+        // Inicia com parÃ¢metros padrÃ£o se nÃ£o existirem
+        parameters: { 
+            triagem: [], 
+            cultura: [], 
+            tecnico: [], 
+            notas: [
+                {id: '1', nome: 'Abaixo', valor: 0},
+                {id: '2', nome: 'Atende', valor: 50},
+                {id: '3', nome: 'Supera', valor: 100}
+            ] 
+        }
+    };
+
+    // SÃ³ adiciona o departamento se ele vier preenchido
+    if (company_department_id) {
+        insertData.company_department_id = company_department_id;
+    }
     
     const { data: newJob, error: insertError } = await supabaseAdmin
       .from('jobs')
-      .insert({ 
-          title: title, 
-          tenantId: tenantId, 
-          status: 'active',
-          company_department_id: company_department_id || null // Salva o ID ou null se nÃ£o vier
-      })
+      .insert(insertData)
       .select()
       .single();
       
     if (insertError) throw insertError;
     
     return response.status(201).json({ newJob });
+
   } catch (error) {
-    console.error("Erro na funÃ§Ã£o createJob:", error);
+    console.error("Erro createJob:", error);
     return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
   }
 }
@@ -906,184 +953,175 @@ export default async function handler(request, response) {
 ==================================================
 ARQUIVO: api\jobs.js
 ==================================================
-// api/jobs.js (VERSÃƒO FINAL com Join de Ãreas)
 import { createClient } from '@supabase/supabase-js';
 
-// FunÃ§Ã£o de middleware de seguranÃ§a (reutilizada)
-async function validateUser(request) {
+export default async function handler(request, response) {
   const supabaseAdmin = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_KEY
   );
 
-  const authHeader = request.headers['authorization'];
-  if (!authHeader) throw new Error('NÃ£o autorizado.');
-  
-  const token = authHeader.replace('Bearer ', '');
-  const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
-  if (userError) throw new Error('Token invÃ¡lido.');
-
-  const { data: userData } = await supabaseAdmin.from('users').select('tenantId, isAdmin').eq('id', user.id).single();
-  if (!userData) throw new Error('Perfil de usuÃ¡rio nÃ£o encontrado.');
-  
-  return { supabaseAdmin, user, userData };
-}
-
-// Handler principal
-export default async function handler(request, response) {
   try {
-    const { supabaseAdmin, userData } = await validateUser(request);
-    const tenantId = userData.tenantId;
+    // 1. AutenticaÃ§Ã£o
+    const authHeader = request.headers['authorization'];
+    if (!authHeader) throw new Error('Token ausente.');
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (userError || !user) throw new Error('Token invÃ¡lido.');
 
-    // --- LÃ“GICA DE REQUISIÃ‡ÃƒO GET (LEITURA) ---
+    // 2. Busca Dados do UsuÃ¡rio e Perfil (JOIN correto)
+    // A tabela 'users' do Auth nÃ£o tem relaÃ§Ã£o direta FK com public.tenants em alguns setups,
+    // mas 'user_profiles' (public) costuma ter. Vamos garantir os dados daqui.
+    const { data: profile, error: profileError } = await supabaseAdmin
+        .from('user_profiles')
+        .select('name, tenantId, is_admin_system, tenants(companyName, planId)')
+        .eq('id', user.id)
+        .single();
+
+    if (profileError || !profile) {
+        console.error("Erro Perfil:", profileError);
+        throw new Error('Perfil de usuÃ¡rio nÃ£o encontrado.');
+    }
+
+    const tenantId = profile.tenantId;
+    const companyName = profile.tenants?.companyName || 'Empresa';
+    const planId = profile.tenants?.planId || 'free';
+
+    // --- GET: Dashboard & Vagas ---
     if (request.method === 'GET') {
-      const { id } = request.query;
+        const { id } = request.query;
 
-      if (id) {
-        // Busca UMA vaga (Detalhes)
-        // Incluindo o nome do departamento aqui tambÃ©m
-        const { data: job, error: jobError } = await supabaseAdmin
-            .from('jobs')
-            .select(`
-                *,
-                company_departments ( name )
-            `)
-            .eq('id', Number(id))
-            .eq('tenantId', tenantId)
-            .single();
+        // Detalhe Ãšnico (Com JOIN limpo)
+        if (id) {
+            const { data: job, error } = await supabaseAdmin
+                .from('jobs')
+                .select(`
+                    *,
+                    company_departments ( id, name )
+                `)
+                .eq('id', Number(id))
+                .eq('tenantId', tenantId)
+                .single();
+            
+            if (error) throw error;
+            return response.status(200).json({ job });
+        }
 
-        if (jobError || !job) return response.status(404).json({ error: 'Vaga nÃ£o encontrada.' });
-        return response.status(200).json({ job });
-      } 
-      else {
-        // Busca TODAS as vagas (Dashboard)
-        const { data: tenant, error: tenantError } = await supabaseAdmin.from('tenants').select('planId').eq('id', tenantId).single();
-        if (tenantError) throw tenantError;
-
-        // --- MUDANÃ‡A AQUI: Trazendo o nome do departamento ---
+        // Lista Completa (Com JOIN limpo e Contagem)
         const { data: jobs, error: jobsError } = await supabaseAdmin
             .from('jobs')
             .select(`
-                id, title, status, tenantId, created_at,
-                applications ( count ),
-                company_departments ( name )
+                id, title, status, created_at,
+                description, requirements, type, location_type,
+                company_department_id,
+                company_departments ( name ),
+                applications ( count )
             `)
             .eq('tenantId', tenantId);
 
         if (jobsError) throw jobsError;
-        
-        const formattedJobs = jobs.map(job => ({ 
-            ...job, 
-            candidateCount: job.applications[0] ? job.applications[0].count : 0 
-        }));
-        
-        return response.status(200).json({ 
-          jobs: formattedJobs,
-          planId: tenant.planId,
-          isAdmin: userData.isAdmin
+
+        // FormataÃ§Ã£o (Flattening para facilitar o front)
+        const formattedJobs = jobs.map(job => ({
+            ...job,
+            candidateCount: job.applications?.[0]?.count || 0,
+            deptName: job.company_departments?.name || 'Geral'
+        })).sort((a, b) => {
+            // OrdenaÃ§Ã£o: Departamento (A-Z) -> Data (Desc)
+            const deptCompare = a.deptName.localeCompare(b.deptName);
+            if (deptCompare !== 0) return deptCompare;
+            return new Date(b.created_at) - new Date(a.created_at);
         });
-      }
+
+        return response.status(200).json({
+            jobs: formattedJobs,
+            meta: {
+                companyName: companyName,
+                userName: profile.name,
+                planId: planId,
+                isAdmin: profile.is_admin_system
+            }
+        });
     }
 
-    // --- LÃ“GICA DE REQUISIÃ‡ÃƒO POST (ATUALIZAR/DELETAR) ---
+    // --- POST: Manter LÃ³gica de Escrita ---
     if (request.method === 'POST') {
-      const { action, jobId, newStatus } = request.body;
-
-      switch (action) {
-        case 'updateJobStatus':
-          if (!jobId || !newStatus) { return response.status(400).json({ error: 'jobId e newStatus sÃ£o obrigatÃ³rios.' }); }
-          
-          const { data: updatedJob, error: updateError } = await supabaseAdmin
-            .from('jobs')
-            .update({ status: newStatus })
-            .eq('id', jobId)
-            .eq('tenantId', tenantId) // SeguranÃ§a
-            .select()
-            .single();
-          
-          if (updateError) throw updateError;
-          return response.status(200).json({ message: 'Status atualizado!', updatedJob });
-
-        case 'deleteJob':
-          if (!jobId) { return response.status(400).json({ error: 'jobId Ã© obrigatÃ³rio.' }); }
-
-          // 1. (SeguranÃ§a) Deleta as candidaturas
-          await supabaseAdmin.from('applications').delete().eq('jobId', jobId);
-
-          // 2. Deleta a vaga
-          const { error: deleteError } = await supabaseAdmin
-            .from('jobs')
-            .delete()
-            .eq('id', jobId)
-            .eq('tenantId', tenantId); // SeguranÃ§a
-            
-          if (deleteError) throw deleteError;
-          return response.status(200).json({ message: 'Vaga excluÃ­da com sucesso!' });
-
-        default:
-          return response.status(400).json({ error: 'AÃ§Ã£o POST desconhecida.' });
-      }
+         const { action, jobId, newStatus } = request.body;
+         
+         if (action === 'updateJobStatus') {
+            await supabaseAdmin.from('jobs').update({ status: newStatus }).eq('id', jobId).eq('tenantId', tenantId);
+            return response.status(200).json({ message: 'Atualizado' });
+         }
+         if (action === 'deleteJob') {
+            await supabaseAdmin.from('applications').delete().eq('jobId', jobId);
+            await supabaseAdmin.from('jobs').delete().eq('id', jobId).eq('tenantId', tenantId);
+            return response.status(200).json({ message: 'Deletado' });
+         }
     }
 
-    response.setHeader('Allow', ['GET', 'POST']);
-    return response.status(405).json({ error: `MÃ©todo ${request.method} nÃ£o permitido.` });
+    return response.status(405).json({ error: 'Method not allowed' });
 
   } catch (error) {
-    console.error("Erro na API de Vagas:", error.message);
-    if (error.message.includes('NÃ£o autorizado') || error.message.includes('Token invÃ¡lido')) {
-      return response.status(401).json({ error: error.message });
-    }
-    return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
+    console.error('API Error:', error.message);
+    return response.status(500).json({ error: error.message });
   }
 }
 
 ==================================================
 ARQUIVO: api\saveEvaluation.js
 ==================================================
-// api/saveEvaluation.js
 import { createClient } from '@supabase/supabase-js';
+// Certifique-se de que o arquivo _utils/calculator.js existe conforme passo anterior
+import { calculateWeightedScore } from './_utils/calculator.js'; 
 
 export default async function handler(request, response) {
-  if (request.method !== 'POST') {
-    return response.status(405).json({ error: 'MÃ©todo nÃ£o permitido.' });
-  }
+  if (request.method !== 'POST') return response.status(405).json({ error: 'MÃ©todo nÃ£o permitido' });
+
+  const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
   try {
-    const supabaseAdmin = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY
-    );
-
-    // 1. Valida o token do usuÃ¡rio de RH
     const authHeader = request.headers['authorization'];
-    if (!authHeader) return response.status(401).json({ error: 'NÃ£o autorizado.' });
+    if (!authHeader) throw new Error('Token ausente.');
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
-    if (userError) return response.status(401).json({ error: 'Token invÃ¡lido.' });
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (authError || !user) throw new Error('Token invÃ¡lido.');
 
-    // 2. Pega o ID da candidatura e os dados da avaliaÃ§Ã£o do corpo da requisiÃ§Ã£o
-    const { applicationId, evaluation } = request.body;
-    if (!applicationId || !evaluation) {
-      return response.status(400).json({ error: 'applicationId e evaluation sÃ£o obrigatÃ³rios.' });
-    }
+    const { applicationId, scores, notes } = request.body;
 
-    // 3. ATUALIZA a candidatura no banco, preenchendo a coluna 'evaluation'
-    // Por seguranÃ§a, poderÃ­amos re-validar se o usuÃ¡rio tem acesso a esta vaga,
-    // mas vamos manter simples por agora, pois o risco Ã© baixo.
-    const { data, error: updateError } = await supabaseAdmin
-      .from('applications')
-      .update({ evaluation: evaluation }) // Atualiza apenas a coluna 'evaluation'
-      .eq('id', applicationId)
-      .select()
-      .single();
+    // 1. Busca ParÃ¢metros da Vaga
+    const { data: appData, error: appError } = await supabaseAdmin
+        .from('applications')
+        .select('job:jobs(parameters)')
+        .eq('id', applicationId)
+        .single();
 
-    if (updateError) throw updateError;
+    if (appError || !appData) throw new Error('Candidatura nÃ£o encontrada.');
 
-    return response.status(200).json({ message: 'AvaliaÃ§Ã£o salva com sucesso!', updatedApplication: data });
+    // 2. Calcula Nota (Backend)
+    // A funÃ§Ã£o calculateWeightedScore deve tratar o 'N/A' ignorando o peso
+    const finalScore = calculateWeightedScore(scores, appData.job.parameters);
+
+    // 3. Salva na tabela EVALUATIONS (Confirmada nos metadados)
+    const { error: saveError } = await supabaseAdmin
+        .from('evaluations')
+        .upsert({
+            application_id: applicationId,
+            evaluator_id: user.id,
+            scores: scores,
+            notes: notes,
+            final_score: finalScore,
+            updated_at: new Date()
+        }, { onConflict: 'application_id, evaluator_id' });
+
+    if (saveError) throw saveError;
+
+    return response.status(200).json({ message: 'AvaliaÃ§Ã£o salva!', score: finalScore });
 
   } catch (error) {
-    console.error("Erro na funÃ§Ã£o saveEvaluation:", error);
-    return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
+    console.error('Save Error:', error);
+    return response.status(500).json({ error: error.message });
   }
 }
 
@@ -1209,6 +1247,48 @@ export default async function handler(request, response) {
 }
 
 ==================================================
+ARQUIVO: api\_utils\calculator.js
+==================================================
+// api/_utils/calculator.js
+export function calculateWeightedScore(userScores, jobParameters) {
+    if (!userScores || !jobParameters) return 0;
+
+    // Converte lista de notas do banco em Mapa para acesso rÃ¡pido
+    // Ex: { "uuid-nota-1": 0, "uuid-nota-2": 50, "uuid-nota-3": 100 }
+    const notesMap = new Map((jobParameters.notas || []).map(n => [n.id, Number(n.valor)]));
+
+    const sections = ['triagem', 'cultura', 'tecnico']; // SeÃ§Ãµes padrÃ£o
+    let totalScore = 0;
+    let totalMaxPossible = 0;
+
+    sections.forEach(section => {
+        const criteriaList = jobParameters[section] || []; // Ex: [{name: 'React', weight: 2}]
+        const userSectionScores = userScores[section] || {}; // Ex: { 'React': 'uuid-nota-3' }
+
+        criteriaList.forEach(criterion => {
+            const noteId = userSectionScores[criterion.name];
+            
+            // LÃ“GICA DE N/A: Se a notaId for 'NA' ou nÃ£o existir, ignoramos este critÃ©rio
+            if (!noteId || noteId === 'NA') return;
+
+            const noteValue = notesMap.get(noteId); // Valor (0, 50, 100)
+            const weight = Number(criterion.weight) || 1; // Peso (1x, 2x...)
+
+            if (noteValue !== undefined) {
+                totalScore += (noteValue * weight);
+                totalMaxPossible += (100 * weight); // O mÃ¡ximo seria tirar 100 nesse critÃ©rio
+            }
+        });
+    });
+
+    // Evita divisÃ£o por zero se tudo for N/A
+    if (totalMaxPossible === 0) return 0;
+
+    // Normaliza para 0-100 com 1 casa decimal
+    return Number(((totalScore / totalMaxPossible) * 100).toFixed(1));
+}
+
+==================================================
 ARQUIVO: functions\.eslintrc.js
 ==================================================
 module.exports = {
@@ -1324,15 +1404,13 @@ ARQUIVO: src\App.jsx
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
+import Layout from './components/Layout';
 
-// PÃ¡ginas existentes (Confirmadas na sua lista)
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import JobDetails from './pages/JobDetails';
 import ApplyPage from './pages/ApplyPage';
-
-// PÃ¡ginas NOVAS (Que acabamos de criar no Passo 1)
-import Register from './pages/Register';
 import Jobs from './pages/Jobs';
 import Candidates from './pages/Candidates';
 import CompanySettings from './pages/CompanySettings';
@@ -1346,21 +1424,22 @@ function App() {
           {/* Rotas PÃºblicas */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          
-          {/* Rota PÃºblica de Candidatura */}
           <Route path="/vagas/:id/candidatar" element={<ApplyPage />} />
 
-          {/* Rotas Privadas */}
+          {/* Rotas Privadas (Protegidas) */}
           <Route element={<PrivateRoute />}>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            
-            <Route path="/jobs" element={<Jobs />} />
-            <Route path="/jobs/:id" element={<JobDetails />} />
-            
-            <Route path="/candidates" element={<Candidates />} />
-            <Route path="/settings" element={<CompanySettings />} />
-            <Route path="/evaluations/:applicationId" element={<Evaluation />} />
+            {/* O Layout envolve todas as pÃ¡ginas internas */}
+            <Route element={<Layout />}>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              
+              <Route path="/jobs" element={<Jobs />} />
+              <Route path="/jobs/:id" element={<JobDetails />} />
+              
+              <Route path="/candidates" element={<Candidates />} />
+              <Route path="/settings" element={<CompanySettings />} />
+              <Route path="/evaluations/:applicationId" element={<Evaluation />} />
+            </Route>
           </Route>
 
           <Route path="*" element={<Navigate to="/login" replace />} />
@@ -1402,18 +1481,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 ARQUIVO: src\components\AreaSelect.jsx
 ==================================================
 import React, { useState, useEffect } from 'react';
-import { 
-  FormControl, 
-  InputLabel, 
-  Select, 
-  MenuItem, 
-  TextField, 
-  Button, 
-  Box, 
-  CircularProgress,
-  FormHelperText
-} from '@mui/material';
-import { supabase } from '../supabase/client'; // Ajustei para o caminho que vi na sua Ã¡rvore
+import { supabase } from '../supabase/client';
+import { Input } from './ui/input';
+import { Button } from './ui/button';
+import { Label } from './ui/label';
+import { Loader2, Plus, X } from 'lucide-react';
 
 export default function AreaSelect({ currentTenantId, selectedAreaId, onSelectArea, error }) {
   const [departments, setDepartments] = useState([]);
@@ -1449,7 +1521,6 @@ export default function AreaSelect({ currentTenantId, selectedAreaId, onSelectAr
   // Salva nova Ã¡rea
   const handleSaveNew = async () => {
     if (!newDeptName.trim()) return;
-
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -1474,70 +1545,183 @@ export default function AreaSelect({ currentTenantId, selectedAreaId, onSelectAr
     }
   };
 
-  if (loading && departments.length === 0) return <Box sx={{p: 2}}><CircularProgress size={20} /></Box>;
+  if (loading && departments.length === 0) {
+    return <div className="text-sm text-gray-500 flex items-center"><Loader2 className="w-3 h-3 animate-spin mr-2"/> Carregando Ã¡reas...</div>;
+  }
 
   // Modo de CriaÃ§Ã£o (Input de Texto)
   if (isCreatingNew) {
     return (
-      <Box sx={{ mb: 2, mt: 2, p: 2, border: '1px dashed #ccc', borderRadius: 1 }}>
-        <TextField
-          label="Nome da Nova Ãrea"
-          value={newDeptName}
-          onChange={(e) => setNewDeptName(e.target.value)}
-          size="small"
-          fullWidth
-          autoFocus
-          sx={{ mb: 1 }}
-        />
-        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+      <div className="mb-4 p-4 border border-blue-100 bg-blue-50 rounded-md">
+        <Label>Nome da Nova Ãrea</Label>
+        <div className="flex gap-2">
+          <Input
+            value={newDeptName}
+            onChange={(e) => setNewDeptName(e.target.value)}
+            placeholder="Ex: Marketing, TI..."
+            autoFocus
+          />
+        </div>
+        <div className="flex justify-end gap-2 mt-3">
             <Button 
-            variant="text" 
-            color="inherit" 
-            onClick={() => setIsCreatingNew(false)}
-            size="small"
+                type="button"
+                variant="ghost" 
+                size="sm"
+                onClick={() => setIsCreatingNew(false)}
             >
-            Cancelar
+                Cancelar
             </Button>
             <Button 
-            variant="contained" 
-            onClick={handleSaveNew}
-            disabled={!newDeptName.trim()}
-            size="small"
+                type="button"
+                size="sm"
+                onClick={handleSaveNew}
+                disabled={!newDeptName.trim() || loading}
             >
-            Salvar Ãrea
+                {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Salvar'}
             </Button>
-        </Box>
-      </Box>
+        </div>
+      </div>
     );
   }
 
-  // Modo de SeleÃ§Ã£o (Dropdown)
+  // Modo de SeleÃ§Ã£o (Dropdown Nativo Estilizado)
   return (
-    <FormControl fullWidth margin="normal" error={!!error}>
-      <InputLabel id="area-select-label">Ãrea / Departamento</InputLabel>
-      <Select
-        labelId="area-select-label"
+    <div className="mb-4">
+      <Label>Ãrea / Departamento</Label>
+      <select
+        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         value={selectedAreaId || ''}
-        label="Ãrea / Departamento"
         onChange={(e) => {
           if (e.target.value === 'NEW') setIsCreatingNew(true);
           else onSelectArea(e.target.value);
         }}
       >
-        <MenuItem value="">
-          <em>Sem Ã¡rea definida</em>
-        </MenuItem>
+        <option value="">Selecione uma Ã¡rea...</option>
         {departments.map((dept) => (
-          <MenuItem key={dept.id} value={dept.id}>
+          <option key={dept.id} value={dept.id}>
             {dept.name}
-          </MenuItem>
+          </option>
         ))}
-        <MenuItem value="NEW" sx={{ color: 'primary.main', fontWeight: 'bold', borderTop: '1px solid #eee' }}>
+        <option value="NEW" className="font-bold text-blue-600 bg-blue-50">
           + Cadastrar Nova Ãrea
-        </MenuItem>
-      </Select>
-      {error && <FormHelperText>{error}</FormHelperText>}
-    </FormControl>
+        </option>
+      </select>
+      {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+    </div>
+  );
+}
+
+==================================================
+ARQUIVO: src\components\Layout.jsx
+==================================================
+import { useState } from 'react';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { supabase } from '../supabase/client';
+import { 
+  LayoutDashboard, 
+  Briefcase, 
+  Users, 
+  Settings, 
+  LogOut, 
+  Menu, 
+  X 
+} from 'lucide-react';
+import { Button } from './ui/button';
+
+export default function Layout() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  const navigation = [
+    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+    { name: 'Vagas', href: '/jobs', icon: Briefcase },
+    { name: 'Candidatos', href: '/candidates', icon: Users },
+    { name: 'ConfiguraÃ§Ãµes', href: '/settings', icon: Settings },
+  ];
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login');
+  };
+
+  const NavItem = ({ item }) => {
+    const isActive = location.pathname.startsWith(item.href);
+    return (
+      <Link
+        to={item.href}
+        onClick={() => setIsSidebarOpen(false)}
+        className={`flex items-center px-4 py-3 text-sm font-medium rounded-md transition-colors ${
+          isActive 
+            ? 'bg-blue-50 text-blue-700' 
+            : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+        }`}
+      >
+        <item.icon className={`mr-3 h-5 w-5 ${isActive ? 'text-blue-700' : 'text-gray-400'}`} />
+        {item.name}
+      </Link>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Sidebar Mobile Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 z-40 bg-gray-600 bg-opacity-75 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar Navigation */}
+      <div className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:inset-0
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
+          <span className="text-xl font-bold text-blue-600 tracking-tight">Novva R&S</span>
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden">
+            <X className="h-6 w-6 text-gray-500" />
+          </button>
+        </div>
+        
+        <nav className="p-4 space-y-1">
+          {navigation.map((item) => (
+            <NavItem key={item.name} item={item} />
+          ))}
+        </nav>
+
+        <div className="absolute bottom-0 w-full p-4 border-t border-gray-200">
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
+            onClick={handleLogout}
+          >
+            <LogOut className="mr-3 h-5 w-5" />
+            Sair
+          </Button>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Mobile Header */}
+        <div className="lg:hidden flex items-center justify-between bg-white border-b border-gray-200 px-4 py-2">
+          <span className="font-semibold text-gray-700">Menu</span>
+          <button 
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2 -mr-2 text-gray-500 hover:text-gray-700"
+          >
+            <Menu className="h-6 w-6" />
+          </button>
+        </div>
+
+        {/* Page Content */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-8">
+          <Outlet />
+        </main>
+      </div>
+    </div>
   );
 }
 
@@ -1712,74 +1896,147 @@ export default function EvaluationDashboardV2({ applicationId, jobId, currentUse
 }
 
 ==================================================
+ARQUIVO: src\components\evaluation_v2\EvaluationForm.jsx
+==================================================
+import React, { useState } from 'react';
+import { Button } from '../ui/button';
+import { Textarea } from '../ui/textarea';
+import { Label } from '../ui/label';
+import { Loader2, Save, AlertCircle } from 'lucide-react';
+import { supabase } from '../../supabase/client';
+
+export default function EvaluationForm({ applicationId, jobParameters, initialData, onSaved }) {
+  const [scores, setScores] = useState(initialData?.scores || {});
+  const [notes, setNotes] = useState(initialData?.notes || '');
+  const [isSaving, setIsSaving] = useState(false);
+  const [feedback, setFeedback] = useState({ type: '', msg: '' });
+
+  const sections = [
+    { id: 'triagem', label: 'Triagem', color: 'text-purple-700' },
+    { id: 'cultura', label: 'Fit Cultural', color: 'text-green-700' },
+    { id: 'tecnico', label: 'TÃ©cnico', color: 'text-blue-700' }
+  ];
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setFeedback({ type: '', msg: '' });
+    
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error("SessÃ£o perdida.");
+
+        const response = await fetch('/api/saveEvaluation', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ applicationId, scores, notes })
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Erro ao salvar.");
+
+        setFeedback({ type: 'success', msg: `Salvo! Sua nota: ${data.score}` });
+        if (onSaved) onSaved(); 
+
+    } catch (err) {
+        setFeedback({ type: 'error', msg: err.message });
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6 bg-white p-6 rounded-lg border shadow-sm">
+        {sections.map(section => {
+            const criteriaList = jobParameters[section.id] || [];
+            if (criteriaList.length === 0) return null;
+
+            return (
+                <div key={section.id} className="p-4 bg-gray-50 rounded-md border">
+                    <h3 className={`font-bold mb-3 ${section.color}`}>{section.label}</h3>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        {criteriaList.map((crit, idx) => (
+                            <div key={idx}>
+                                <Label className="text-xs uppercase text-gray-500">{crit.name}</Label>
+                                <select 
+                                    className="flex h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm focus:ring-2 focus:ring-blue-600"
+                                    value={scores[section.id]?.[crit.name] || ''}
+                                    onChange={(e) => setScores({
+                                        ...scores, 
+                                        [section.id]: { ...scores[section.id], [crit.name]: e.target.value }
+                                    })}
+                                >
+                                    <option value="">Selecione...</option>
+                                    <option value="NA" className="font-bold text-gray-500">N/A (NÃ£o Avaliar)</option>
+                                    <hr/>
+                                    {jobParameters.notas.map(n => (
+                                        <option key={n.id} value={n.id}>{n.nome} ({n.valor})</option>
+                                    ))}
+                                </select>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        })}
+
+        <div>
+            <Label>ObservaÃ§Ãµes</Label>
+            <Textarea 
+                value={notes} 
+                onChange={(e) => setNotes(e.target.value)} 
+                placeholder="ComentÃ¡rios sobre o candidato..." 
+                rows={4}
+            />
+        </div>
+
+        {feedback.msg && (
+            <div className={`p-3 rounded text-sm flex items-center gap-2 ${feedback.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                {feedback.type === 'error' ? <AlertCircle className="w-4 h-4"/> : <Save className="w-4 h-4"/>}
+                {feedback.msg}
+            </div>
+        )}
+
+        <div className="flex justify-end">
+            <Button onClick={handleSave} disabled={isSaving}>
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Salvar AvaliaÃ§Ã£o'}
+            </Button>
+        </div>
+    </div>
+  );
+}
+
+==================================================
 ARQUIVO: src\components\inputs\StateSelect.jsx
 ==================================================
 import React from 'react';
-import PropTypes from 'prop-types';
-import { FormControl, InputLabel, Select, MenuItem, FormHelperText } from '@mui/material';
-// Importando seus dados diretamente no componente que precisa deles
+import { Label } from '../ui/label';
 import { estados } from '../../data/brazil-locations'; 
 
-const StateSelect = ({ 
-  value, 
-  onChange, 
-  name = "state", 
-  label = "Em que estado vocÃª mora?", 
-  required = true,
-  error = false,
-  helperText = "",
-  disabled = false
-}) => {
+const StateSelect = ({ value, onChange, error, disabled }) => {
   return (
-    <FormControl 
-      fullWidth 
-      margin="normal" 
-      required={required} 
-      error={!!error} // Garante booleano
-      disabled={disabled}
-    >
-      <InputLabel id={`${name}-label`}>{label}</InputLabel>
-      <Select
-        labelId={`${name}-label`}
-        id={name}
-        name={name}
-        value={value || ''} // Evita warning de componente nÃ£o controlado
-        label={label}
+    <div className="mb-4">
+      <Label htmlFor="state">Em que estado vocÃª mora?</Label>
+      <select
+        id="state"
+        name="state"
+        value={value || ''}
         onChange={onChange}
-        MenuProps={{
-          PaperProps: {
-            style: {
-              maxHeight: 300, // UX: Scroll suave para listas longas
-            },
-          },
-        }}
+        disabled={disabled}
+        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <MenuItem value="" disabled>
-          <em>Selecione uma opÃ§Ã£o</em>
-        </MenuItem>
+        <option value="" disabled>Selecione uma opÃ§Ã£o</option>
         {estados.map((estado) => (
-          <MenuItem key={estado.sigla} value={estado.sigla}>
+          <option key={estado.sigla} value={estado.sigla}>
             {estado.nome}
-          </MenuItem>
+          </option>
         ))}
-      </Select>
-      {/* Exibe mensagem de erro ou texto de ajuda se houver */}
-      {(error || helperText) && (
-        <FormHelperText>{error || helperText}</FormHelperText>
-      )}
-    </FormControl>
+      </select>
+      {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+    </div>
   );
-};
-
-StateSelect.propTypes = {
-  value: PropTypes.string,
-  onChange: PropTypes.func.isRequired,
-  name: PropTypes.string,
-  label: PropTypes.string,
-  required: PropTypes.bool,
-  error: PropTypes.string, // Pode receber a string de mensagem de erro
-  helperText: PropTypes.string,
-  disabled: PropTypes.bool
 };
 
 export default StateSelect;
@@ -1788,58 +2045,43 @@ export default StateSelect;
 ARQUIVO: src\components\jobs\CreateJobModal.jsx
 ==================================================
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../supabase/client'; // Verifique se o caminho estÃ¡ correto
-import { Modal, Box, Typography, TextField, Button, CircularProgress, Alert } from '@mui/material';
-import AreaSelect from '../AreaSelect'; // Verifique se o caminho estÃ¡ correto
-
-const style = {
-  position: 'absolute',
-  top: '50%',
-  left: '50%',
-  transform: 'translate(-50%, -50%)',
-  width: 450,
-  bgcolor: 'background.paper',
-  boxShadow: 24,
-  p: 4,
-  borderRadius: 2,
-};
+import { supabase } from '../../supabase/client';
+import { Modal } from '../ui/modal';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import AreaSelect from '../AreaSelect';
+import { Loader2, AlertCircle } from 'lucide-react';
 
 const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
   const [jobTitle, setJobTitle] = useState('');
   const [departmentId, setDepartmentId] = useState(null);
-  const [tenantId, setTenantId] = useState(null); // O ID da Empresa
+  const [tenantId, setTenantId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // --- CORREÃ‡ÃƒO AQUI: Busca robusta do Tenant ID ---
+  // Busca o Tenant ID assim que o modal abre
   useEffect(() => {
     if (open) {
       const fetchTenantId = async () => {
         try {
-          // 1. Pega o usuÃ¡rio logado
-          const { data: { user } } = await supabase.auth.getUser();
+          const { data: { user } } = await supabase.auth.getSession();
           if (!user) return;
 
-          // 2. Busca o tenantId na tabela 'users' (Fonte da verdade)
           const { data: userData, error } = await supabase
             .from('users')
             .select('tenantId')
             .eq('id', user.id)
             .single();
 
-          if (error) {
-            console.error('Erro ao buscar perfil:', error);
-            return;
-          }
-
-          if (userData?.tenantId) {
-            setTenantId(userData.tenantId);
-          }
+          if (error) throw error;
+          if (userData?.tenantId) setTenantId(userData.tenantId);
+          
         } catch (err) {
-          console.error('Erro fatal ao buscar tenant:', err);
+          console.error('Erro ao buscar tenant:', err);
+          setError("Erro ao carregar configuraÃ§Ãµes da empresa.");
         }
       };
-      
       fetchTenantId();
     }
   }, [open]);
@@ -1853,7 +2095,6 @@ const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("VocÃª nÃ£o estÃ¡ autenticado.");
 
-      // Envia para a API (que jÃ¡ corrigimos no passo anterior)
       const response = await fetch('/api/createJob', {
         method: 'POST',
         headers: {
@@ -1862,7 +2103,7 @@ const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
         },
         body: JSON.stringify({ 
             title: jobTitle, 
-            company_department_id: departmentId // Pode ser null se nÃ£o selecionado
+            company_department_id: departmentId 
         }),
       });
 
@@ -1886,57 +2127,302 @@ const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
 
   return (
     <Modal
-      open={open}
+      isOpen={open}
       onClose={handleClose}
-      aria-labelledby="create-job-modal-title"
+      title="Criar Nova Vaga"
     >
-      <Box sx={style} component="form" onSubmit={handleSubmit}>
-        <Typography id="create-job-modal-title" variant="h6" component="h2" gutterBottom>
-          Criar Nova Vaga
-        </Typography>
+      <form onSubmit={handleSubmit} className="space-y-6">
         
-        <TextField
-          margin="normal"
-          required
-          fullWidth
-          id="jobTitle"
-          label="Nome da Vaga"
-          name="jobTitle"
-          autoFocus
-          value={jobTitle}
-          onChange={(e) => setJobTitle(e.target.value)}
-          disabled={loading}
-        />
+        <div>
+          <Label htmlFor="jobTitle">TÃ­tulo da Vaga</Label>
+          <Input
+            id="jobTitle"
+            required
+            autoFocus
+            placeholder="Ex: Analista Financeiro"
+            value={jobTitle}
+            onChange={(e) => setJobTitle(e.target.value)}
+            disabled={loading}
+          />
+        </div>
 
-        {/* Passamos o tenantId recuperado do banco.
-            Se tenantId for null (ainda carregando), o AreaSelect saberÃ¡ lidar/esperar 
-        */}
-        {tenantId ? (
-            <AreaSelect 
-                currentTenantId={tenantId}
-                selectedAreaId={departmentId}
-                onSelectArea={setDepartmentId}
-            />
-        ) : (
-            <Typography variant="caption" color="text.secondary">
-                Carregando Ã¡reas...
-            </Typography>
+        {/* Ponto 4: Ãrea Select agora lida melhor com o estado de loading interno */}
+        <div className="space-y-2">
+            {tenantId ? (
+                <AreaSelect 
+                    currentTenantId={tenantId}
+                    selectedAreaId={departmentId}
+                    onSelectArea={setDepartmentId}
+                />
+            ) : (
+                <div className="flex items-center text-sm text-gray-500 bg-gray-50 p-3 rounded-md">
+                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                   Carregando departamentos...
+                </div>
+            )}
+        </div>
+
+        {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-sm text-red-700">
+                <AlertCircle className="w-4 h-4" />
+                {error}
+            </div>
         )}
-
-        {error && <Alert severity="error" sx={{mt: 2}}>{error}</Alert>}
         
-        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-          <Button onClick={handleClose} disabled={loading}>Cancelar</Button>
-          <Button type="submit" variant="contained" disabled={loading || !jobTitle}>
-            {loading ? <CircularProgress size={24} /> : 'Criar Vaga'}
+        <div className="flex justify-end gap-3 pt-2">
+          <Button type="button" variant="outline" onClick={handleClose} disabled={loading}>
+            Cancelar
           </Button>
-        </Box>
-      </Box>
+          <Button type="submit" disabled={loading || !jobTitle}>
+            {loading ? (
+                <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" /> 
+                    Criando...
+                </>
+            ) : 'Criar Vaga'}
+          </Button>
+        </div>
+      </form>
     </Modal>
   );
 };
 
 export default CreateJobModal;
+
+==================================================
+ARQUIVO: src\components\ui\badge.jsx
+==================================================
+import * as React from "react"
+import { cva } from "class-variance-authority"
+import { cn } from "../../lib/utils"
+
+const badgeVariants = cva(
+  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  {
+    variants: {
+      variant: {
+        default: "border-transparent bg-blue-600 text-white hover:bg-blue-700",
+        secondary: "border-transparent bg-gray-100 text-gray-900 hover:bg-gray-200",
+        destructive: "border-transparent bg-red-500 text-white hover:bg-red-600",
+        outline: "text-gray-900 border-gray-200",
+        success: "border-transparent bg-green-100 text-green-800 hover:bg-green-200",
+        warning: "border-transparent bg-yellow-100 text-yellow-800 hover:bg-yellow-200",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  }
+)
+
+function Badge({ className, variant, ...props }) {
+  return (<div className={cn(badgeVariants({ variant }), className)} {...props} />)
+}
+
+export { Badge, badgeVariants }
+
+==================================================
+ARQUIVO: src\components\ui\button.jsx
+==================================================
+import * as React from "react"
+import { cva } from "class-variance-authority"
+import { cn } from "../../lib/utils"
+
+const buttonVariants = cva(
+  "inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+  {
+    variants: {
+      variant: {
+        default: "bg-blue-600 text-white hover:bg-blue-700 shadow-sm",
+        destructive: "bg-red-500 text-white hover:bg-red-600 shadow-sm",
+        outline: "border border-gray-200 bg-white hover:bg-gray-100 hover:text-gray-900",
+        secondary: "bg-gray-100 text-gray-900 hover:bg-gray-200",
+        ghost: "hover:bg-gray-100 hover:text-gray-900",
+        link: "text-blue-600 underline-offset-4 hover:underline",
+      },
+      size: {
+        default: "h-10 px-4 py-2",
+        sm: "h-9 rounded-md px-3",
+        lg: "h-11 rounded-md px-8",
+        icon: "h-10 w-10",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  }
+)
+
+const Button = React.forwardRef(({ className, variant, size, ...props }, ref) => {
+  return (
+    <button
+      className={cn(buttonVariants({ variant, size, className }))}
+      ref={ref}
+      {...props}
+    />
+  )
+})
+Button.displayName = "Button"
+
+export { Button, buttonVariants }
+
+==================================================
+ARQUIVO: src\components\ui\button.test.jsx
+==================================================
+import { render, screen } from '@testing-library/react';
+import { Button } from './button';
+import { describe, it, expect } from 'vitest';
+
+describe('Componente Button', () => {
+  it('deve renderizar o texto corretamente', () => {
+    render(<Button>Clique aqui</Button>);
+    expect(screen.getByText('Clique aqui')).toBeInTheDocument();
+  });
+
+  it('deve aplicar a classe de variante destructive', () => {
+    render(<Button variant="destructive">Excluir</Button>);
+    const button = screen.getByText('Excluir');
+    // Verifica se a classe do tailwind para background vermelho estÃ¡ presente
+    expect(button).toHaveClass('bg-red-500');
+  });
+});
+
+==================================================
+ARQUIVO: src\components\ui\card.jsx
+==================================================
+import * as React from "react"
+import { cn } from "../../lib/utils"
+
+const Card = React.forwardRef(({ className, ...props }, ref) => (
+  <div ref={ref} className={cn("rounded-lg border bg-white text-gray-950 shadow-sm", className)} {...props} />
+))
+Card.displayName = "Card"
+
+const CardHeader = React.forwardRef(({ className, ...props }, ref) => (
+  <div ref={ref} className={cn("flex flex-col space-y-1.5 p-6", className)} {...props} />
+))
+CardHeader.displayName = "CardHeader"
+
+const CardTitle = React.forwardRef(({ className, ...props }, ref) => (
+  <h3 ref={ref} className={cn("text-2xl font-semibold leading-none tracking-tight", className)} {...props} />
+))
+CardTitle.displayName = "CardTitle"
+
+const CardContent = React.forwardRef(({ className, ...props }, ref) => (
+  <div ref={ref} className={cn("p-6 pt-0", className)} {...props} />
+))
+CardContent.displayName = "CardContent"
+
+export { Card, CardHeader, CardTitle, CardContent }
+
+==================================================
+ARQUIVO: src\components\ui\input.jsx
+==================================================
+import * as React from "react"
+import { cn } from "../../lib/utils"
+
+const Input = React.forwardRef(({ className, type, ...props }, ref) => {
+  return (
+    <input
+      type={type}
+      className={cn(
+        "flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
+      ref={ref}
+      {...props}
+    />
+  )
+})
+Input.displayName = "Input"
+
+export { Input }
+
+==================================================
+ARQUIVO: src\components\ui\label.jsx
+==================================================
+import * as React from "react"
+import { cn } from "../../lib/utils"
+
+const Label = React.forwardRef(({ className, ...props }, ref) => (
+  <label
+    ref={ref}
+    className={cn(
+      "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-gray-700 mb-2 block",
+      className
+    )}
+    {...props}
+  />
+))
+Label.displayName = "Label"
+
+export { Label }
+
+==================================================
+ARQUIVO: src\components\ui\modal.jsx
+==================================================
+import React, { useEffect } from 'react';
+import { X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+
+export function Modal({ isOpen, onClose, title, children }) {
+  // Fecha ao pressionar ESC
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md bg-white rounded-lg shadow-xl animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-500 transition-colors focus:outline-none"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        
+        {/* Content */}
+        <div className="p-6">
+          {children}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+==================================================
+ARQUIVO: src\components\ui\textarea.jsx
+==================================================
+import * as React from "react"
+import { cn } from "../../lib/utils"
+
+const Textarea = React.forwardRef(({ className, ...props }, ref) => {
+  return (
+    <textarea
+      className={cn(
+        "flex min-h-[80px] w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
+      ref={ref}
+      {...props}
+    />
+  )
+})
+Textarea.displayName = "Textarea"
+
+export { Textarea }
 
 ==================================================
 ARQUIVO: src\context\AuthContext.jsx
@@ -2118,6 +2604,16 @@ export const estados = [
 
 // No futuro, podemos substituir o campo de cidade por uma busca via API de CEP
 // Por enquanto, usaremos um campo de texto simples para a cidade.
+
+==================================================
+ARQUIVO: src\lib\utils.js
+==================================================
+import { clsx } from "clsx"
+import { twMerge } from "tailwind-merge"
+ 
+export function cn(...inputs) {
+  return twMerge(clsx(inputs))
+}
 
 ==================================================
 ARQUIVO: src\pages\AdminPage.jsx
@@ -2861,230 +3357,165 @@ export default AdminTenantPage;
 ==================================================
 ARQUIVO: src\pages\ApplicationDetails.jsx
 ==================================================
-// src/pages/ApplicationDetails.jsx (VERSÃƒO FINAL, COMPLETA E CORRIGIDA)
-import EvaluationDashboardV2 from '../components/evaluation_v2/EvaluationDashboardV2';
-import { useAuth } from '../context/AuthContext'; // Para pegar o usuÃ¡rio logado
 import React, { useState, useEffect } from 'react';
 import { useParams, Link as RouterLink } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-// Importa as funÃ§Ãµes centralizadas
-import { formatUrl, formatPhone, formatDate } from '../utils/formatters';
+import { formatUrl, formatPhone } from '../utils/formatters';
 import { 
     Container, Typography, Box, AppBar, Toolbar, Button, CircularProgress, 
-    Alert, Paper, Grid, Link, Divider, List, ListItem, ListItemText,
-    FormControl, InputLabel, Select, MenuItem, TextField, Snackbar
+    Alert, Paper, Grid, Divider, Tabs, Tab
 } from '@mui/material';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import DeleteIcon from '@mui/icons-material/Delete';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import EvaluationForm from '../components/evaluation_v2/EvaluationForm'; // Importa o novo form
 
-// O componente de seÃ§Ã£o de parÃ¢metros, que jÃ¡ estÃ¡ estÃ¡vel.
-// NOTE: Este componente nÃ£o existe neste arquivo, ele estÃ¡ no JobDetails.jsx
-// Removendo-o daqui para evitar confusÃ£o, jÃ¡ que ele nÃ£o Ã© usado aqui.
-
-// O componente de seÃ§Ã£o de avaliaÃ§Ã£o, com a lÃ³gica de ID Ãºnico que vocÃª sugeriu.
-const EvaluationSection = ({ title, criteria = [], notes = [], evaluationData = {}, onEvaluationChange, onNotesChange }) => {
-  return (
-    <Paper variant="outlined" sx={{ p: 2, mt: 2 }}>
-      <Typography variant="h6" sx={{textTransform: 'capitalize'}}>{title}</Typography>
-      {criteria.map((criterion) => (
-        <Box key={`${title}-${criterion.name}`} sx={{ mt: 2 }}>
-          <FormControl fullWidth>
-            <InputLabel>{criterion.name} (Peso: {criterion.weight}%)</InputLabel>
-            <Select
-              value={evaluationData[criterion.name] || ''}
-              label={`${criterion.name} (Peso: ${criterion.weight}%)`}
-              onChange={(e) => onEvaluationChange(title.toLowerCase(), criterion.name, e.target.value)}
-              variant="standard"
-            >
-              {notes.map((note) => (
-                <MenuItem key={note.id} value={note.id}>{note.nome} ({note.valor})</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Box>
-      ))}
-      <TextField
-        label="AnotaÃ§Ãµes"
-        multiline
-        rows={3}
-        fullWidth
-        variant="standard"
-        sx={{ mt: 2 }}
-        value={evaluationData.anotacoes || ''}
-        onChange={(e) => onNotesChange(title.toLowerCase(), e.target.value)}
-      />
-    </Paper>
-  );
-};
-
-// O componente principal, com a lÃ³gica de estado e carregamento CORRIGIDA.
 const ApplicationDetails = () => {
   const { jobId, applicationId } = useParams();
   const [application, setApplication] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [resumeUrl, setResumeUrl] = useState('');
-  const [evaluation, setEvaluation] = useState(null); // Corrigido: Inicia como nulo
-  const [isSaving, setIsSaving] = useState(false);
-  const [feedback, setFeedback] = useState({ open: false, message: '', severity: 'success' });
-  
+  const [tabValue, setTabValue] = useState(0); 
+  const [myEvaluation, setMyEvaluation] = useState(null);
+
   useEffect(() => {
     const fetchDetails = async () => {
-      if (!applicationId) { setError("ID da candidatura nÃ£o encontrado."); setLoading(false); return; }
       setLoading(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error("SessÃ£o nÃ£o encontrada.");
-        const appResponse = await fetch(`/api/getApplicationDetails?applicationId=${applicationId}`, { headers: { 'Authorization': `Bearer ${session.access_token}` } });
-        if (!appResponse.ok) { const errorData = await appResponse.json(); throw new Error(errorData.error || "NÃ£o foi possÃ­vel buscar os detalhes."); }
-        const appData = await appResponse.json();
+
+        // 1. Busca Detalhes da AplicaÃ§Ã£o
+        // Note: Usando a API getApplicationDetails que jÃ¡ existia ou fazendo direto. 
+        // Vamos fazer fetch direto para garantir que pegamos os parÃ¢metros da vaga atualizados.
+        const { data: appData, error: appError } = await supabase
+            .from('applications')
+            .select(`
+                *,
+                candidate:candidates(*),
+                job:jobs(parameters, title)
+            `)
+            .eq('id', applicationId)
+            .single();
         
-        if (appData.application) {
-          setApplication(appData.application);
+        if (appError) throw appError;
+        setApplication(appData);
 
-          // CORREÃ‡ÃƒO: LÃ³gica robusta para carregar a avaliaÃ§Ã£o salva ou criar uma estrutura vazia.
-          const savedEvaluation = appData.application.evaluation;
-          setEvaluation({
-            triagem: savedEvaluation?.triagem || {},
-            cultura: savedEvaluation?.cultura || {},
-            tÃ©cnico: savedEvaluation?.tÃ©cnico || {},
-          });
+        // 2. Busca Minha AvaliaÃ§Ã£o Existente (Se houver)
+        const { data: evalData } = await supabase
+            .from('evaluations')
+            .select('*')
+            .eq('application_id', applicationId)
+            .eq('evaluator_id', session.user.id)
+            .maybeSingle();
+            
+        if (evalData) setMyEvaluation(evalData);
 
-          const filePath = appData.application.resumeUrl;
-          if (filePath) {
-            const urlResponse = await fetch(`/api/getResumeSignedUrl?filePath=${filePath}`, { headers: { 'Authorization': `Bearer ${session.access_token}` } });
-            if (!urlResponse.ok) { throw new Error("NÃ£o foi possÃ­vel gerar o link do currÃ­culo."); }
+        // 3. URL do CurrÃ­culo
+        if (appData.resumeUrl) {
+            const urlResponse = await fetch(`/api/getResumeSignedUrl?filePath=${appData.resumeUrl}`, { 
+                headers: { 'Authorization': `Bearer ${session.access_token}` } 
+            });
             const urlData = await urlResponse.json();
-            setResumeUrl(urlData.signedUrl);
-          }
-        } else { throw new Error("Dados da candidatura recebidos sÃ£o invÃ¡lidos."); }
-      } catch (err) { console.error("Erro ao carregar detalhes:", err); setError(err.message); } 
-      finally { setLoading(false); }
+            if (urlData.signedUrl) setResumeUrl(urlData.signedUrl);
+        }
+
+      } catch (err) {
+        console.error(err);
+        setError(err.message || "Erro ao carregar.");
+      } finally {
+        setLoading(false);
+      }
     };
     fetchDetails();
   }, [applicationId]);
-  
-  const handleEvaluationChange = (section, criterionName, noteId) => {
-    setEvaluation(prevEval => ({ ...prevEval, [section]: { ...prevEval[section], [criterionName]: noteId } }));
-  };
-  const handleNotesChange = (section, text) => {
-    setEvaluation(prevEval => ({ ...prevEval, [section]: { ...prevEval[section], anotacoes: text } }));
-  };
-  const handleCloseFeedback = (event, reason) => {
-    if (reason === 'clickaway') {
-      return;
-    }
-    setFeedback({ open: false, message: '' });
-  };
 
-  const handleSaveEvaluation = async () => {
-    setIsSaving(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("VocÃª nÃ£o estÃ¡ autenticado.");
-      const response = await fetch('/api/saveEvaluation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-        body: JSON.stringify({ applicationId: applicationId, evaluation: evaluation }),
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "NÃ£o foi possÃ­vel salvar a avaliaÃ§Ã£o.");
-      }
-      setFeedback({ open: true, message: 'AvaliaÃ§Ã£o salva com sucesso!', severity: 'success' });
-    } catch (err) {
-      console.error("Erro ao salvar avaliaÃ§Ã£o:", err);
-      setFeedback({ open: true, message: err.message, severity: 'error' });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-  
+  const handleTabChange = (event, newValue) => setTabValue(newValue);
+
   const renderContent = () => {
-    if (loading) { return <Box sx={{ display: 'flex', justifyContent: 'center', my: 5 }}><CircularProgress /></Box>; }
-    if (error) { return <Alert severity="error">{error}</Alert>; }
-    if (application && evaluation) {
-      const { candidate, job, formData } = application;
-      const displayFields = [
-        { key: 'preferredName', label: 'Como prefere ser chamado(a)?' }, { key: 'birthDate', label: 'Data de Nascimento', format: formatDate },
-        { key: 'state', label: 'Estado' }, { key: 'city', label: 'Cidade' },
-        { key: 'hasGraduated', label: 'Concluiu curso superior?', format: (val) => val === 'sim' ? 'Sim, jÃ¡ concluÃ­' : 'NÃ£o, estou cursando' },
-        { key: 'studyPeriod', label: 'PerÃ­odo que estuda' }, { key: 'course', label: 'Curso' },
-        { key: 'institution', label: 'InstituiÃ§Ã£o' }, { key: 'completionYear', label: 'Ano de ConclusÃ£o' },
-        { key: 'englishLevel', label: 'NÃ­vel de InglÃªs' }, { key: 'spanishLevel', label: 'NÃ­vel de Espanhol' },
-        { key: 'source', label: 'Como soube da vaga?' }, { key: 'motivation', label: 'MotivaÃ§Ã£o' },
-      ];
+    if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', my: 5 }}><CircularProgress /></Box>;
+    if (error) return <Alert severity="error">{error}</Alert>;
+    if (!application) return null;
 
-      return (
+    const { candidate, job, formData } = application;
+
+    return (
         <Grid container spacing={3}>
+          {/* Coluna Esquerda: Info do Candidato */}
           <Grid item xs={12} md={4}>
-            <Paper sx={{ p: 2, height: '100%' }}>
+            <Paper sx={{ p: 3, height: '100%' }}>
               <Typography variant="h5" gutterBottom>{candidate.name}</Typography>
-              <Typography variant="body1" sx={{ wordBreak: 'break-all' }}><strong>E-mail:</strong> {candidate.email}</Typography>
-              <Typography variant="body1"><strong>Telefone:</strong> {formatPhone(formData.phone)}</Typography>
+              <Typography variant="body2" color="textSecondary" gutterBottom>{candidate.email}</Typography>
+              <Typography variant="body2" color="textSecondary" gutterBottom>{formatPhone(formData?.phone)}</Typography>
+              
               <Divider sx={{ my: 2 }} />
-              {formData.linkedinProfile && <Link href={formatUrl(formData.linkedinProfile)} target="_blank" rel="noopener" display="block">Perfil no LinkedIn</Link>}
-              {formData.githubProfile && <Link href={formatUrl(formData.githubProfile)} target="_blank" rel="noopener" display="block">Perfil no GitHub</Link>}
-              <Box mt={2}><Button variant="contained" href={resumeUrl} target="_blank" disabled={!resumeUrl}> Ver CurrÃ­culo </Button></Box>
+              
+              <Typography variant="subtitle2">Cidade</Typography>
+              <Typography variant="body2" gutterBottom>{formData?.city || candidate.city} - {formData?.state || candidate.state}</Typography>
+
+              {formData?.linkedinProfile && (
+                  <Button sx={{mt: 1, justifyContent: 'flex-start'}} fullWidth href={formatUrl(formData.linkedinProfile)} target="_blank">LinkedIn</Button>
+              )}
+              
+              <Box mt={3}>
+                <Button variant="contained" fullWidth href={resumeUrl} target="_blank" disabled={!resumeUrl}>
+                    Ver CurrÃ­culo (PDF)
+                </Button>
+              </Box>
             </Paper>
           </Grid>
+
+          {/* Coluna Direita: Abas de Dados e AvaliaÃ§Ã£o */}
           <Grid item xs={12} md={8}>
-            <Paper sx={{ p: 2, height: '100%' }}>
-              <Typography variant="h6" gutterBottom>Respostas do FormulÃ¡rio</Typography>
-              <Grid container spacing={2}>
-                {displayFields.map((field) => {
-                  const value = formData[field.key];
-                  if (value) {
-                    return (
-                      <Grid item xs={12} sm={6} key={field.key}>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{field.label}</Typography>
-                        <Typography variant="body1">{field.format ? field.format(value) : (value || 'NÃ£o informado')}</Typography>
-                      </Grid>
-                    );
-                  }
-                  return null;
-                })}
-              </Grid>
+            <Paper sx={{ width: '100%', minHeight: '500px' }}>
+                <Tabs value={tabValue} onChange={handleTabChange} sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: '#f9fafb' }}>
+                    <Tab label="Dados do FormulÃ¡rio" />
+                    <Tab label="Minha AvaliaÃ§Ã£o (V2.0)" />
+                </Tabs>
+
+                {/* Aba 0: Dados do FormulÃ¡rio */}
+                <Box p={3} hidden={tabValue !== 0}>
+                    <Grid container spacing={2}>
+                        {Object.entries(formData || {}).map(([key, value]) => {
+                            if(key === 'linkedinProfile' || key === 'githubProfile') return null;
+                            return (
+                                <Grid item xs={12} sm={6} key={key}>
+                                    <Typography variant="caption" display="block" color="textSecondary" sx={{textTransform:'capitalize', fontWeight: 'bold'}}>
+                                        {key.replace(/([A-Z])/g, ' $1').trim()}
+                                    </Typography>
+                                    <Typography variant="body1" sx={{mb: 1}}>{String(value)}</Typography>
+                                </Grid>
+                            )
+                        })}
+                    </Grid>
+                </Box>
+
+                {/* Aba 1: FormulÃ¡rio de AvaliaÃ§Ã£o */}
+                <Box p={3} hidden={tabValue !== 1}>
+                    <EvaluationForm 
+                        applicationId={application.id}
+                        jobParameters={job.parameters || {}}
+                        initialData={myEvaluation}
+                        onSaved={() => alert('AvaliaÃ§Ã£o salva com sucesso!')} 
+                    />
+                </Box>
             </Paper>
           </Grid>
-          <Grid item xs={12}>
-             <Paper sx={{ p: 2, mt: 2 }}>
-                <Typography variant="h5" gutterBottom>AvaliaÃ§Ã£o</Typography>
-                <EvaluationSection title="Triagem" criteria={job.parameters.triagem} notes={job.parameters.notas} evaluationData={evaluation.triagem} onEvaluationChange={handleEvaluationChange} onNotesChange={handleNotesChange} />
-                <EvaluationSection title="Cultura" criteria={job.parameters.cultura} notes={job.parameters.notas} evaluationData={evaluation.cultura} onEvaluationChange={handleEvaluationChange} onNotesChange={handleNotesChange} />
-                <EvaluationSection title="TÃ©cnico" criteria={job.parameters.tÃ©cnico} notes={job.parameters.notas} evaluationData={evaluation.tÃ©cnico} onEvaluationChange={handleEvaluationChange} onNotesChange={handleNotesChange} />
-                <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-                  <Button variant="contained" size="large" onClick={handleSaveEvaluation} disabled={isSaving}>
-                    {isSaving ? <CircularProgress size={24} color="inherit"/> : 'Salvar AvaliaÃ§Ã£o'}
-                  </Button>
-                </Box>
-              </Paper>
-           </Grid>
         </Grid>
-      );
-    }
-    return null;
+    );
   };
   
   return (
     <Box>
-      <AppBar position="static">
+      <AppBar position="static" color="default" elevation={1}>
         <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            {application ? `Candidato: ${application.candidate.name}` : 'Carregando Candidatura...'}
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            AvaliaÃ§Ã£o de Candidato
           </Typography>
-          <Button color="inherit" component={RouterLink} to={`/vaga/${jobId}`}> Voltar para a Vaga </Button>
+          <Button color="inherit" component={RouterLink} to={`/jobs/${jobId}`}>Voltar para Vaga</Button>
         </Toolbar>
       </AppBar>
-      <Container sx={{ mt: 4 }}>
+      <Container sx={{ mt: 4, mb: 4 }}>
         {renderContent()}
       </Container>
-      <Snackbar open={feedback.open} autoHideDuration={4000} onClose={handleCloseFeedback}>
-        <Alert onClose={handleCloseFeedback} severity={feedback.severity} sx={{ width: '100%' }}>
-          {feedback.message}
-        </Alert>
-      </Snackbar>
     </Box>
   );
 };
@@ -3094,30 +3525,30 @@ export default ApplicationDetails;
 ==================================================
 ARQUIVO: src\pages\ApplyPage.jsx
 ==================================================
-// src/pages/ApplyPage.jsx (VERSÃƒO FINAL: Refatorada com StateSelect)
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { 
-    Container, Box, Typography, TextField, Button, CircularProgress, Alert,
-    Select, MenuItem, InputLabel, FormControl, RadioGroup, FormControlLabel, Radio, FormLabel
-} from '@mui/material';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-
-// ImportaÃ§Ã£o do novo componente refatorado
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
+import { Label } from '../components/ui/label';
 import StateSelect from '../components/inputs/StateSelect';
+import { Loader2, UploadCloud, CheckCircle, AlertCircle } from 'lucide-react';
 
 const ApplyPage = () => {
-  const { jobId } = useParams();
+  // CORREÃ‡ÃƒO AQUI: O Router passa 'id', nÃ£o 'jobId'
+  const { id } = useParams(); 
+  // Para facilitar, vamos renomear internamente para jobId
+  const jobId = id;
+
+  // Estados de controle
   const [jobTitle, setJobTitle] = useState('');
-  
-  // Estados de controle da pÃ¡gina
   const [isVagaClosed, setIsVagaClosed] = useState(false);
   const [loadingPage, setLoadingPage] = useState(true);
   const [errorPage, setErrorPage] = useState('');
 
-  // Estado do formulÃ¡rio
+  // FormulÃ¡rio
   const [formState, setFormState] = useState({
-    name: '', preferredName: '', email: '', phone: '', birthDate: null,
+    name: '', preferredName: '', email: '', phone: '', birthDate: '',
     state: '', city: '', hasGraduated: '', studyPeriod: '', course: '',
     institution: '', completionYear: '', englishLevel: '', spanishLevel: '',
     source: '', motivation: '', linkedinProfile: '', githubProfile: ''
@@ -3127,21 +3558,19 @@ const ApplyPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: '', message: '' });
 
-  // Busca dados da vaga e verifica status/plano
   useEffect(() => {
     const fetchJobData = async () => {
       if (!jobId) {
-        setErrorPage('ID da vaga nÃ£o especificado na URL.');
+        setErrorPage('ID da vaga nÃ£o especificado.');
         setLoadingPage(false);
         return;
       }
       try {
         const response = await fetch(`/api/getPublicJobData?id=${jobId}`);
-        if (!response.ok) throw new Error('Vaga nÃ£o encontrada ou ocorreu um erro no servidor.');
+        if (!response.ok) throw new Error('Vaga nÃ£o encontrada.');
         const data = await response.json();
         
         if (data.job) {
-          // LÃ³gica Freemium: Bloqueia se atingiu limite de 3 candidatos
           if (data.job.planId === 'freemium' && data.job.candidateCount >= 3) {
             setIsVagaClosed(true);
           }
@@ -3151,7 +3580,6 @@ const ApplyPage = () => {
         }
       } catch (error) {
         setErrorPage(error.message);
-        console.error(error);
       } finally {
         setLoadingPage(false);
       }
@@ -3161,13 +3589,9 @@ const ApplyPage = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormState(prevState => ({ ...prevState, [name]: value }));
+    setFormState(prev => ({ ...prev, [name]: value }));
   };
-  
-  const handleDateChange = (newDate) => { 
-      setFormState(prevState => ({ ...prevState, birthDate: newDate })); 
-  };
-  
+
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       setResumeFile(e.target.files[0]);
@@ -3188,149 +3612,162 @@ const ApplyPage = () => {
     const formData = new FormData();
     formData.append('jobId', jobId);
     
-    // Anexa campos do formulÃ¡rio ao FormData
-    for (const key in formState) {
-      if (formState[key]) {
-        if (key === 'birthDate') { 
-            formData.append(key, formState[key].toISOString()); 
-        } else { 
-            formData.append(key, formState[key]); 
-        }
-      }
-    }
+    Object.keys(formState).forEach(key => {
+        if (formState[key]) formData.append(key, formState[key]);
+    });
+    
     formData.append('resume', resumeFile);
 
     try {
       const response = await fetch('/api/apply', { method: 'POST', body: formData });
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Ocorreu um erro ao enviar sua candidatura.');
+        throw new Error(errorData.error || 'Erro ao enviar candidatura.');
       }
-      setFeedback({ type: 'success', message: 'Candidatura enviada com sucesso! Agradecemos o seu interesse.' });
+      setFeedback({ type: 'success', message: 'Candidatura enviada com sucesso!' });
     } catch (error) {
-      console.error("Erro na submissÃ£o:", error);
       setFeedback({ type: 'error', message: error.message });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // RenderizaÃ§Ã£o Condicional de Estados de Carregamento/Erro
-  if (loadingPage) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', my: 8 }}><CircularProgress /></Box>;
-  }
+  if (loadingPage) return <div className="flex justify-center my-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600"/></div>;
   
-  if (errorPage) {
-    return <Container maxWidth="sm" sx={{mt: 8}}><Alert severity="error">{errorPage}</Alert></Container>;
-  }
+  if (errorPage) return <div className="max-w-md mx-auto mt-10 p-4 bg-red-50 text-red-700 rounded border border-red-200">{errorPage}</div>;
   
   if (feedback.type === 'success') {
     return (
-        <Container maxWidth="sm" sx={{ textAlign: 'center', mt: 8 }}>
-            <Typography variant="h4" gutterBottom>Obrigado!</Typography>
-            <Alert severity="success">{feedback.message}</Alert>
-        </Container>
+        <div className="max-w-md mx-auto mt-20 text-center p-8 bg-green-50 rounded-lg border border-green-100">
+            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-green-800 mb-2">Sucesso!</h1>
+            <p className="text-green-700">{feedback.message}</p>
+        </div>
     );
   }
   
   if (isVagaClosed) {
     return (
-        <Container maxWidth="sm" sx={{ textAlign: 'center', mt: 8 }}>
-            <Typography variant="h4" gutterBottom>Vaga Encerrada</Typography>
-            <Alert severity="warning">
-              Agradecemos o seu interesse, mas esta vaga jÃ¡ atingiu o nÃºmero mÃ¡ximo de candidaturas.
-            </Alert>
-        </Container>
+        <div className="max-w-md mx-auto mt-20 text-center p-8 bg-yellow-50 rounded-lg border border-yellow-100">
+            <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-yellow-800 mb-2">Vaga Encerrada</h1>
+            <p className="text-yellow-700">Esta vaga jÃ¡ atingiu o limite de candidaturas.</p>
+        </div>
     );
   }
 
   return (
-    <Container maxWidth="md">
-      <Box sx={{ my: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom>Candidatura Ã  Vaga</Typography>
-        <Typography variant="h6" color="text.secondary">{jobTitle}</Typography>
+    <div className="max-w-3xl mx-auto px-4 py-10">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Candidatura Ã  Vaga</h1>
+        <p className="text-lg text-blue-600 font-medium mt-1">{jobTitle}</p>
+      </div>
+      
+      <form onSubmit={handleSubmit} className="space-y-6 bg-white p-6 md:p-8 rounded-xl shadow-sm border border-gray-100">
         
-        <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 3, borderTop: '1px solid #ddd', pt: 3 }}>
-          
-          <TextField name="name" label="Nome Completo" required fullWidth margin="normal" onChange={handleInputChange} />
-          <TextField name="preferredName" label="Como prefere ser chamado(a)?" fullWidth margin="normal" onChange={handleInputChange} />
-          
-          <TextField name="email" label="Seu melhor e-mail" type="email" required fullWidth margin="normal" onChange={handleInputChange} />
-          <TextField name="phone" label="NÃºmero de telefone (celular)" type="tel" required fullWidth margin="normal" onChange={handleInputChange} />
-          
-          <DatePicker label="Data de Nascimento" sx={{ width: '100%', mt: 2, mb: 1 }} value={formState.birthDate} onChange={handleDateChange} />
-          
-          {/* AQUI ESTÃ A MUDANÃ‡A: Uso do Componente StateSelect */}
-          <StateSelect 
-            value={formState.state}
-            onChange={handleInputChange}
-          />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <Label htmlFor="name">Nome Completo</Label>
+                <Input name="name" id="name" required onChange={handleInputChange} />
+            </div>
+            <div>
+                <Label htmlFor="preferredName">Nome Social / Como prefere ser chamado</Label>
+                <Input name="preferredName" id="preferredName" onChange={handleInputChange} />
+            </div>
+            
+            <div>
+                <Label htmlFor="email">E-mail</Label>
+                <Input name="email" id="email" type="email" required onChange={handleInputChange} />
+            </div>
+            <div>
+                <Label htmlFor="phone">Telefone (Celular)</Label>
+                <Input name="phone" id="phone" type="tel" required onChange={handleInputChange} />
+            </div>
+            
+            <div>
+                <Label htmlFor="birthDate">Data de Nascimento</Label>
+                <Input name="birthDate" id="birthDate" type="date" required value={formState.birthDate} onChange={handleInputChange} />
+            </div>
+        </div>
 
-          <TextField 
-            name="city" 
-            label="Em que cidade vocÃª mora?" 
-            required 
-            fullWidth 
-            margin="normal" 
-            onChange={handleInputChange} 
-          />
-          
-          <FormControl component="fieldset" margin="normal" required>
-              <FormLabel component="legend">VocÃª jÃ¡ concluiu algum curso de nÃ­vel superior?</FormLabel>
-              <RadioGroup row name="hasGraduated" value={formState.hasGraduated} onChange={handleInputChange}>
-                  <FormControlLabel value="sim" control={<Radio />} label="Sim, jÃ¡ concluÃ­" />
-                  <FormControlLabel value="nao" control={<Radio />} label="NÃ£o, estou cursando" />
-              </RadioGroup>
-          </FormControl>
-          
-          {formState.hasGraduated === 'nao' && (
-              <TextField name="studyPeriod" label="Em que perÃ­odo/ano vocÃª estÃ¡?" fullWidth margin="normal" onChange={handleInputChange} />
-          )}
-          
-          {formState.hasGraduated && (
-            <>
-                <TextField name="course" label="Qual o curso?" required={!!formState.hasGraduated} fullWidth margin="normal" onChange={handleInputChange} />
-                <TextField name="institution" label="Em qual faculdade/instituiÃ§Ã£o?" required={!!formState.hasGraduated} fullWidth margin="normal" onChange={handleInputChange} />
+        <StateSelect value={formState.state} onChange={handleInputChange} />
+        
+        <div>
+            <Label htmlFor="city">Cidade</Label>
+            <Input name="city" id="city" required onChange={handleInputChange} />
+        </div>
+
+        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <Label className="mb-3">VocÃª jÃ¡ concluiu curso superior?</Label>
+            <div className="flex gap-6">
+                <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="hasGraduated" value="sim" onChange={handleInputChange} className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm text-gray-700">Sim, jÃ¡ concluÃ­</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="hasGraduated" value="nao" onChange={handleInputChange} className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm text-gray-700">NÃ£o, estou cursando</span>
+                </label>
+            </div>
+        </div>
+
+        {formState.hasGraduated === 'nao' && (
+             <div><Label>PerÃ­odo/Ano</Label><Input name="studyPeriod" onChange={handleInputChange} /></div>
+        )}
+        
+        {formState.hasGraduated && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><Label>Curso</Label><Input name="course" required onChange={handleInputChange} /></div>
+                <div><Label>InstituiÃ§Ã£o</Label><Input name="institution" required onChange={handleInputChange} /></div>
                 {formState.hasGraduated === 'sim' && ( 
-                    <TextField name="completionYear" label="Ano de ConclusÃ£o" type="number" fullWidth margin="normal" onChange={handleInputChange} />
+                     <div><Label>Ano de ConclusÃ£o</Label><Input name="completionYear" type="number" onChange={handleInputChange} /></div>
                 )}
-            </>
-          )}
-          
-          {['englishLevel', 'spanishLevel'].map(lang => (
-              <FormControl fullWidth margin="normal" key={lang}>
-                  <InputLabel>{lang === 'englishLevel' ? 'NÃ­vel de InglÃªs' : 'NÃ­vel de Espanhol'}</InputLabel>
-                  <Select name={lang} value={formState[lang] || ''} label={lang === 'englishLevel' ? 'NÃ­vel de InglÃªs' : 'NÃ­vel de Espanhol'} onChange={handleInputChange}>
-                      <MenuItem value="basico">BÃ¡sico</MenuItem>
-                      <MenuItem value="intermediario">IntermediÃ¡rio</MenuItem>
-                      <MenuItem value="avancado">AvanÃ§ado</MenuItem>
-                      <MenuItem value="fluente">Fluente/Nativo</MenuItem>
-                  </Select>
-              </FormControl>
-          ))}
-          
-          <TextField name="source" label="Como ficou sabendo da vaga?" fullWidth margin="normal" onChange={handleInputChange} />
-          
-          <TextField name="motivation" label="Por que vocÃª deseja fazer parte do nosso time?" required multiline rows={4} fullWidth margin="normal" onChange={handleInputChange} />
-          
-          <TextField name="linkedinProfile" label="Link do seu perfil no LinkedIn" fullWidth margin="normal" onChange={handleInputChange} />
-          <TextField name="githubProfile" label="Link do seu perfil no GitHub" fullWidth margin="normal" onChange={handleInputChange} />
-          
-          <Button variant="outlined" component="label" sx={{ mt: 2, mb: 1, width: '100%' }}>
-              Anexe o seu currÃ­culo (PDF, DOC, DOCX)
-              <input type="file" hidden required accept=".pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handleFileChange} />
-          </Button>
-          
-          {resumeFile && <Typography variant="body2" textAlign="center" color="text.secondary">{resumeFile.name}</Typography>}
-          
-          {feedback.type && <Alert severity={feedback.type} sx={{ mt: 2 }}>{feedback.message}</Alert>}
-          
-          <Button type="submit" fullWidth variant="contained" size="large" sx={{ mt: 3, mb: 2 }} disabled={isSubmitting}>
-              {isSubmitting ? <CircularProgress size={24} /> : 'Enviar Candidatura'}
-          </Button>
-        </Box>
-      </Box>
-    </Container>
+            </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {['englishLevel', 'spanishLevel'].map(lang => (
+                <div key={lang}>
+                    <Label>{lang === 'englishLevel' ? 'InglÃªs' : 'Espanhol'}</Label>
+                    <select name={lang} onChange={handleInputChange} className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm">
+                        <option value="">Selecione...</option>
+                        <option value="basico">BÃ¡sico</option>
+                        <option value="intermediario">IntermediÃ¡rio</option>
+                        <option value="avancado">AvanÃ§ado</option>
+                        <option value="fluente">Fluente/Nativo</option>
+                    </select>
+                </div>
+            ))}
+        </div>
+
+        <div>
+            <Label htmlFor="motivation">Por que vocÃª deseja esta vaga?</Label>
+            <Textarea name="motivation" id="motivation" required rows={4} onChange={handleInputChange} />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><Label>LinkedIn (Opcional)</Label><Input name="linkedinProfile" onChange={handleInputChange} /></div>
+            <div><Label>GitHub (Opcional)</Label><Input name="githubProfile" onChange={handleInputChange} /></div>
+        </div>
+
+        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors">
+            <Label htmlFor="resume" className="cursor-pointer">
+                <div className="flex flex-col items-center gap-2">
+                    <UploadCloud className="w-8 h-8 text-gray-400" />
+                    <span className="text-sm font-medium text-blue-600">Clique para enviar seu currÃ­culo (PDF/DOC)</span>
+                    {resumeFile && <span className="text-xs text-green-600 font-bold">Arquivo selecionado: {resumeFile.name}</span>}
+                </div>
+                <input id="resume" type="file" hidden required accept=".pdf,.doc,.docx" onChange={handleFileChange} />
+            </Label>
+        </div>
+
+        {feedback.type === 'error' && <div className="text-red-600 text-sm bg-red-50 p-3 rounded">{feedback.message}</div>}
+
+        <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
+            {isSubmitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin"/> Enviando...</> : 'Enviar Candidatura'}
+        </Button>
+      </form>
+    </div>
   );
 };
 
@@ -3363,259 +3800,243 @@ export default function CompanySettings() {
 ==================================================
 ARQUIVO: src\pages\Dashboard.jsx
 ==================================================
-// src/pages/Dashboard.jsx (VERSÃƒO FINAL: UX Aprimorada e Chips de Status)
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import { useAuth } from '../context/AuthContext';
-import CreateJobModal from '../components/jobs/CreateJobModal';
-import { 
-    Box, Button, Typography, Container, AppBar, Toolbar, CircularProgress, 
-    Table, TableBody, TableCell, TableHead, TableRow, Paper, Alert,
-    FormControl, InputLabel, Select, MenuItem, Chip, Stack
-} from '@mui/material';
 import { formatStatus } from '../utils/formatters';
-import AddIcon from '@mui/icons-material/Add';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-
-// FunÃ§Ã£o auxiliar para definir cores dos status (Design System)
-const getStatusColor = (status) => {
-    switch (status) {
-        case 'active': return 'success';   // Verde
-        case 'filled': return 'info';      // Azul
-        case 'inactive': return 'default'; // Cinza
-        default: return 'default';
-    }
-};
-
-// Prioridade de ordenaÃ§Ã£o (Constante para nÃ£o recriar a cada render)
-const STATUS_PRIORITY = {
-    'active': 1,
-    'filled': 2,
-    'inactive': 3
-};
+import { Button } from '../components/ui/button';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { Plus, Loader2, Users, Briefcase, Building2, Crown, User, AlertCircle } from 'lucide-react';
+import CreateJobModal from '../components/jobs/CreateJobModal';
 
 const Dashboard = () => {
     const navigate = useNavigate();
     const { currentUser } = useAuth();
     
-    // Estados de Dados
     const [jobs, setJobs] = useState([]);
-    const [planId, setPlanId] = useState(null);
-    const [isAdmin, setIsAdmin] = useState(false);
-    
-    // Estados de UI
+    const [meta, setMeta] = useState({ companyName: '', userName: '', planId: '' });
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
+    const [error, setError] = useState(null);
     const [openCreateModal, setOpenCreateModal] = useState(false);
-    const [statusFilter, setStatusFilter] = useState('active'); // UX: PadrÃ£o 'active' foca no que importa
+    
+    // Filtros
+    const [statusFilter, setStatusFilter] = useState('active');
+    const [deptFilter, setDeptFilter] = useState('all');
 
-    const fetchJobs = async () => {
-        if (!currentUser) return;
+    const fetchData = async () => {
         setLoading(true);
+        setError(null);
         try {
-            // Nota: O arquivo client.js jÃ¡ garante que as chaves existem
             const { data: { session } } = await supabase.auth.getSession();
-            if (!session) throw new Error("SessÃ£o do usuÃ¡rio nÃ£o encontrada.");
-            
+            if (!session) return; 
+
             const response = await fetch('/api/jobs', { 
                 headers: { 'Authorization': `Bearer ${session.access_token}` } 
             });
-            
+
+            const data = await response.json();
+
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Falha ao buscar vagas.');
+                throw new Error(data.error || 'Falha ao comunicar com o servidor.');
             }
             
-            const data = await response.json();
             setJobs(data.jobs || []);
-            setPlanId(data.planId);
-            setIsAdmin(data.isAdmin);
+            setMeta(data.meta || {});
+
         } catch (err) {
-            console.error("Erro ao buscar vagas:", err);
+            console.error("Erro Dashboard:", err);
             setError(err.message);
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => {
-        fetchJobs();
+    useEffect(() => { 
+        if (currentUser) fetchData(); 
     }, [currentUser]);
 
-    // LÃ³gica de Filtro e OrdenaÃ§Ã£o Otimizada (Memoized)
-    const processedJobs = useMemo(() => {
-      return jobs
-        .filter(job => {
-          if (statusFilter === 'all') return true;
-          return job.status === statusFilter;
-        })
-        .sort((a, b) => {
-          // 1. Ordena pela prioridade do status
-          const priorityA = STATUS_PRIORITY[a.status] || 99;
-          const priorityB = STATUS_PRIORITY[b.status] || 99;
-          
-          if (priorityA !== priorityB) return priorityA - priorityB;
-          
-          // 2. Desempate: Ordem alfabÃ©tica
-          return a.title.localeCompare(b.title);
-        });
-    }, [jobs, statusFilter]);
+    // Extrai departamentos Ãºnicos
+    const uniqueDepartments = useMemo(() => {
+        const depts = jobs.map(j => j.deptName).filter(Boolean);
+        return [...new Set(depts)].sort();
+    }, [jobs]);
 
-    const handleLogout = async () => { await supabase.auth.signOut(); };
-    const handleRowClick = (jobId) => { navigate(`/vaga/${jobId}`); };
-    
-    const isFreemium = planId === 'freemium';
-    const isJobLimitReached = isFreemium && jobs.length >= 2;
+    // Filtros
+    const processedJobs = useMemo(() => {
+        return jobs.filter(job => {
+            const matchStatus = statusFilter === 'all' || job.status === statusFilter;
+            const matchDept = deptFilter === 'all' || job.deptName === deptFilter;
+            return matchStatus && matchDept;
+        });
+    }, [jobs, statusFilter, deptFilter]);
+
+    // KPIs
+    const activeJobs = jobs.filter(j => j.status === 'active');
+    const totalCandidates = jobs.reduce((acc, j) => acc + (j.candidateCount || 0), 0);
+    const avgCandidates = activeJobs.length ? (totalCandidates / activeJobs.length).toFixed(1) : 0;
+
+    const getStatusVariant = (status) => {
+        return status === 'active' ? 'success' : status === 'filled' ? 'default' : 'secondary';
+    };
 
     return (
-        <>
-            <Box sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: '#f5f5f5' }}>
-                <AppBar position="static" color="default" elevation={1}>
-                    <Toolbar>
-                        <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 'bold', color: 'primary.main' }}>
-                            Novva R&S
-                        </Typography>
-                        {isAdmin && (
-                            <Button color="inherit" component={RouterLink} to="/admin" sx={{ mr: 1 }}>
-                                Admin System
-                            </Button>
-                        )}
-                        <Button color="inherit" onClick={handleLogout}>Sair</Button>
-                    </Toolbar>
-                </AppBar>
+        <div className="space-y-6">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-lg border shadow-sm">
+                <div>
+                    <div className="flex items-center gap-2 mb-1">
+                        <Building2 className="w-5 h-5 text-gray-400" />
+                        <h1 className="text-2xl font-bold tracking-tight text-gray-900">
+                            {loading ? '...' : meta.companyName}
+                        </h1>
+                        <span className="text-gray-300 mx-2">|</span>
+                        <div className="flex items-center gap-2 text-gray-600 font-medium">
+                            <User className="w-4 h-4" /> {loading ? '...' : meta.userName}
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-2">
+                        <span>Painel de Vagas</span>
+                        <span>â€¢</span>
+                        <span className="flex items-center text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full font-medium capitalize">
+                            <Crown className="w-3 h-3 mr-1" /> Plano {meta.planId}
+                        </span>
+                    </div>
+                </div>
+                <Button onClick={() => setOpenCreateModal(true)}>
+                    <Plus className="mr-2 h-4 w-4" /> Nova Vaga
+                </Button>
+            </div>
 
-                <Container sx={{ mt: 4, pb: 4 }}>
-                    {/* CabeÃ§alho da PÃ¡gina */}
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4, flexWrap: 'wrap', gap: 2 }}>
-                        <Typography variant="h4" component="h1" fontWeight="500">
-                            Painel de Vagas
-                        </Typography>
-                        <Stack direction="row" spacing={2}>
-                            <Button 
-                                variant="outlined" 
-                                startIcon={<CheckCircleIcon />}
-                                component={RouterLink} 
-                                to="/aprovados"
+            {/* Tratamento de Erro */}
+            {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-md flex items-center gap-3">
+                    <AlertCircle className="w-5 h-5" />
+                    <div>
+                        <p className="font-bold">Erro ao carregar dados</p>
+                        <p className="text-sm">{error}</p>
+                    </div>
+                    <Button variant="outline" size="sm" className="ml-auto bg-white" onClick={fetchData}>Recarregar</Button>
+                </div>
+            )}
+
+            {/* KPIs */}
+            <div className="grid gap-4 md:grid-cols-3">
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Vagas Ativas</CardTitle>
+                        <Briefcase className="h-4 w-4 text-gray-500" />
+                    </CardHeader>
+                    <CardContent><div className="text-2xl font-bold">{activeJobs.length}</div></CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Candidatos / Vaga</CardTitle>
+                        <Users className="h-4 w-4 text-gray-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{avgCandidates}</div>
+                        <p className="text-xs text-gray-500 mt-1">MÃ©dia</p>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Total Candidatos</CardTitle>
+                        <div className="h-4 w-4 text-gray-500">ðŸ“„</div>
+                    </CardHeader>
+                    <CardContent><div className="text-2xl font-bold">{totalCandidates}</div></CardContent>
+                </Card>
+            </div>
+
+            {/* Lista de Vagas */}
+            <Card>
+                <CardHeader>
+                    <div className="flex flex-col sm:flex-row justify-between gap-4">
+                        <CardTitle>Gerenciar Vagas</CardTitle>
+                        <div className="flex gap-2">
+                            <select 
+                                className="h-9 rounded-md border border-gray-300 text-sm px-3 bg-white"
+                                value={deptFilter}
+                                onChange={(e) => setDeptFilter(e.target.value)}
                             >
-                                Ver Aprovados
-                            </Button>
-                            <Button 
-                                variant="contained" 
-                                startIcon={<AddIcon />}
-                                onClick={() => setOpenCreateModal(true)}
-                                disabled={isJobLimitReached}
+                                <option value="all">Todos Departamentos</option>
+                                {uniqueDepartments.map(d => <option key={d} value={d}>{d}</option>)}
+                            </select>
+                            <select 
+                                className="h-9 rounded-md border border-gray-300 text-sm px-3 bg-white"
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value)}
                             >
-                                Nova Vaga
-                            </Button>
-                        </Stack>
-                    </Box>
-
-                    {isJobLimitReached && (
-                        <Alert severity="info" sx={{ mb: 3 }}>
-                            Seu plano <strong>Freemium</strong> permite atÃ© 2 vagas. FaÃ§a um upgrade para criar mais.
-                        </Alert>
-                    )}
-
-                    {/* Barra de Ferramentas da Tabela */}
-                    <Paper sx={{ mb: 3, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <FormControl size="small" sx={{ minWidth: 200 }}>
-                                <InputLabel id="status-filter-label">Status da Vaga</InputLabel>
-                                <Select
-                                    labelId="status-filter-label"
-                                    value={statusFilter}
-                                    label="Status da Vaga"
-                                    onChange={(e) => setStatusFilter(e.target.value)}
-                                >
-                                    <MenuItem value="active">Apenas Ativas</MenuItem>
-                                    <MenuItem value="filled">Preenchidas</MenuItem>
-                                    <MenuItem value="inactive">Inativas</MenuItem>
-                                    <Divider />
-                                    <MenuItem value="all">Todas as Vagas</MenuItem>
-                                </Select>
-                            </FormControl>
-                            <Typography variant="body2" color="text.secondary">
-                                Exibindo <strong>{processedJobs.length}</strong> de {jobs.length} vagas
-                            </Typography>
-                        </Box>
-                    </Paper>
-
-                    {/* Ãrea de ConteÃºdo */}
+                                <option value="active">Ativas</option>
+                                <option value="filled">Preenchidas</option>
+                                <option value="inactive">Inativas</option>
+                                <option value="all">Todas</option>
+                            </select>
+                        </div>
+                    </div>
+                </CardHeader>
+                <CardContent>
                     {loading ? (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', my: 8 }}><CircularProgress /></Box>
-                    ) : error ? (
-                        <Alert severity="error">Erro ao carregar dados: {error}</Alert>
+                        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>
+                    ) : processedJobs.length === 0 ? (
+                        <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg border border-dashed">
+                            <p>Nenhuma vaga encontrada com estes filtros.</p>
+                            {statusFilter !== 'all' && <Button variant="link" onClick={() => setStatusFilter('all')}>Limpar filtros</Button>}
+                        </div>
                     ) : (
-                        <Paper sx={{ width: '100%', overflow: 'hidden', boxShadow: 2 }}>
-                            <Table>
-                                <TableHead sx={{ bgcolor: '#f9fafb' }}>
-                                    <TableRow>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>TÃ­tulo da Vaga</TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold', width: '150px' }}>Status</TableCell>
-                                        <TableCell align="center" sx={{ fontWeight: 'bold', width: '150px' }}>Candidatos</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {processedJobs.length > 0 ? processedJobs.map((job) => (
-                                        <TableRow 
-                                            hover 
+                        <div className="relative w-full overflow-auto">
+                            <table className="w-full caption-bottom text-sm text-left">
+                                <thead className="bg-gray-50/50 [&_tr]:border-b">
+                                    <tr>
+                                        <th className="h-10 px-4 font-medium text-gray-500">Empresa / Ãrea</th>
+                                        <th className="h-10 px-4 font-medium text-gray-500">TÃ­tulo da Vaga</th>
+                                        <th className="h-10 px-4 font-medium text-gray-500">Status</th>
+                                        <th className="h-10 px-4 font-medium text-gray-500 text-center">Candidatos</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="[&_tr:last-child]:border-0">
+                                    {processedJobs.map((job) => (
+                                        <tr 
                                             key={job.id} 
-                                            onClick={() => handleRowClick(job.id)}
-                                            sx={{ cursor: 'pointer', transition: '0.2s' }}
+                                            className="border-b transition-colors hover:bg-gray-50 cursor-pointer group"
+                                            onClick={() => navigate(`/jobs/${job.id}`)}
                                         >
-                                            <TableCell>
-                                                <Typography variant="body1" fontWeight="500">{job.title}</Typography>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Chip 
-                                                    label={formatStatus(job.status)} 
-                                                    color={getStatusColor(job.status)}
-                                                    size="small"
-                                                    variant={job.status === 'active' ? 'filled' : 'outlined'}
-                                                />
-                                            </TableCell>
-                                            <TableCell align="center">
-                                                <Chip 
-                                                    label={job.candidateCount || 0} 
-                                                    size="small" 
-                                                    variant="outlined" 
-                                                    sx={{ minWidth: 40 }}
-                                                />
-                                            </TableCell>
-                                        </TableRow>
-                                    )) : (
-                                        <TableRow>
-                                            <TableCell colSpan={3} align="center" sx={{ py: 6 }}>
-                                                <Typography color="text.secondary">
-                                                    Nenhuma vaga encontrada com o filtro atual.
-                                                </Typography>
-                                                {statusFilter !== 'all' && (
-                                                    <Button onClick={() => setStatusFilter('all')} sx={{ mt: 1 }}>
-                                                        Limpar Filtros
-                                                    </Button>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </Paper>
+                                            <td className="p-4 align-middle text-gray-600">
+                                                <span className="font-medium text-gray-900">{meta.companyName}</span> 
+                                                <span className="text-gray-300 mx-2">/</span> 
+                                                {job.deptName}
+                                            </td>
+                                            <td className="p-4 align-middle font-medium text-blue-600 group-hover:underline">
+                                                {job.title}
+                                            </td>
+                                            <td className="p-4 align-middle">
+                                                <Badge variant={getStatusVariant(job.status)}>
+                                                    {formatStatus(job.status)}
+                                                </Badge>
+                                            </td>
+                                            <td className="p-4 align-middle text-center">
+                                                <Badge variant="outline" className="bg-gray-50 text-gray-700">
+                                                    {job.candidateCount}
+                                                </Badge>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     )}
-                </Container>
-            </Box>
-            
+                </CardContent>
+            </Card>
+
             <CreateJobModal 
                 open={openCreateModal}
                 handleClose={() => setOpenCreateModal(false)}
-                onJobCreated={fetchJobs}
+                onJobCreated={fetchData} 
             />
-        </>
+        </div>
     );
 };
-
-// Pequeno ajuste para importar Divider que esqueci no topo
-import { Divider } from '@mui/material';
 
 export default Dashboard;
 
@@ -3777,392 +4198,215 @@ export default HiredPage;
 ==================================================
 ARQUIVO: src\pages\JobDetails.jsx
 ==================================================
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-import { 
-  ArrowLeft, 
-  User, 
-  Calendar, 
-  MapPin, 
-  Briefcase, 
-  CheckCircle, 
-  XCircle, 
-  Clock, 
-  Share2,
-  Download,
-  Settings,
-  Plus,
-  Trash2,
-  Save
-} from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
+import { Loader2, ArrowLeft, MapPin, Briefcase, Calendar, Share2, User, Download, Plus, Trash2, Save, Copy } from 'lucide-react';
 
 export default function JobDetails() {
   const { id } = useParams();
-  
-  // Estados de Dados
   const [job, setJob] = useState(null);
   const [candidates, setCandidates] = useState([]);
-  
-  // Estados de Controle
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('details'); // 'details', 'candidates', 'evaluation'
-  const [shareUrl, setShareUrl] = useState('');
+  const [activeTab, setActiveTab] = useState('details');
   const [savingParams, setSavingParams] = useState(false);
-
-  // Estado Local para EdiÃ§Ã£o dos ParÃ¢metros de AvaliaÃ§Ã£o (V2)
-  const [evalParams, setEvalParams] = useState({
-    triagem: [], // Perguntas de Yes/No
-    tecnico: [], // CritÃ©rios de 1 a 5
-    cultura: []  // CritÃ©rios de Fit Cultural
+  
+  // Estado inicial garantido para as 3 seÃ§Ãµes
+  const [evalParams, setEvalParams] = useState({ 
+      triagem: [], 
+      cultura: [], 
+      tecnico: [],
+      notas: [
+        {id: '1', nome: 'Abaixo', valor: 0}, 
+        {id: '2', nome: 'Atende', valor: 50}, 
+        {id: '3', nome: 'Supera', valor: 100}
+      ]
   });
 
   useEffect(() => {
+    const fetchJobDetails = async () => {
+      try {
+        setLoading(true);
+        const { data: jobData, error: jobError } = await supabase.from('jobs').select('*').eq('id', id).single();
+        if (jobError) throw jobError;
+        setJob(jobData);
+        
+        // Carrega parÃ¢metros existentes ou mantÃ©m o padrÃ£o
+        if (jobData.parameters) {
+          setEvalParams(prev => ({ ...prev, ...jobData.parameters }));
+        }
+
+        const { data: appsData } = await supabase
+          .from('applications')
+          .select(`*, candidate:candidates(name, email, city, resume_url)`)
+          .eq('jobId', id)
+          .order('created_at', { ascending: false });
+        
+        setCandidates(appsData || []);
+      } catch (error) {
+        console.error('Erro:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchJobDetails();
   }, [id]);
 
-  useEffect(() => {
-    const url = `${window.location.origin}/vagas/${id}/candidatar`;
-    setShareUrl(url);
-  }, [id]);
-
-  const fetchJobDetails = async () => {
-    try {
-      setLoading(true);
-
-      // 1. Busca Vaga e ParÃ¢metros
-      const { data: jobData, error: jobError } = await supabase
-        .from('jobs')
-        .select('*')
-        .eq('id', id)
-        .single();
-
-      if (jobError) throw jobError;
-      
-      setJob(jobData);
-      
-      // Carrega os parÃ¢metros existentes ou inicia vazios
-      if (jobData.parameters) {
-        setEvalParams({
-          triagem: jobData.parameters.triagem || [],
-          tecnico: jobData.parameters.tecnico || [],
-          cultura: jobData.parameters.cultura || []
-        });
-      }
-
-      // 2. Busca Candidatos (com Join V2)
-      const { data: appsData, error: appsError } = await supabase
-        .from('applications')
-        .select(`
-          *,
-          candidate:candidates (
-            name, email, phone, city, state, resume_url
-          )
-        `)
-        .eq('jobId', id)
-        .order('created_at', { ascending: false });
-
-      if (appsError) throw appsError;
-      setCandidates(appsData || []);
-
-    } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // --- LÃ“GICA DE AVALIAÃ‡ÃƒO (V2) ---
-
-  const handleAddCriteria = (type) => {
-    const newCriteria = prompt(`Digite o novo critÃ©rio para ${type}:`);
-    if (!newCriteria) return;
-
-    setEvalParams(prev => ({
-      ...prev,
-      [type]: [...prev[type], { id: crypto.randomUUID(), text: newCriteria, weight: 1 }]
-    }));
-  };
-
-  const handleRemoveCriteria = (type, criteriaId) => {
-    setEvalParams(prev => ({
-      ...prev,
-      [type]: prev[type].filter(item => item.id !== criteriaId)
-    }));
-  };
-
-  const handleWeightChange = (type, criteriaId, newWeight) => {
-    setEvalParams(prev => ({
-      ...prev,
-      [type]: prev[type].map(item => 
-        item.id === criteriaId ? { ...item, weight: parseInt(newWeight) } : item
-      )
-    }));
-  };
-
-  const handleSaveParameters = async () => {
-    try {
-      setSavingParams(true);
-      const { error } = await supabase
-        .from('jobs')
-        .update({ parameters: evalParams })
-        .eq('id', id);
-
-      if (error) throw error;
-      alert('ParÃ¢metros de avaliaÃ§Ã£o atualizados com sucesso!');
-    } catch (err) {
-      console.error('Erro ao salvar parÃ¢metros:', err);
-      alert('Erro ao salvar. Tente novamente.');
-    } finally {
-      setSavingParams(false);
-    }
-  };
-
-  // --- LÃ“GICA DE UTILIDADES ---
-
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(shareUrl);
+    navigator.clipboard.writeText(`${window.location.origin}/vagas/${id}/candidatar`);
     alert('Link copiado!');
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
+  const handleSaveParameters = async () => {
+    setSavingParams(true);
+    try {
+        await supabase.from('jobs').update({ parameters: evalParams }).eq('id', id);
+        alert('ConfiguraÃ§Ãµes salvas!');
+    } catch(e) { console.error(e); }
+    finally { setSavingParams(false); }
+  };
 
-  if (!job) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 py-10 text-center">
-        <h2 className="text-2xl font-bold text-gray-900">Vaga nÃ£o encontrada</h2>
-        <Link to="/jobs" className="mt-4 inline-flex items-center text-blue-600">
-          <ArrowLeft className="h-4 w-4 mr-2" /> Voltar
-        </Link>
-      </div>
-    );
-  }
+  const addCriteria = (type) => {
+    const text = prompt(`Novo critÃ©rio para ${type.toUpperCase()}:`);
+    if(text) {
+        setEvalParams(p => ({
+            ...p, 
+            [type]: [...(p[type] || []), {id: crypto.randomUUID(), text, weight: 1}]
+        }));
+    }
+  };
+
+  const removeCriteria = (type, id) => {
+      setEvalParams(p => ({
+          ...p, 
+          [type]: p[type].filter(x => x.id !== id)
+      }));
+  };
+
+  if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin w-8 h-8 text-blue-600"/></div>;
+  if (!job) return <div className="text-center p-10">Vaga nÃ£o encontrada</div>;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* HEADER DA PÃGINA */}
+    <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="mb-8">
-        <Link to="/jobs" className="inline-flex items-center text-gray-500 hover:text-gray-700 mb-4">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Voltar para Painel
-        </Link>
-        
-        <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">{job.title}</h1>
-            <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-500">
-              <span className="flex items-center"><MapPin className="h-4 w-4 mr-1"/> {job.location || 'Remoto'}</span>
-              <span className="flex items-center"><Briefcase className="h-4 w-4 mr-1"/> {job.type || 'CLT'}</span>
-              <span className="flex items-center"><Calendar className="h-4 w-4 mr-1"/> {new Date(job.created_at).toLocaleDateString()}</span>
+        <Link to="/jobs" className="inline-flex items-center text-gray-500 hover:text-gray-900 mb-4"><ArrowLeft className="w-4 h-4 mr-2"/> Voltar</Link>
+        <div className="flex justify-between items-start">
+            <div>
+                <h1 className="text-3xl font-bold text-gray-900">{job.title}</h1>
+                <div className="flex gap-4 mt-2 text-sm text-gray-500">
+                    <span className="flex items-center"><MapPin className="w-4 h-4 mr-1"/> {job.location_type || 'Remoto'}</span>
+                    <span className="flex items-center"><Briefcase className="w-4 h-4 mr-1"/> {job.type || 'CLT'}</span>
+                    <span className="flex items-center"><Calendar className="w-4 h-4 mr-1"/> {new Date(job.created_at).toLocaleDateString()}</span>
+                </div>
             </div>
-          </div>
-          
-          <button
-            onClick={handleCopyLink}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-          >
-            <Share2 className="h-4 w-4 mr-2" /> Compartilhar Link
-          </button>
+            <Button variant="outline" onClick={handleCopyLink}>
+                <Share2 className="w-4 h-4 mr-2"/> Compartilhar FormulÃ¡rio
+            </Button>
         </div>
       </div>
 
-      {/* NAVEGAÃ‡ÃƒO DE ABAS */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setActiveTab('details')}
-            className={`${activeTab === 'details' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-          >
-            Detalhes da Vaga
-          </button>
-          <button
-            onClick={() => setActiveTab('candidates')}
-            className={`${activeTab === 'candidates' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
-          >
-            Candidatos
-            <span className="ml-2 bg-gray-100 text-gray-600 py-0.5 px-2.5 rounded-full text-xs">{candidates.length}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('evaluation')}
-            className={`${activeTab === 'evaluation' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
-          >
-            <Settings className="w-4 h-4 mr-2" />
-            ConfiguraÃ§Ã£o de AvaliaÃ§Ã£o
-          </button>
-        </nav>
+      {/* NavegaÃ§Ã£o de Abas */}
+      <div className="border-b border-gray-200 mb-6 flex gap-8">
+        {['details', 'candidates', 'evaluation'].map(tab => (
+            <button 
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`py-4 px-1 border-b-2 font-medium text-sm capitalize ${activeTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            >
+                {tab === 'details' ? 'Detalhes' : tab === 'candidates' ? `Candidatos (${candidates.length})` : 'ConfiguraÃ§Ã£o da AvaliaÃ§Ã£o'}
+            </button>
+        ))}
       </div>
 
-      {/* CONTEÃšDO DAS ABAS */}
-      
-      {/* 1. ABA DETALHES */}
+      {/* ABA: Detalhes */}
       {activeTab === 'details' && (
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:px-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">DescriÃ§Ã£o do Cargo</h3>
-            <div className="mt-2 text-sm text-gray-500 whitespace-pre-wrap">{job.description || 'N/A'}</div>
-          </div>
-          <div className="border-t border-gray-200 px-4 py-5 sm:px-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">Requisitos</h3>
-            <div className="mt-2 text-sm text-gray-500 whitespace-pre-wrap">{job.requirements || 'N/A'}</div>
-          </div>
+        <div className="bg-white p-6 rounded-lg shadow-sm border space-y-6">
+            <div><h3 className="font-medium text-gray-900">DescriÃ§Ã£o</h3><p className="mt-2 text-gray-600 whitespace-pre-wrap">{job.description || 'Sem descriÃ§Ã£o.'}</p></div>
+            <div><h3 className="font-medium text-gray-900">Requisitos</h3><p className="mt-2 text-gray-600 whitespace-pre-wrap">{job.requirements || 'Sem requisitos.'}</p></div>
         </div>
       )}
 
-      {/* 2. ABA CANDIDATOS (Com CorreÃ§Ã£o Visual) */}
+      {/* ABA: Candidatos */}
       {activeTab === 'candidates' && (
         <div className="space-y-4">
-          {candidates.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-lg border border-dashed border-gray-300">
-              <User className="mx-auto h-12 w-12 text-gray-400" />
-              <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum candidato inscrito ainda</h3>
-              <p className="mt-1 text-sm text-gray-500">Divulgue o link para comeÃ§ar a receber currÃ­culos.</p>
-            </div>
-          ) : (
-            <div className="bg-white shadow overflow-hidden sm:rounded-md">
-              <ul className="divide-y divide-gray-200">
-                {candidates.map((app) => (
-                  <li key={app.id}>
-                    <div className="px-4 py-4 sm:px-6 hover:bg-gray-50">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center min-w-0">
-                          <div className="flex-shrink-0">
-                            <span className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
-                              {app.candidate?.name?.charAt(0).toUpperCase() || '?'}
-                            </span>
-                          </div>
-                          <div className="ml-4 truncate">
-                            <p className="text-sm font-medium text-blue-600 truncate">{app.candidate?.name || 'Sem Nome'}</p>
-                            <div className="flex text-sm text-gray-500 mt-1 gap-4">
-                              <span className="flex items-center"><User className="w-4 h-4 mr-1"/> {app.candidate?.email}</span>
-                              <span className="flex items-center"><MapPin className="w-4 h-4 mr-1"/> {app.candidate?.city || 'N/A'}</span>
-                            </div>
-                          </div>
+            {candidates.map(app => (
+                <div key={app.id} className="bg-white p-4 rounded-lg border shadow-sm flex justify-between items-center">
+                    <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">{app.candidate?.name?.[0]}</div>
+                        <div>
+                            <p className="font-medium text-gray-900">{app.candidate?.name}</p>
+                            <p className="text-sm text-gray-500">{app.candidate?.email}</p>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {(app.resumeUrl || app.candidate?.resume_url) && (
-                            <a href={app.resumeUrl || app.candidate?.resume_url} target="_blank" rel="noreferrer" className="p-2 text-gray-400 hover:text-gray-600 border rounded-full">
-                              <Download className="w-5 h-5" />
-                            </a>
-                          )}
-                          <Link to={`/evaluations/${app.id}`} className="px-3 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200">
-                            Avaliar
-                          </Link>
-                        </div>
-                      </div>
                     </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+                    <div className="flex gap-2">
+                        {app.resumeUrl && <a href={app.resumeUrl} target="_blank" className="p-2 text-gray-500 border rounded-full hover:bg-gray-50"><Download className="w-4 h-4"/></a>}
+                        <Link to={`/vaga/${id}/candidato/${app.id}`}><Button size="sm" variant="outline">Avaliar</Button></Link>
+                    </div>
+                </div>
+            ))}
+            {candidates.length === 0 && <div className="text-center py-10 text-gray-500">Nenhum candidato ainda.</div>}
         </div>
       )}
 
-      {/* 3. ABA AVALIAÃ‡ÃƒO (Funcionalidade Restaurada) */}
+      {/* ABA: ConfiguraÃ§Ã£o da AvaliaÃ§Ã£o (CORRIGIDA) */}
       {activeTab === 'evaluation' && (
-        <div className="bg-white shadow sm:rounded-lg p-6 space-y-8">
-          
-          <div className="border-b border-gray-200 pb-4">
-            <h2 className="text-xl font-bold text-gray-900">DefiniÃ§Ã£o de Notas e CritÃ©rios</h2>
-            <p className="text-sm text-gray-500">Configure aqui o que serÃ¡ avaliado nos candidatos desta vaga.</p>
-          </div>
-
-          {/* SeÃ§Ã£o 1: CritÃ©rios TÃ©cnicos (Hard Skills) */}
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium text-gray-900 flex items-center">
-                <Briefcase className="w-5 h-5 mr-2 text-blue-500"/> CritÃ©rios TÃ©cnicos (1 a 5)
-              </h3>
-              <button onClick={() => handleAddCriteria('tecnico')} className="text-sm text-blue-600 hover:text-blue-800 flex items-center">
-                <Plus className="w-4 h-4 mr-1"/> Adicionar CritÃ©rio
-              </button>
+        <div className="bg-white p-6 rounded-lg border shadow-sm space-y-8">
+            <div className="flex justify-between items-center border-b pb-4">
+                <div>
+                    <h2 className="text-lg font-semibold">CritÃ©rios de AvaliaÃ§Ã£o</h2>
+                    <p className="text-sm text-gray-500">Defina o que serÃ¡ avaliado. O peso padrÃ£o Ã© 1.</p>
+                </div>
+                <Button onClick={handleSaveParameters} disabled={savingParams}>
+                    {savingParams ? <Loader2 className="animate-spin w-4 h-4"/> : <><Save className="w-4 h-4 mr-2"/> Salvar Tudo</>}
+                </Button>
             </div>
-            
-            {evalParams.tecnico.length === 0 ? (
-              <p className="text-sm text-gray-400 italic">Nenhum critÃ©rio tÃ©cnico definido.</p>
-            ) : (
-              <div className="space-y-3">
-                {evalParams.tecnico.map((item) => (
-                  <div key={item.id} className="flex items-center gap-3 bg-gray-50 p-3 rounded-md">
-                    <span className="flex-1 font-medium text-gray-700">{item.text}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500">Peso:</span>
-                      <select 
-                        className="text-sm border-gray-300 rounded-md"
-                        value={item.weight}
-                        onChange={(e) => handleWeightChange('tecnico', item.id, e.target.value)}
-                      >
-                        <option value="1">1x</option>
-                        <option value="2">2x</option>
-                        <option value="3">3x</option>
-                      </select>
-                    </div>
-                    <button onClick={() => handleRemoveCriteria('tecnico', item.id)} className="text-red-500 hover:text-red-700">
-                      <Trash2 className="w-4 h-4"/>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
 
-          {/* SeÃ§Ã£o 2: Fit Cultural (Soft Skills) */}
-          <div className="pt-6 border-t border-gray-100">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium text-gray-900 flex items-center">
-                <User className="w-5 h-5 mr-2 text-purple-500"/> Fit Cultural (Comportamental)
-              </h3>
-              <button onClick={() => handleAddCriteria('cultura')} className="text-sm text-blue-600 hover:text-blue-800 flex items-center">
-                <Plus className="w-4 h-4 mr-1"/> Adicionar CritÃ©rio
-              </button>
+            {/* SEÃ‡ÃƒO 1: TRIAGEM */}
+            <div className="p-4 bg-purple-50 rounded-md border border-purple-100">
+                <div className="flex justify-between items-center mb-3">
+                    <h3 className="font-semibold text-purple-800 flex items-center"><User className="w-4 h-4 mr-2"/> Triagem (Requisitos BÃ¡sicos)</h3>
+                    <Button size="sm" variant="ghost" onClick={() => addCriteria('triagem')} className="text-purple-700 hover:bg-purple-100"><Plus className="w-4 h-4 mr-1"/> Adicionar</Button>
+                </div>
+                {(!evalParams.triagem || evalParams.triagem.length === 0) && <p className="text-sm text-purple-400 italic">Nenhum critÃ©rio de triagem definido.</p>}
+                {evalParams.triagem?.map(item => (
+                    <div key={item.id} className="flex justify-between items-center bg-white p-2 rounded mb-2 border shadow-sm">
+                        <span className="text-sm">{item.text}</span>
+                        <button onClick={() => removeCriteria('triagem', item.id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4"/></button>
+                    </div>
+                ))}
             </div>
-            
-            {evalParams.cultura.length === 0 ? (
-              <p className="text-sm text-gray-400 italic">Nenhum critÃ©rio cultural definido.</p>
-            ) : (
-              <div className="space-y-3">
-                {evalParams.cultura.map((item) => (
-                  <div key={item.id} className="flex items-center gap-3 bg-gray-50 p-3 rounded-md">
-                    <span className="flex-1 font-medium text-gray-700">{item.text}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500">Peso:</span>
-                      <select 
-                        className="text-sm border-gray-300 rounded-md"
-                        value={item.weight}
-                        onChange={(e) => handleWeightChange('cultura', item.id, e.target.value)}
-                      >
-                        <option value="1">1x</option>
-                        <option value="2">2x</option>
-                        <option value="3">3x</option>
-                      </select>
+
+            {/* SEÃ‡ÃƒO 2: FIT CULTURAL */}
+            <div className="p-4 bg-green-50 rounded-md border border-green-100">
+                <div className="flex justify-between items-center mb-3">
+                    <h3 className="font-semibold text-green-800 flex items-center"><User className="w-4 h-4 mr-2"/> Fit Cultural (Comportamental)</h3>
+                    <Button size="sm" variant="ghost" onClick={() => addCriteria('cultura')} className="text-green-700 hover:bg-green-100"><Plus className="w-4 h-4 mr-1"/> Adicionar</Button>
+                </div>
+                {(!evalParams.cultura || evalParams.cultura.length === 0) && <p className="text-sm text-green-400 italic">Nenhum critÃ©rio cultural definido.</p>}
+                {evalParams.cultura?.map(item => (
+                    <div key={item.id} className="flex justify-between items-center bg-white p-2 rounded mb-2 border shadow-sm">
+                        <span className="text-sm">{item.text}</span>
+                        <button onClick={() => removeCriteria('cultura', item.id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4"/></button>
                     </div>
-                    <button onClick={() => handleRemoveCriteria('cultura', item.id)} className="text-red-500 hover:text-red-700">
-                      <Trash2 className="w-4 h-4"/>
-                    </button>
-                  </div>
                 ))}
-              </div>
-            )}
-          </div>
+            </div>
 
-          {/* BotÃ£o de Salvar Global */}
-          <div className="pt-8 border-t border-gray-200 flex justify-end">
-            <button
-              onClick={handleSaveParameters}
-              disabled={savingParams}
-              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none disabled:opacity-50"
-            >
-              <Save className="w-5 h-5 mr-2" />
-              {savingParams ? 'Salvando...' : 'Salvar ConfiguraÃ§Ãµes de AvaliaÃ§Ã£o'}
-            </button>
-          </div>
-
+            {/* SEÃ‡ÃƒO 3: TÃ‰CNICO */}
+            <div className="p-4 bg-blue-50 rounded-md border border-blue-100">
+                <div className="flex justify-between items-center mb-3">
+                    <h3 className="font-semibold text-blue-800 flex items-center"><Briefcase className="w-4 h-4 mr-2"/> CritÃ©rios TÃ©cnicos (Hard Skills)</h3>
+                    <Button size="sm" variant="ghost" onClick={() => addCriteria('tecnico')} className="text-blue-700 hover:bg-blue-100"><Plus className="w-4 h-4 mr-1"/> Adicionar</Button>
+                </div>
+                {(!evalParams.tecnico || evalParams.tecnico.length === 0) && <p className="text-sm text-blue-400 italic">Nenhum critÃ©rio tÃ©cnico definido.</p>}
+                {evalParams.tecnico?.map(item => (
+                    <div key={item.id} className="flex justify-between items-center bg-white p-2 rounded mb-2 border shadow-sm">
+                        <span className="text-sm">{item.text}</span>
+                        <button onClick={() => removeCriteria('tecnico', item.id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4"/></button>
+                    </div>
+                ))}
+            </div>
         </div>
       )}
     </div>
@@ -4172,56 +4416,127 @@ export default function JobDetails() {
 ==================================================
 ARQUIVO: src\pages\Jobs.jsx
 ==================================================
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { supabase } from '../supabase/client';
-import { Plus } from 'lucide-react';
-import CreateJobModal from '../components/jobs/CreateJobModal';
+import { createClient } from '@supabase/supabase-js';
 
-export default function Jobs() {
-  const [jobs, setJobs] = useState([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
-  useEffect(() => {
-    fetchJobs();
-  }, []);
-
-  const fetchJobs = async () => {
-    const { data } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
-    setJobs(data || []);
-  };
-
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Vagas</h1>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-        >
-          <Plus className="w-5 h-5 mr-2" /> Nova Vaga
-        </button>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {jobs.map((job) => (
-          <Link key={job.id} to={`/jobs/${job.id}`} className="block p-6 bg-white rounded-lg border hover:shadow-md transition">
-            <h3 className="text-lg font-medium text-gray-900">{job.title}</h3>
-            <p className="mt-2 text-sm text-gray-500">{job.location || 'Remoto'}</p>
-            <span className={`mt-4 inline-block px-2 py-1 text-xs font-semibold rounded-full ${job.status === 'open' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-              {job.status === 'open' ? 'Aberta' : 'Fechada'}
-            </span>
-          </Link>
-        ))}
-      </div>
-
-      <CreateJobModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        onSuccess={fetchJobs} 
-      />
-    </div>
+export default async function handler(request, response) {
+  const supabaseAdmin = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY
   );
+
+  try {
+    // 1. Auth
+    const authHeader = request.headers['authorization'];
+    if (!authHeader) throw new Error('Token ausente.');
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (userError || !user) throw new Error('Token invÃ¡lido.');
+
+    // 2. Busca Dados do UsuÃ¡rio (SEM buscar 'name' que nÃ£o existe em users)
+    const { data: userData, error: dbError } = await supabaseAdmin
+      .from('users')
+      .select('tenantId, isAdmin, email') // Removido 'name' para evitar erro
+      .eq('id', user.id)
+      .single();
+
+    if (dbError || !userData?.tenantId) throw new Error('UsuÃ¡rio sem empresa vinculada.');
+    
+    const tenantId = userData.tenantId;
+
+    // 3. Tenta buscar o nome em user_profiles (Opcional)
+    let userName = userData.email;
+    try {
+        const { data: profile } = await supabaseAdmin
+            .from('user_profiles')
+            .select('name')
+            .eq('id', user.id)
+            .single();
+        if (profile?.name) userName = profile.name;
+    } catch (e) { /* Ignora se nÃ£o tiver perfil */ }
+
+    if (request.method === 'GET') {
+        const { id } = request.query;
+
+        // Detalhe da Vaga
+        if (id) {
+            const { data: job, error } = await supabaseAdmin
+                .from('jobs')
+                .select(`*, company_departments ( id, name )`)
+                .eq('id', Number(id))
+                .eq('tenantId', tenantId)
+                .single();
+            
+            if (error) throw error;
+            return response.status(200).json({ job });
+        }
+
+        // Dashboard Lista
+        // A. Busca Empresa e Plano
+        const { data: tenant } = await supabaseAdmin
+            .from('tenants')
+            .select('companyName, planId')
+            .eq('id', tenantId)
+            .single();
+
+        // B. Busca Vagas
+        const { data: jobs, error: jobsError } = await supabaseAdmin
+            .from('jobs')
+            .select(`
+                id, title, status, created_at,
+                description, requirements, type, location_type,
+                applications ( count ),
+                company_departments ( name )
+            `)
+            .eq('tenantId', tenantId);
+
+        if (jobsError) throw jobsError;
+
+        // C. FormataÃ§Ã£o
+        const formattedJobs = (jobs || []).map(job => ({
+            ...job,
+            candidateCount: job.applications?.[0]?.count || 0,
+            deptName: job.company_departments?.name || 'Geral'
+        })).sort((a, b) => {
+            // Regra 5: Depto (A-Z) -> Data (Desc)
+            const deptCompare = a.deptName.localeCompare(b.deptName);
+            if (deptCompare !== 0) return deptCompare;
+            return new Date(b.created_at) - new Date(a.created_at);
+        });
+
+        return response.status(200).json({
+            jobs: formattedJobs,
+            meta: {
+                companyName: tenant?.companyName || 'Empresa',
+                userName: userName,
+                planId: tenant?.planId || 'free',
+                isAdmin: userData.isAdmin
+            }
+        });
+    }
+
+    // MÃ‰TODOS POST (Manter lÃ³gica existente de update/delete)
+    // ... (Seu cÃ³digo POST anterior estava correto para update/delete)
+    if (request.method === 'POST') {
+         const { action, jobId, newStatus } = request.body;
+         if (action === 'updateJobStatus') {
+            await supabaseAdmin.from('jobs').update({ status: newStatus }).eq('id', jobId).eq('tenantId', tenantId);
+            return response.status(200).json({ message: 'Atualizado' });
+         }
+         if (action === 'deleteJob') {
+            await supabaseAdmin.from('applications').delete().eq('jobId', jobId);
+            await supabaseAdmin.from('jobs').delete().eq('id', jobId).eq('tenantId', tenantId);
+            return response.status(200).json({ message: 'Deletado' });
+         }
+    }
+
+    return response.status(405).json({ error: 'Method not allowed' });
+
+  } catch (error) {
+    console.error('API Error:', error);
+    // Retorna erro JSON vÃ¡lido para o front nÃ£o ficar "loading" pra sempre
+    return response.status(500).json({ error: error.message });
+  }
 }
 
 ==================================================
@@ -4230,62 +4545,109 @@ ARQUIVO: src\pages\Login.jsx
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-// Note: NÃƒO estamos importando useAuth nem useEffect para redirecionamento
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Loader2, LayoutDashboard } from 'lucide-react';
 
 export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // --- SE TIVER ALGUM useEffect AQUI, APAGUE! ---
+  const [error, setError] = useState('');
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-
       if (error) throw error;
-
-      // SÃ³ redireciona AQUI, apÃ³s o sucesso do clique
       navigate('/dashboard');
-      
     } catch (error) {
-      alert(error.message);
+      setError(error.message === 'Invalid login credentials' 
+        ? 'E-mail ou senha incorretos.' 
+        : 'Ocorreu um erro ao entrar. Tente novamente.');
     } finally {
       setLoading(false);
     }
   };
 
-  // ... (Restante do HTML do formulÃ¡rio igual ao anterior) ...
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="max-w-md w-full bg-white p-8 rounded shadow space-y-6">
-        <h2 className="text-center text-3xl font-extrabold text-gray-900">Acesso Recrutador</h2>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
+        <div className="text-center">
+          <div className="mx-auto h-12 w-12 bg-blue-600 rounded-lg flex items-center justify-center text-white">
+            <LayoutDashboard size={24} />
+          </div>
+          <h2 className="mt-6 text-3xl font-extrabold text-gray-900 tracking-tight">
+            Bem-vindo de volta
+          </h2>
+          <p className="mt-2 text-sm text-gray-600">
+            Acesse o painel de recrutamento da <span className="font-semibold text-blue-600">Novva R&S</span>
+          </p>
+        </div>
+        
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
-           {/* Seus inputs de email/senha */}
-           <div className="rounded-md shadow-sm -space-y-px">
+          <div className="rounded-md shadow-sm space-y-4">
             <div>
-              <input type="email" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <label htmlFor="email" className="sr-only">Email</label>
+              <Input
+                id="email"
+                type="email"
+                required
+                placeholder="seu@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+              />
             </div>
             <div>
-              <input type="password" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} />
+              <label htmlFor="password" className="sr-only">Senha</label>
+              <Input
+                id="password"
+                type="password"
+                required
+                placeholder="Sua senha secreta"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
             </div>
           </div>
-           <div>
-            <button type="submit" disabled={loading} className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none disabled:opacity-50">
-              {loading ? 'Entrando...' : 'Entrar'}
-            </button>
+
+          {error && (
+            <div className="p-3 rounded-md bg-red-50 text-red-700 text-sm text-center border border-red-200 animate-pulse">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <Button type="submit" disabled={loading} className="w-full" size="lg">
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Entrando...
+                </>
+              ) : (
+                'Entrar na Plataforma'
+              )}
+            </Button>
+          </div>
+
+          <div className="text-center">
+            <Link 
+              to="/register" 
+              className="font-medium text-sm text-blue-600 hover:text-blue-500 transition-colors"
+            >
+              NÃ£o tem uma conta? Cadastre-se gratuitamente
+            </Link>
           </div>
         </form>
-        <div className="text-center">
-          <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">Criar conta</Link>
-        </div>
       </div>
     </div>
   );
