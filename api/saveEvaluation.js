@@ -1,46 +1,51 @@
 // api/saveEvaluation.js
 import { createClient } from '@supabase/supabase-js';
+import { calculateWeightedScore } from './_utils/calculator.js';
 
 export default async function handler(request, response) {
-  if (request.method !== 'POST') {
-    return response.status(405).json({ error: 'Método não permitido.' });
-  }
+  if (request.method !== 'POST') return response.status(405).json({ error: 'Method not allowed' });
+
+  const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
   try {
-    const supabaseAdmin = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY
-    );
+    // Auth
+    const token = request.headers['authorization']?.replace('Bearer ', '');
+    if (!token) throw new Error('Não autorizado.');
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    if (authError || !user) throw new Error('Token inválido.');
 
-    // 1. Valida o token do usuário de RH
-    const authHeader = request.headers['authorization'];
-    if (!authHeader) return response.status(401).json({ error: 'Não autorizado.' });
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
-    if (userError) return response.status(401).json({ error: 'Token inválido.' });
+    const { applicationId, scores, notes } = request.body;
 
-    // 2. Pega o ID da candidatura e os dados da avaliação do corpo da requisição
-    const { applicationId, evaluation } = request.body;
-    if (!applicationId || !evaluation) {
-      return response.status(400).json({ error: 'applicationId e evaluation são obrigatórios.' });
-    }
+    // 1. Busca Parâmetros da Vaga (para calcular a nota corretamente)
+    const { data: appData, error: appError } = await supabaseAdmin
+        .from('applications')
+        .select('job:jobs(parameters)')
+        .eq('id', applicationId)
+        .single();
 
-    // 3. ATUALIZA a candidatura no banco, preenchendo a coluna 'evaluation'
-    // Por segurança, poderíamos re-validar se o usuário tem acesso a esta vaga,
-    // mas vamos manter simples por agora, pois o risco é baixo.
-    const { data, error: updateError } = await supabaseAdmin
-      .from('applications')
-      .update({ evaluation: evaluation }) // Atualiza apenas a coluna 'evaluation'
-      .eq('id', applicationId)
-      .select()
-      .single();
+    if (appError) throw new Error('Candidatura não encontrada.');
 
-    if (updateError) throw updateError;
+    // 2. Calcula Nota no Backend (Segurança + Regra de Negócio)
+    const finalScore = calculateWeightedScore(scores, appData.job.parameters);
 
-    return response.status(200).json({ message: 'Avaliação salva com sucesso!', updatedApplication: data });
+    // 3. Salva na tabela EVALUATIONS (Upsert: Atualiza se já existir para este usuário)
+    const { error: saveError } = await supabaseAdmin
+        .from('evaluations')
+        .upsert({
+            application_id: applicationId,
+            evaluator_id: user.id,
+            scores: scores,     // JSON bruto das escolhas
+            notes: notes,       // Texto
+            final_score: finalScore,
+            updated_at: new Date()
+        }, { onConflict: 'application_id, evaluator_id' });
+
+    if (saveError) throw saveError;
+
+    return response.status(200).json({ message: 'Salvo!', score: finalScore });
 
   } catch (error) {
-    console.error("Erro na função saveEvaluation:", error);
-    return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
+    console.error('Save Error:', error);
+    return response.status(500).json({ error: error.message });
   }
 }
