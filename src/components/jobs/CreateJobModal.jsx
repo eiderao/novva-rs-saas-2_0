@@ -1,52 +1,56 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
 import AreaSelect from '../AreaSelect';
+import { AlertTriangle } from 'lucide-react';
 
 export default function CreateJobModal({ open, onClose, onSuccess }) {
   const [tenantId, setTenantId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [limitError, setLimitError] = useState(null);
   const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    requirements: '',
-    type: 'CLT',
-    location_type: 'Híbrido',
-    company_department_id: ''
+    title: '', description: '', requirements: '', type: 'CLT', location_type: 'Híbrido', company_department_id: ''
   });
 
   useEffect(() => {
     if (open) {
-      const getTenant = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          // 1. Busca o perfil
-          const { data: profile } = await supabase
-            .from('user_profiles')
-            .select('tenantId')
-            .eq('id', user.id)
-            .single();
-          
-          if (profile?.tenantId) {
-            setTenantId(profile.tenantId);
-          } else {
-            // AUTO-CORREÇÃO: Se não tiver tenant, cria um provisório para não travar
-            // Isso evita o erro de Foreign Key da sua imagem
-            alert("Seu usuário não tem empresa vinculada. O sistema tentará corrigir isso no Dashboard.");
-            onClose();
-          }
-        }
-      };
-      getTenant();
+      checkLimits();
     }
   }, [open]);
 
+  const checkLimits = async () => {
+    setLimitError(null);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // 1. Pega Tenant
+    const { data: profile } = await supabase.from('user_profiles').select('tenantId').eq('id', user.id).single();
+    if (!profile?.tenantId) return;
+    setTenantId(profile.tenantId);
+
+    // 2. Pega Plano via Tenant (usando coluna job_limit)
+    const { data: tenant } = await supabase.from('tenants').select('planId').eq('id', profile.tenantId).single();
+    const { data: plan } = await supabase.from('plans').select('job_limit').eq('id', tenant.planId || 'freemium').single();
+    
+    const limit = plan?.job_limit || 2;
+    const isUnlimited = limit === -1;
+
+    // 3. Conta Vagas ATIVAS
+    const { count } = await supabase
+        .from('jobs')
+        .select('*', { count: 'exact', head: true })
+        .eq('tenantId', profile.tenantId)
+        .eq('status', 'active');
+
+    if (!isUnlimited && count >= limit) {
+        setLimitError(`Limite de vagas ativas atingido (${limit}). Inative ou encerre uma vaga existente para liberar espaço.`);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!tenantId) return alert('Erro: Empresa não identificada.');
+    if (limitError) return;
     
     setLoading(true);
-    
-    // Tratamento para evitar erro de tipo no SQL
     const payload = {
       ...formData,
       tenantId: tenantId,
@@ -56,9 +60,8 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
 
     const { error } = await supabase.from('jobs').insert(payload);
 
-    if (error) {
-      alert('Erro ao criar vaga: ' + error.message);
-    } else {
+    if (error) alert('Erro: ' + error.message);
+    else {
       setFormData({ title: '', description: '', requirements: '', type: 'CLT', location_type: 'Híbrido', company_department_id: '' });
       onSuccess();
       onClose();
@@ -76,84 +79,50 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
         </div>
         
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Título da Vaga *</label>
-            <input 
-              required
-              className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500"
-              value={formData.title}
-              onChange={e => setFormData({...formData, title: e.target.value})}
-            />
-          </div>
-
-          {/* Seletor de Departamento Corrigido */}
-          {tenantId && (
-            <AreaSelect 
-              tenantId={tenantId}
-              value={formData.company_department_id}
-              onChange={val => setFormData({...formData, company_department_id: val})}
-            />
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Modelo</label>
-              <select 
-                className="w-full border p-2 rounded bg-white"
-                value={formData.location_type}
-                onChange={e => setFormData({...formData, location_type: e.target.value})}
-              >
-                <option>Presencial</option>
-                <option>Híbrido</option>
-                <option>Remoto</option>
-              </select>
+        {limitError ? (
+            <div className="p-6 text-center">
+                <div className="bg-red-50 text-red-700 p-4 rounded border border-red-200 mb-4 flex items-start gap-3 text-left">
+                    <AlertTriangle className="w-6 h-6 shrink-0" />
+                    <div>
+                        <p className="font-bold">Upgrade Necessário</p>
+                        <p className="text-sm mt-1">{limitError}</p>
+                    </div>
+                </div>
+                <button onClick={onClose} className="bg-gray-200 px-4 py-2 rounded">Fechar</button>
             </div>
+        ) : (
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Contrato</label>
-              <select 
-                className="w-full border p-2 rounded bg-white"
-                value={formData.type}
-                onChange={e => setFormData({...formData, type: e.target.value})}
-              >
-                <option>CLT</option>
-                <option>PJ</option>
-                <option>Estágio</option>
-              </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Título da Vaga *</label>
+                <input required className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
             </div>
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
-            <textarea 
-              className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500"
-              rows="3"
-              value={formData.description}
-              onChange={e => setFormData({...formData, description: e.target.value})}
-            />
-          </div>
+            {tenantId && <AreaSelect tenantId={tenantId} value={formData.company_department_id} onChange={val => setFormData({...formData, company_department_id: val})} />}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Requisitos</label>
-            <textarea 
-              className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500"
-              rows="3"
-              value={formData.requirements}
-              onChange={e => setFormData({...formData, requirements: e.target.value})}
-            />
-          </div>
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Modelo</label>
+                <select className="w-full border p-2 rounded bg-white" value={formData.location_type} onChange={e => setFormData({...formData, location_type: e.target.value})}>
+                    <option>Presencial</option><option>Híbrido</option><option>Remoto</option>
+                </select>
+                </div>
+                <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contrato</label>
+                <select className="w-full border p-2 rounded bg-white" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
+                    <option>CLT</option><option>PJ</option><option>Estágio</option>
+                </select>
+                </div>
+            </div>
 
-          <div className="flex justify-end gap-2 pt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded">Cancelar</button>
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? 'Criando...' : 'Criar Vaga'}
-            </button>
-          </div>
-        </form>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label><textarea className="w-full border p-2 rounded outline-none" rows="3" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Requisitos</label><textarea className="w-full border p-2 rounded outline-none" rows="3" value={formData.requirements} onChange={e => setFormData({...formData, requirements: e.target.value})} /></div>
+
+            <div className="flex justify-end gap-2 pt-4">
+                <button type="button" onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded">Cancelar</button>
+                <button type="submit" disabled={loading} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{loading ? 'Criando...' : 'Criar Vaga'}</button>
+            </div>
+            </form>
+        )}
       </div>
     </div>
   );

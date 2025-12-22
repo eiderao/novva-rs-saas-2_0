@@ -14,57 +14,75 @@ export default function Register() {
     setLoading(true);
     
     try {
-      // 1. Cria usuário Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
+      let tenantIdToUse = null;
 
+      // 1. Validação PRÉVIA do Código da Empresa
+      if (companyId.trim()) {
+        const { data: tenant, error: tError } = await supabase
+            .from('tenants')
+            .select('id, planId')
+            .eq('id', companyId.trim())
+            .single();
+        
+        if (tError || !tenant) {
+            setLoading(false);
+            return alert("Código da empresa inválido.");
+        }
+
+        // Busca o plano usando user_limit
+        const { data: plan } = await supabase
+            .from('plans')
+            .select('user_limit')
+            .eq('id', tenant.planId || 'freemium')
+            .single();
+            
+        const limit = plan?.user_limit || 1;
+        const isUnlimited = limit === -1;
+
+        // Conta usuários ativos
+        const { count } = await supabase
+            .from('user_profiles')
+            .select('*', { count: 'exact', head: true })
+            .eq('tenantId', tenant.id)
+            .eq('active', true);
+
+        if (!isUnlimited && count >= limit) {
+            setLoading(false);
+            return alert(`Esta empresa atingiu o limite de ${limit} usuários do plano. Não é possível entrar.`);
+        }
+        
+        tenantIdToUse = tenant.id;
+      }
+
+      // 2. Cria usuário Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
       if (authError) throw authError;
 
       const user = authData.user;
       if (user) {
-        let tenantIdToUse = null;
-
-        // 2. Lógica de Empresa
-        if (companyId.trim()) {
-          // A. Entrar em empresa existente
-          const { data: existingTenant, error: tError } = await supabase
-            .from('tenants')
-            .select('id')
-            .eq('id', companyId.trim())
-            .single();
-          
-          if (tError || !existingTenant) {
-            alert("ID da empresa inválido. Criaremos uma nova para você.");
-            // Fallback: cria nova (será tratada no passo B)
-          } else {
-            tenantIdToUse = existingTenant.id;
-          }
-        }
-
         if (!tenantIdToUse) {
-           // B. Criar nova empresa
+           // Cria nova empresa (Plano FREEMIUM padrão)
            const { data: newTenant } = await supabase
              .from('tenants')
-             .insert({ "companyName": "Minha Nova Empresa" })
+             .insert({ "companyName": "Minha Nova Empresa", "planId": "freemium" })
              .select()
              .single();
            tenantIdToUse = newTenant?.id;
         }
 
-        // 3. Cria Perfil vinculado
+        // 3. Cria Perfil
         if (tenantIdToUse) {
            await supabase.from('user_profiles').upsert({
              id: user.id,
              name: email.split('@')[0],
              "tenantId": tenantIdToUse,
-             role: companyId.trim() ? 'user' : 'admin' // Se entrou com código, é user. Se criou, é admin.
+             role: companyId.trim() ? 'user' : 'admin',
+             active: true
            });
         }
       }
 
-      alert("Cadastro realizado com sucesso!");
+      alert("Cadastro realizado!");
       navigate('/');
 
     } catch (error) {
@@ -103,20 +121,18 @@ export default function Register() {
         </div>
         
         <div className="mb-6 pt-4 border-t">
-            <label className="block text-sm font-bold text-gray-700 mb-1">Tem um Código de Convite?</label>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Código de Convite</label>
             <input 
               className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" 
-              placeholder="Cole o ID da empresa aqui (Opcional)" 
+              placeholder="Cole o ID da empresa (Opcional)" 
               value={companyId} 
               onChange={e => setCompanyId(e.target.value)}
             />
-            <p className="text-xs text-gray-400 mt-1">Deixe em branco para criar uma nova empresa.</p>
         </div>
         
         <button disabled={loading} className="w-full bg-green-600 text-white p-2 rounded hover:bg-green-700 transition font-medium">
-          {loading ? 'Processando...' : 'Cadastrar e Entrar'}
+          {loading ? 'Validando...' : 'Cadastrar'}
         </button>
-
         <div className="mt-4 text-center text-sm">
           <Link to="/login" className="text-blue-600 hover:underline">Voltar para Login</Link>
         </div>
