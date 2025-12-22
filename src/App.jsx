@@ -1,48 +1,35 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
-import PrivateRoute from './components/PrivateRoute';
-import Layout from './components/Layout';
-
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
-import JobDetails from './pages/JobDetails';
-import ApplyPage from './pages/ApplyPage';
-import Jobs from './pages/Jobs';
-import Candidates from './pages/Candidates';
-import CompanySettings from './pages/CompanySettings';
-import Evaluation from './pages/Evaluation';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { supabase } from './supabase/client';
+import Dashboard from './pages/Dashboard'; // Vamos criar abaixo
+import Login from './pages/Login'; // Vamos criar abaixo
 
 function App() {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) return <div className="p-10">Carregando App...</div>;
+
   return (
-    <Router>
-      <AuthProvider>
-        <Routes>
-          {/* Rotas Públicas */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/vagas/:id/candidatar" element={<ApplyPage />} />
-
-          {/* Rotas Privadas (Protegidas) */}
-          <Route element={<PrivateRoute />}>
-            {/* O Layout envolve todas as páginas internas */}
-            <Route element={<Layout />}>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              
-              <Route path="/jobs" element={<Jobs />} />
-              <Route path="/jobs/:id" element={<JobDetails />} />
-              
-              <Route path="/candidates" element={<Candidates />} />
-              <Route path="/settings" element={<CompanySettings />} />
-              <Route path="/evaluations/:applicationId" element={<Evaluation />} />
-            </Route>
-          </Route>
-
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </AuthProvider>
-    </Router>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
+        <Route path="/" element={session ? <Dashboard session={session} /> : <Navigate to="/login" />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
