@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './supabase/client';
-import Dashboard from './pages/Dashboard'; // Vamos criar abaixo
-import Login from './pages/Login'; // Vamos criar abaixo
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
 
-function App() {
+export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -21,16 +21,14 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (loading) return <div className="p-10">Carregando App...</div>;
+  if (loading) return <div className="p-10 text-center">Carregando...</div>;
 
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
-        <Route path="/" element={session ? <Dashboard session={session} /> : <Navigate to="/login" />} />
+        <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" />} />
       </Routes>
     </BrowserRouter>
   );
 }
-
-export default App;

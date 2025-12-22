@@ -15,9 +15,9 @@ export default function Login() {
   };
 
   return (
-    <div className="flex h-screen items-center justify-center bg-gray-100">
-      <form onSubmit={handleLogin} className="p-8 bg-white rounded shadow-md w-96">
-        <h1 className="text-2xl font-bold mb-4">Login V2.0</h1>
+    <div className="flex h-screen items-center justify-center">
+      <form onSubmit={handleLogin} className="p-8 bg-white rounded shadow-md border w-96">
+        <h1 className="text-2xl font-bold mb-4">Login Novva 2.0</h1>
         <input 
           className="w-full border p-2 mb-2 rounded" 
           placeholder="Email" 
