@@ -1,27 +1,24 @@
-// src/pages/ApplyPage.jsx (VERSÃO FINAL: Refatorada com StateSelect)
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { 
-    Container, Box, Typography, TextField, Button, CircularProgress, Alert,
-    Select, MenuItem, InputLabel, FormControl, RadioGroup, FormControlLabel, Radio, FormLabel
-} from '@mui/material';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-
-// Importação do novo componente refatorado
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
+import { Label } from '../components/ui/label';
 import StateSelect from '../components/inputs/StateSelect';
+import { Loader2, UploadCloud, CheckCircle, AlertCircle } from 'lucide-react';
 
 const ApplyPage = () => {
   const { jobId } = useParams();
   const [jobTitle, setJobTitle] = useState('');
   
-  // Estados de controle da página
+  // Estados de controle
   const [isVagaClosed, setIsVagaClosed] = useState(false);
   const [loadingPage, setLoadingPage] = useState(true);
   const [errorPage, setErrorPage] = useState('');
 
-  // Estado do formulário
+  // Formulário
   const [formState, setFormState] = useState({
-    name: '', preferredName: '', email: '', phone: '', birthDate: null,
+    name: '', preferredName: '', email: '', phone: '', birthDate: '',
     state: '', city: '', hasGraduated: '', studyPeriod: '', course: '',
     institution: '', completionYear: '', englishLevel: '', spanishLevel: '',
     source: '', motivation: '', linkedinProfile: '', githubProfile: ''
@@ -31,21 +28,19 @@ const ApplyPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: '', message: '' });
 
-  // Busca dados da vaga e verifica status/plano
   useEffect(() => {
     const fetchJobData = async () => {
       if (!jobId) {
-        setErrorPage('ID da vaga não especificado na URL.');
+        setErrorPage('ID da vaga não especificado.');
         setLoadingPage(false);
         return;
       }
       try {
         const response = await fetch(`/api/getPublicJobData?id=${jobId}`);
-        if (!response.ok) throw new Error('Vaga não encontrada ou ocorreu um erro no servidor.');
+        if (!response.ok) throw new Error('Vaga não encontrada.');
         const data = await response.json();
         
         if (data.job) {
-          // Lógica Freemium: Bloqueia se atingiu limite de 3 candidatos
           if (data.job.planId === 'freemium' && data.job.candidateCount >= 3) {
             setIsVagaClosed(true);
           }
@@ -55,7 +50,6 @@ const ApplyPage = () => {
         }
       } catch (error) {
         setErrorPage(error.message);
-        console.error(error);
       } finally {
         setLoadingPage(false);
       }
@@ -65,13 +59,9 @@ const ApplyPage = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormState(prevState => ({ ...prevState, [name]: value }));
+    setFormState(prev => ({ ...prev, [name]: value }));
   };
-  
-  const handleDateChange = (newDate) => { 
-      setFormState(prevState => ({ ...prevState, birthDate: newDate })); 
-  };
-  
+
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       setResumeFile(e.target.files[0]);
@@ -92,149 +82,162 @@ const ApplyPage = () => {
     const formData = new FormData();
     formData.append('jobId', jobId);
     
-    // Anexa campos do formulário ao FormData
-    for (const key in formState) {
-      if (formState[key]) {
-        if (key === 'birthDate') { 
-            formData.append(key, formState[key].toISOString()); 
-        } else { 
-            formData.append(key, formState[key]); 
-        }
-      }
-    }
+    Object.keys(formState).forEach(key => {
+        if (formState[key]) formData.append(key, formState[key]);
+    });
+    
     formData.append('resume', resumeFile);
 
     try {
       const response = await fetch('/api/apply', { method: 'POST', body: formData });
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Ocorreu um erro ao enviar sua candidatura.');
+        throw new Error(errorData.error || 'Erro ao enviar candidatura.');
       }
-      setFeedback({ type: 'success', message: 'Candidatura enviada com sucesso! Agradecemos o seu interesse.' });
+      setFeedback({ type: 'success', message: 'Candidatura enviada com sucesso!' });
     } catch (error) {
-      console.error("Erro na submissão:", error);
       setFeedback({ type: 'error', message: error.message });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Renderização Condicional de Estados de Carregamento/Erro
-  if (loadingPage) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', my: 8 }}><CircularProgress /></Box>;
-  }
+  if (loadingPage) return <div className="flex justify-center my-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600"/></div>;
   
-  if (errorPage) {
-    return <Container maxWidth="sm" sx={{mt: 8}}><Alert severity="error">{errorPage}</Alert></Container>;
-  }
+  if (errorPage) return <div className="max-w-md mx-auto mt-10 p-4 bg-red-50 text-red-700 rounded border border-red-200">{errorPage}</div>;
   
   if (feedback.type === 'success') {
     return (
-        <Container maxWidth="sm" sx={{ textAlign: 'center', mt: 8 }}>
-            <Typography variant="h4" gutterBottom>Obrigado!</Typography>
-            <Alert severity="success">{feedback.message}</Alert>
-        </Container>
+        <div className="max-w-md mx-auto mt-20 text-center p-8 bg-green-50 rounded-lg border border-green-100">
+            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-green-800 mb-2">Sucesso!</h1>
+            <p className="text-green-700">{feedback.message}</p>
+        </div>
     );
   }
   
   if (isVagaClosed) {
     return (
-        <Container maxWidth="sm" sx={{ textAlign: 'center', mt: 8 }}>
-            <Typography variant="h4" gutterBottom>Vaga Encerrada</Typography>
-            <Alert severity="warning">
-              Agradecemos o seu interesse, mas esta vaga já atingiu o número máximo de candidaturas.
-            </Alert>
-        </Container>
+        <div className="max-w-md mx-auto mt-20 text-center p-8 bg-yellow-50 rounded-lg border border-yellow-100">
+            <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-yellow-800 mb-2">Vaga Encerrada</h1>
+            <p className="text-yellow-700">Esta vaga já atingiu o limite de candidaturas.</p>
+        </div>
     );
   }
 
   return (
-    <Container maxWidth="md">
-      <Box sx={{ my: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom>Candidatura à Vaga</Typography>
-        <Typography variant="h6" color="text.secondary">{jobTitle}</Typography>
+    <div className="max-w-3xl mx-auto px-4 py-10">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Candidatura à Vaga</h1>
+        <p className="text-lg text-blue-600 font-medium mt-1">{jobTitle}</p>
+      </div>
+      
+      <form onSubmit={handleSubmit} className="space-y-6 bg-white p-6 md:p-8 rounded-xl shadow-sm border border-gray-100">
         
-        <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 3, borderTop: '1px solid #ddd', pt: 3 }}>
-          
-          <TextField name="name" label="Nome Completo" required fullWidth margin="normal" onChange={handleInputChange} />
-          <TextField name="preferredName" label="Como prefere ser chamado(a)?" fullWidth margin="normal" onChange={handleInputChange} />
-          
-          <TextField name="email" label="Seu melhor e-mail" type="email" required fullWidth margin="normal" onChange={handleInputChange} />
-          <TextField name="phone" label="Número de telefone (celular)" type="tel" required fullWidth margin="normal" onChange={handleInputChange} />
-          
-          <DatePicker label="Data de Nascimento" sx={{ width: '100%', mt: 2, mb: 1 }} value={formState.birthDate} onChange={handleDateChange} />
-          
-          {/* AQUI ESTÁ A MUDANÇA: Uso do Componente StateSelect */}
-          <StateSelect 
-            value={formState.state}
-            onChange={handleInputChange}
-          />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <Label htmlFor="name">Nome Completo</Label>
+                <Input name="name" id="name" required onChange={handleInputChange} />
+            </div>
+            <div>
+                <Label htmlFor="preferredName">Nome Social / Como prefere ser chamado</Label>
+                <Input name="preferredName" id="preferredName" onChange={handleInputChange} />
+            </div>
+            
+            <div>
+                <Label htmlFor="email">E-mail</Label>
+                <Input name="email" id="email" type="email" required onChange={handleInputChange} />
+            </div>
+            <div>
+                <Label htmlFor="phone">Telefone (Celular)</Label>
+                <Input name="phone" id="phone" type="tel" required onChange={handleInputChange} />
+            </div>
+            
+            <div>
+                <Label htmlFor="birthDate">Data de Nascimento</Label>
+                <Input name="birthDate" id="birthDate" type="date" required value={formState.birthDate} onChange={handleInputChange} />
+            </div>
+        </div>
 
-          <TextField 
-            name="city" 
-            label="Em que cidade você mora?" 
-            required 
-            fullWidth 
-            margin="normal" 
-            onChange={handleInputChange} 
-          />
-          
-          <FormControl component="fieldset" margin="normal" required>
-              <FormLabel component="legend">Você já concluiu algum curso de nível superior?</FormLabel>
-              <RadioGroup row name="hasGraduated" value={formState.hasGraduated} onChange={handleInputChange}>
-                  <FormControlLabel value="sim" control={<Radio />} label="Sim, já concluí" />
-                  <FormControlLabel value="nao" control={<Radio />} label="Não, estou cursando" />
-              </RadioGroup>
-          </FormControl>
-          
-          {formState.hasGraduated === 'nao' && (
-              <TextField name="studyPeriod" label="Em que período/ano você está?" fullWidth margin="normal" onChange={handleInputChange} />
-          )}
-          
-          {formState.hasGraduated && (
-            <>
-                <TextField name="course" label="Qual o curso?" required={!!formState.hasGraduated} fullWidth margin="normal" onChange={handleInputChange} />
-                <TextField name="institution" label="Em qual faculdade/instituição?" required={!!formState.hasGraduated} fullWidth margin="normal" onChange={handleInputChange} />
+        <StateSelect value={formState.state} onChange={handleInputChange} />
+        
+        <div>
+            <Label htmlFor="city">Cidade</Label>
+            <Input name="city" id="city" required onChange={handleInputChange} />
+        </div>
+
+        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <Label className="mb-3">Você já concluiu curso superior?</Label>
+            <div className="flex gap-6">
+                <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="hasGraduated" value="sim" onChange={handleInputChange} className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm text-gray-700">Sim, já concluí</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="hasGraduated" value="nao" onChange={handleInputChange} className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm text-gray-700">Não, estou cursando</span>
+                </label>
+            </div>
+        </div>
+
+        {formState.hasGraduated === 'nao' && (
+             <div><Label>Período/Ano</Label><Input name="studyPeriod" onChange={handleInputChange} /></div>
+        )}
+        
+        {formState.hasGraduated && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><Label>Curso</Label><Input name="course" required onChange={handleInputChange} /></div>
+                <div><Label>Instituição</Label><Input name="institution" required onChange={handleInputChange} /></div>
                 {formState.hasGraduated === 'sim' && ( 
-                    <TextField name="completionYear" label="Ano de Conclusão" type="number" fullWidth margin="normal" onChange={handleInputChange} />
+                     <div><Label>Ano de Conclusão</Label><Input name="completionYear" type="number" onChange={handleInputChange} /></div>
                 )}
-            </>
-          )}
-          
-          {['englishLevel', 'spanishLevel'].map(lang => (
-              <FormControl fullWidth margin="normal" key={lang}>
-                  <InputLabel>{lang === 'englishLevel' ? 'Nível de Inglês' : 'Nível de Espanhol'}</InputLabel>
-                  <Select name={lang} value={formState[lang] || ''} label={lang === 'englishLevel' ? 'Nível de Inglês' : 'Nível de Espanhol'} onChange={handleInputChange}>
-                      <MenuItem value="basico">Básico</MenuItem>
-                      <MenuItem value="intermediario">Intermediário</MenuItem>
-                      <MenuItem value="avancado">Avançado</MenuItem>
-                      <MenuItem value="fluente">Fluente/Nativo</MenuItem>
-                  </Select>
-              </FormControl>
-          ))}
-          
-          <TextField name="source" label="Como ficou sabendo da vaga?" fullWidth margin="normal" onChange={handleInputChange} />
-          
-          <TextField name="motivation" label="Por que você deseja fazer parte do nosso time?" required multiline rows={4} fullWidth margin="normal" onChange={handleInputChange} />
-          
-          <TextField name="linkedinProfile" label="Link do seu perfil no LinkedIn" fullWidth margin="normal" onChange={handleInputChange} />
-          <TextField name="githubProfile" label="Link do seu perfil no GitHub" fullWidth margin="normal" onChange={handleInputChange} />
-          
-          <Button variant="outlined" component="label" sx={{ mt: 2, mb: 1, width: '100%' }}>
-              Anexe o seu currículo (PDF, DOC, DOCX)
-              <input type="file" hidden required accept=".pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handleFileChange} />
-          </Button>
-          
-          {resumeFile && <Typography variant="body2" textAlign="center" color="text.secondary">{resumeFile.name}</Typography>}
-          
-          {feedback.type && <Alert severity={feedback.type} sx={{ mt: 2 }}>{feedback.message}</Alert>}
-          
-          <Button type="submit" fullWidth variant="contained" size="large" sx={{ mt: 3, mb: 2 }} disabled={isSubmitting}>
-              {isSubmitting ? <CircularProgress size={24} /> : 'Enviar Candidatura'}
-          </Button>
-        </Box>
-      </Box>
-    </Container>
+            </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {['englishLevel', 'spanishLevel'].map(lang => (
+                <div key={lang}>
+                    <Label>{lang === 'englishLevel' ? 'Inglês' : 'Espanhol'}</Label>
+                    <select name={lang} onChange={handleInputChange} className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm">
+                        <option value="">Selecione...</option>
+                        <option value="basico">Básico</option>
+                        <option value="intermediario">Intermediário</option>
+                        <option value="avancado">Avançado</option>
+                        <option value="fluente">Fluente/Nativo</option>
+                    </select>
+                </div>
+            ))}
+        </div>
+
+        <div>
+            <Label htmlFor="motivation">Por que você deseja esta vaga?</Label>
+            <Textarea name="motivation" id="motivation" required rows={4} onChange={handleInputChange} />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><Label>LinkedIn (Opcional)</Label><Input name="linkedinProfile" onChange={handleInputChange} /></div>
+            <div><Label>GitHub (Opcional)</Label><Input name="githubProfile" onChange={handleInputChange} /></div>
+        </div>
+
+        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors">
+            <Label htmlFor="resume" className="cursor-pointer">
+                <div className="flex flex-col items-center gap-2">
+                    <UploadCloud className="w-8 h-8 text-gray-400" />
+                    <span className="text-sm font-medium text-blue-600">Clique para enviar seu currículo (PDF/DOC)</span>
+                    {resumeFile && <span className="text-xs text-green-600 font-bold">Arquivo selecionado: {resumeFile.name}</span>}
+                </div>
+                <input id="resume" type="file" hidden required accept=".pdf,.doc,.docx" onChange={handleFileChange} />
+            </Label>
+        </div>
+
+        {feedback.type === 'error' && <div className="text-red-600 text-sm bg-red-50 p-3 rounded">{feedback.message}</div>}
+
+        <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
+            {isSubmitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin"/> Enviando...</> : 'Enviar Candidatura'}
+        </Button>
+      </form>
+    </div>
   );
 };
 

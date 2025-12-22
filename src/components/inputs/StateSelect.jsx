@@ -1,69 +1,29 @@
 import React from 'react';
-import PropTypes from 'prop-types';
-import { FormControl, InputLabel, Select, MenuItem, FormHelperText } from '@mui/material';
-// Importando seus dados diretamente no componente que precisa deles
+import { Label } from '../ui/label';
 import { estados } from '../../data/brazil-locations'; 
 
-const StateSelect = ({ 
-  value, 
-  onChange, 
-  name = "state", 
-  label = "Em que estado você mora?", 
-  required = true,
-  error = false,
-  helperText = "",
-  disabled = false
-}) => {
+const StateSelect = ({ value, onChange, error, disabled }) => {
   return (
-    <FormControl 
-      fullWidth 
-      margin="normal" 
-      required={required} 
-      error={!!error} // Garante booleano
-      disabled={disabled}
-    >
-      <InputLabel id={`${name}-label`}>{label}</InputLabel>
-      <Select
-        labelId={`${name}-label`}
-        id={name}
-        name={name}
-        value={value || ''} // Evita warning de componente não controlado
-        label={label}
+    <div className="mb-4">
+      <Label htmlFor="state">Em que estado você mora?</Label>
+      <select
+        id="state"
+        name="state"
+        value={value || ''}
         onChange={onChange}
-        MenuProps={{
-          PaperProps: {
-            style: {
-              maxHeight: 300, // UX: Scroll suave para listas longas
-            },
-          },
-        }}
+        disabled={disabled}
+        className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <MenuItem value="" disabled>
-          <em>Selecione uma opção</em>
-        </MenuItem>
+        <option value="" disabled>Selecione uma opção</option>
         {estados.map((estado) => (
-          <MenuItem key={estado.sigla} value={estado.sigla}>
+          <option key={estado.sigla} value={estado.sigla}>
             {estado.nome}
-          </MenuItem>
+          </option>
         ))}
-      </Select>
-      {/* Exibe mensagem de erro ou texto de ajuda se houver */}
-      {(error || helperText) && (
-        <FormHelperText>{error || helperText}</FormHelperText>
-      )}
-    </FormControl>
+      </select>
+      {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+    </div>
   );
-};
-
-StateSelect.propTypes = {
-  value: PropTypes.string,
-  onChange: PropTypes.func.isRequired,
-  name: PropTypes.string,
-  label: PropTypes.string,
-  required: PropTypes.bool,
-  error: PropTypes.string, // Pode receber a string de mensagem de erro
-  helperText: PropTypes.string,
-  disabled: PropTypes.bool
 };
 
 export default StateSelect;
