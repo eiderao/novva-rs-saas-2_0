@@ -1,62 +1,109 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-// Note: NÃO estamos importando useAuth nem useEffect para redirecionamento
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Loader2, LayoutDashboard } from 'lucide-react';
 
 export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // --- SE TIVER ALGUM useEffect AQUI, APAGUE! ---
+  const [error, setError] = useState('');
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-
       if (error) throw error;
-
-      // Só redireciona AQUI, após o sucesso do clique
       navigate('/dashboard');
-      
     } catch (error) {
-      alert(error.message);
+      setError(error.message === 'Invalid login credentials' 
+        ? 'E-mail ou senha incorretos.' 
+        : 'Ocorreu um erro ao entrar. Tente novamente.');
     } finally {
       setLoading(false);
     }
   };
 
-  // ... (Restante do HTML do formulário igual ao anterior) ...
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="max-w-md w-full bg-white p-8 rounded shadow space-y-6">
-        <h2 className="text-center text-3xl font-extrabold text-gray-900">Acesso Recrutador</h2>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
+        <div className="text-center">
+          <div className="mx-auto h-12 w-12 bg-blue-600 rounded-lg flex items-center justify-center text-white">
+            <LayoutDashboard size={24} />
+          </div>
+          <h2 className="mt-6 text-3xl font-extrabold text-gray-900 tracking-tight">
+            Bem-vindo de volta
+          </h2>
+          <p className="mt-2 text-sm text-gray-600">
+            Acesse o painel de recrutamento da <span className="font-semibold text-blue-600">Novva R&S</span>
+          </p>
+        </div>
+        
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
-           {/* Seus inputs de email/senha */}
-           <div className="rounded-md shadow-sm -space-y-px">
+          <div className="rounded-md shadow-sm space-y-4">
             <div>
-              <input type="email" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <label htmlFor="email" className="sr-only">Email</label>
+              <Input
+                id="email"
+                type="email"
+                required
+                placeholder="seu@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+              />
             </div>
             <div>
-              <input type="password" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} />
+              <label htmlFor="password" className="sr-only">Senha</label>
+              <Input
+                id="password"
+                type="password"
+                required
+                placeholder="Sua senha secreta"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
             </div>
           </div>
-           <div>
-            <button type="submit" disabled={loading} className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none disabled:opacity-50">
-              {loading ? 'Entrando...' : 'Entrar'}
-            </button>
+
+          {error && (
+            <div className="p-3 rounded-md bg-red-50 text-red-700 text-sm text-center border border-red-200 animate-pulse">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <Button type="submit" disabled={loading} className="w-full" size="lg">
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Entrando...
+                </>
+              ) : (
+                'Entrar na Plataforma'
+              )}
+            </Button>
+          </div>
+
+          <div className="text-center">
+            <Link 
+              to="/register" 
+              className="font-medium text-sm text-blue-600 hover:text-blue-500 transition-colors"
+            >
+              Não tem uma conta? Cadastre-se gratuitamente
+            </Link>
           </div>
         </form>
-        <div className="text-center">
-          <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">Criar conta</Link>
-        </div>
       </div>
     </div>
   );

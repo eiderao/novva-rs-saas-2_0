@@ -1,15 +1,13 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
+import Layout from './components/Layout';
 
-// Páginas existentes (Confirmadas na sua lista)
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import JobDetails from './pages/JobDetails';
 import ApplyPage from './pages/ApplyPage';
-
-// Páginas NOVAS (Que acabamos de criar no Passo 1)
-import Register from './pages/Register';
 import Jobs from './pages/Jobs';
 import Candidates from './pages/Candidates';
 import CompanySettings from './pages/CompanySettings';
@@ -23,21 +21,22 @@ function App() {
           {/* Rotas Públicas */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          
-          {/* Rota Pública de Candidatura */}
           <Route path="/vagas/:id/candidatar" element={<ApplyPage />} />
 
-          {/* Rotas Privadas */}
+          {/* Rotas Privadas (Protegidas) */}
           <Route element={<PrivateRoute />}>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            
-            <Route path="/jobs" element={<Jobs />} />
-            <Route path="/jobs/:id" element={<JobDetails />} />
-            
-            <Route path="/candidates" element={<Candidates />} />
-            <Route path="/settings" element={<CompanySettings />} />
-            <Route path="/evaluations/:applicationId" element={<Evaluation />} />
+            {/* O Layout envolve todas as páginas internas */}
+            <Route element={<Layout />}>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              
+              <Route path="/jobs" element={<Jobs />} />
+              <Route path="/jobs/:id" element={<JobDetails />} />
+              
+              <Route path="/candidates" element={<Candidates />} />
+              <Route path="/settings" element={<CompanySettings />} />
+              <Route path="/evaluations/:applicationId" element={<Evaluation />} />
+            </Route>
           </Route>
 
           <Route path="*" element={<Navigate to="/login" replace />} />

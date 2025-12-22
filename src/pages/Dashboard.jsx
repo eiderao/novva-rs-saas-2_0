@@ -1,62 +1,49 @@
-// src/pages/Dashboard.jsx (VERSÃO FINAL: UX Aprimorada e Chips de Status)
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import { useAuth } from '../context/AuthContext';
-import CreateJobModal from '../components/jobs/CreateJobModal';
-import { 
-    Box, Button, Typography, Container, AppBar, Toolbar, CircularProgress, 
-    Table, TableBody, TableCell, TableHead, TableRow, Paper, Alert,
-    FormControl, InputLabel, Select, MenuItem, Chip, Stack
-} from '@mui/material';
 import { formatStatus } from '../utils/formatters';
-import AddIcon from '@mui/icons-material/Add';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
-// Função auxiliar para definir cores dos status (Design System)
-const getStatusColor = (status) => {
+// Componentes UI
+import { Button } from '../components/ui/button';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { Plus, Loader2, Users, Briefcase } from 'lucide-react';
+import CreateJobModal from '../components/jobs/CreateJobModal';
+
+const STATUS_PRIORITY = { 'active': 1, 'filled': 2, 'inactive': 3 };
+
+const getStatusVariant = (status) => {
     switch (status) {
-        case 'active': return 'success';   // Verde
-        case 'filled': return 'info';      // Azul
-        case 'inactive': return 'default'; // Cinza
-        default: return 'default';
+        case 'active': return 'success';
+        case 'filled': return 'default'; // Blue
+        case 'inactive': return 'secondary';
+        default: return 'outline';
     }
-};
-
-// Prioridade de ordenação (Constante para não recriar a cada render)
-const STATUS_PRIORITY = {
-    'active': 1,
-    'filled': 2,
-    'inactive': 3
 };
 
 const Dashboard = () => {
     const navigate = useNavigate();
     const { currentUser } = useAuth();
     
-    // Estados de Dados
+    // Estados
     const [jobs, setJobs] = useState([]);
     const [planId, setPlanId] = useState(null);
-    const [isAdmin, setIsAdmin] = useState(false);
-    
-    // Estados de UI
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [openCreateModal, setOpenCreateModal] = useState(false);
-    const [statusFilter, setStatusFilter] = useState('active'); // UX: Padrão 'active' foca no que importa
+    const [statusFilter, setStatusFilter] = useState('active');
 
     const fetchJobs = async () => {
-        if (!currentUser) return;
         setLoading(true);
         try {
-            // Nota: O arquivo client.js já garante que as chaves existem
             const { data: { session } } = await supabase.auth.getSession();
-            if (!session) throw new Error("Sessão do usuário não encontrada.");
+            if (!session) throw new Error("Sessão não encontrada.");
             
             const response = await fetch('/api/jobs', { 
                 headers: { 'Authorization': `Bearer ${session.access_token}` } 
             });
-            
+
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || 'Falha ao buscar vagas.');
@@ -65,191 +52,144 @@ const Dashboard = () => {
             const data = await response.json();
             setJobs(data.jobs || []);
             setPlanId(data.planId);
-            setIsAdmin(data.isAdmin);
         } catch (err) {
-            console.error("Erro ao buscar vagas:", err);
+            console.error("Erro:", err);
             setError(err.message);
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => {
-        fetchJobs();
-    }, [currentUser]);
+    useEffect(() => { fetchJobs(); }, [currentUser]);
 
-    // Lógica de Filtro e Ordenação Otimizada (Memoized)
     const processedJobs = useMemo(() => {
       return jobs
-        .filter(job => {
-          if (statusFilter === 'all') return true;
-          return job.status === statusFilter;
-        })
+        .filter(job => statusFilter === 'all' || job.status === statusFilter)
         .sort((a, b) => {
-          // 1. Ordena pela prioridade do status
           const priorityA = STATUS_PRIORITY[a.status] || 99;
           const priorityB = STATUS_PRIORITY[b.status] || 99;
-          
           if (priorityA !== priorityB) return priorityA - priorityB;
-          
-          // 2. Desempate: Ordem alfabética
           return a.title.localeCompare(b.title);
         });
     }, [jobs, statusFilter]);
 
-    const handleLogout = async () => { await supabase.auth.signOut(); };
-    const handleRowClick = (jobId) => { navigate(`/vaga/${jobId}`); };
-    
-    const isFreemium = planId === 'freemium';
-    const isJobLimitReached = isFreemium && jobs.length >= 2;
+    // Métricas rápidas
+    const totalCandidates = jobs.reduce((acc, job) => acc + (job.candidateCount || 0), 0);
+    const activeJobsCount = jobs.filter(j => j.status === 'active').length;
 
     return (
-        <>
-            <Box sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: '#f5f5f5' }}>
-                <AppBar position="static" color="default" elevation={1}>
-                    <Toolbar>
-                        <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 'bold', color: 'primary.main' }}>
-                            Novva R&S
-                        </Typography>
-                        {isAdmin && (
-                            <Button color="inherit" component={RouterLink} to="/admin" sx={{ mr: 1 }}>
-                                Admin System
-                            </Button>
-                        )}
-                        <Button color="inherit" onClick={handleLogout}>Sair</Button>
-                    </Toolbar>
-                </AppBar>
+        <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight text-gray-900">Dashboard</h1>
+                    <p className="text-gray-500">Visão geral do seu recrutamento.</p>
+                </div>
+                <Button onClick={() => setOpenCreateModal(true)}>
+                    <Plus className="mr-2 h-4 w-4" /> Nova Vaga
+                </Button>
+            </div>
 
-                <Container sx={{ mt: 4, pb: 4 }}>
-                    {/* Cabeçalho da Página */}
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4, flexWrap: 'wrap', gap: 2 }}>
-                        <Typography variant="h4" component="h1" fontWeight="500">
-                            Painel de Vagas
-                        </Typography>
-                        <Stack direction="row" spacing={2}>
-                            <Button 
-                                variant="outlined" 
-                                startIcon={<CheckCircleIcon />}
-                                component={RouterLink} 
-                                to="/aprovados"
-                            >
-                                Ver Aprovados
-                            </Button>
-                            <Button 
-                                variant="contained" 
-                                startIcon={<AddIcon />}
-                                onClick={() => setOpenCreateModal(true)}
-                                disabled={isJobLimitReached}
-                            >
-                                Nova Vaga
-                            </Button>
-                        </Stack>
-                    </Box>
+            {/* Cards de Métricas */}
+            <div className="grid gap-4 md:grid-cols-3">
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Vagas Ativas</CardTitle>
+                        <Briefcase className="h-4 w-4 text-gray-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{activeJobsCount}</div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Total de Candidatos</CardTitle>
+                        <Users className="h-4 w-4 text-gray-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{totalCandidates}</div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Plano Atual</CardTitle>
+                        <div className="h-4 w-4 text-gray-500">💎</div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold capitalize">{planId || '...'}</div>
+                    </CardContent>
+                </Card>
+            </div>
 
-                    {isJobLimitReached && (
-                        <Alert severity="info" sx={{ mb: 3 }}>
-                            Seu plano <strong>Freemium</strong> permite até 2 vagas. Faça um upgrade para criar mais.
-                        </Alert>
-                    )}
-
-                    {/* Barra de Ferramentas da Tabela */}
-                    <Paper sx={{ mb: 3, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <FormControl size="small" sx={{ minWidth: 200 }}>
-                                <InputLabel id="status-filter-label">Status da Vaga</InputLabel>
-                                <Select
-                                    labelId="status-filter-label"
-                                    value={statusFilter}
-                                    label="Status da Vaga"
-                                    onChange={(e) => setStatusFilter(e.target.value)}
-                                >
-                                    <MenuItem value="active">Apenas Ativas</MenuItem>
-                                    <MenuItem value="filled">Preenchidas</MenuItem>
-                                    <MenuItem value="inactive">Inativas</MenuItem>
-                                    <Divider />
-                                    <MenuItem value="all">Todas as Vagas</MenuItem>
-                                </Select>
-                            </FormControl>
-                            <Typography variant="body2" color="text.secondary">
-                                Exibindo <strong>{processedJobs.length}</strong> de {jobs.length} vagas
-                            </Typography>
-                        </Box>
-                    </Paper>
-
-                    {/* Área de Conteúdo */}
+            {/* Filtros e Tabela */}
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center justify-between">
+                        <CardTitle>Suas Vagas</CardTitle>
+                        <select 
+                            className="text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                        >
+                            <option value="active">Apenas Ativas</option>
+                            <option value="filled">Preenchidas</option>
+                            <option value="inactive">Inativas</option>
+                            <option value="all">Todas</option>
+                        </select>
+                    </div>
+                </CardHeader>
+                <CardContent>
                     {loading ? (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', my: 8 }}><CircularProgress /></Box>
+                        <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>
                     ) : error ? (
-                        <Alert severity="error">Erro ao carregar dados: {error}</Alert>
+                        <div className="text-red-500 text-center py-4">{error}</div>
+                    ) : processedJobs.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">Nenhuma vaga encontrada.</div>
                     ) : (
-                        <Paper sx={{ width: '100%', overflow: 'hidden', boxShadow: 2 }}>
-                            <Table>
-                                <TableHead sx={{ bgcolor: '#f9fafb' }}>
-                                    <TableRow>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>Título da Vaga</TableCell>
-                                        <TableCell sx={{ fontWeight: 'bold', width: '150px' }}>Status</TableCell>
-                                        <TableCell align="center" sx={{ fontWeight: 'bold', width: '150px' }}>Candidatos</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {processedJobs.length > 0 ? processedJobs.map((job) => (
-                                        <TableRow 
-                                            hover 
+                        <div className="relative w-full overflow-auto">
+                            <table className="w-full caption-bottom text-sm text-left">
+                                <thead className="[&_tr]:border-b">
+                                    <tr className="border-b transition-colors hover:bg-gray-50/50">
+                                        <th className="h-12 px-4 align-middle font-medium text-gray-500">Título</th>
+                                        <th className="h-12 px-4 align-middle font-medium text-gray-500">Status</th>
+                                        <th className="h-12 px-4 align-middle font-medium text-gray-500 text-center">Candidatos</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="[&_tr:last-child]:border-0">
+                                    {processedJobs.map((job) => (
+                                        <tr 
                                             key={job.id} 
-                                            onClick={() => handleRowClick(job.id)}
-                                            sx={{ cursor: 'pointer', transition: '0.2s' }}
+                                            className="border-b transition-colors hover:bg-gray-50 cursor-pointer"
+                                            onClick={() => navigate(`/jobs/${job.id}`)}
                                         >
-                                            <TableCell>
-                                                <Typography variant="body1" fontWeight="500">{job.title}</Typography>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Chip 
-                                                    label={formatStatus(job.status)} 
-                                                    color={getStatusColor(job.status)}
-                                                    size="small"
-                                                    variant={job.status === 'active' ? 'filled' : 'outlined'}
-                                                />
-                                            </TableCell>
-                                            <TableCell align="center">
-                                                <Chip 
-                                                    label={job.candidateCount || 0} 
-                                                    size="small" 
-                                                    variant="outlined" 
-                                                    sx={{ minWidth: 40 }}
-                                                />
-                                            </TableCell>
-                                        </TableRow>
-                                    )) : (
-                                        <TableRow>
-                                            <TableCell colSpan={3} align="center" sx={{ py: 6 }}>
-                                                <Typography color="text.secondary">
-                                                    Nenhuma vaga encontrada com o filtro atual.
-                                                </Typography>
-                                                {statusFilter !== 'all' && (
-                                                    <Button onClick={() => setStatusFilter('all')} sx={{ mt: 1 }}>
-                                                        Limpar Filtros
-                                                    </Button>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </Paper>
+                                            <td className="p-4 align-middle font-medium text-blue-600 hover:underline">
+                                                {job.title}
+                                            </td>
+                                            <td className="p-4 align-middle">
+                                                <Badge variant={getStatusVariant(job.status)}>
+                                                    {formatStatus(job.status)}
+                                                </Badge>
+                                            </td>
+                                            <td className="p-4 align-middle text-center">
+                                                <Badge variant="outline" className="bg-gray-50">
+                                                    {job.candidateCount || 0}
+                                                </Badge>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     )}
-                </Container>
-            </Box>
-            
+                </CardContent>
+            </Card>
+
             <CreateJobModal 
                 open={openCreateModal}
                 handleClose={() => setOpenCreateModal(false)}
                 onJobCreated={fetchJobs}
             />
-        </>
+        </div>
     );
 };
-
-// Pequeno ajuste para importar Divider que esqueci no topo
-import { Divider } from '@mui/material';
 
 export default Dashboard;
