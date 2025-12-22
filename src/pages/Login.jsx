@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
 import { Loader2, LayoutDashboard } from 'lucide-react';
 
 export default function Login() {
@@ -23,52 +24,45 @@ export default function Login() {
         password,
       });
       if (error) throw error;
+      // AuthContext detecta a mudança e o Router redireciona
       navigate('/dashboard');
     } catch (error) {
-      setError(error.message === 'Invalid login credentials' 
-        ? 'E-mail ou senha incorretos.' 
-        : 'Ocorreu um erro ao entrar. Tente novamente.');
+      setError('E-mail ou senha incorretos.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-lg shadow-sm border">
         <div className="text-center">
-          <div className="mx-auto h-12 w-12 bg-blue-600 rounded-lg flex items-center justify-center text-white">
+          <div className="mx-auto h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 mb-4">
             <LayoutDashboard size={24} />
           </div>
-          <h2 className="mt-6 text-3xl font-extrabold text-gray-900 tracking-tight">
-            Bem-vindo de volta
-          </h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Acesse o painel de recrutamento da <span className="font-semibold text-blue-600">Novva R&S</span>
-          </p>
+          <h2 className="text-3xl font-extrabold text-gray-900">Novva R&S</h2>
+          <p className="mt-2 text-sm text-gray-600">Acesse sua conta</p>
         </div>
         
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
-          <div className="rounded-md shadow-sm space-y-4">
+          <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="sr-only">Email</label>
+              <Label htmlFor="email">E-mail</Label>
               <Input
                 id="email"
                 type="email"
                 required
-                placeholder="seu@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
               />
             </div>
             <div>
-              <label htmlFor="password" className="sr-only">Senha</label>
+              <Label htmlFor="password">Senha</Label>
               <Input
                 id="password"
                 type="password"
                 required
-                placeholder="Sua senha secreta"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
@@ -77,30 +71,18 @@ export default function Login() {
           </div>
 
           {error && (
-            <div className="p-3 rounded-md bg-red-50 text-red-700 text-sm text-center border border-red-200 animate-pulse">
+            <div className="p-3 rounded-md bg-red-50 text-red-700 text-sm border border-red-200">
               {error}
             </div>
           )}
 
-          <div>
-            <Button type="submit" disabled={loading} className="w-full" size="lg">
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Entrando...
-                </>
-              ) : (
-                'Entrar na Plataforma'
-              )}
-            </Button>
-          </div>
+          <Button type="submit" disabled={loading} className="w-full">
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Entrar'}
+          </Button>
 
-          <div className="text-center">
-            <Link 
-              to="/register" 
-              className="font-medium text-sm text-blue-600 hover:text-blue-500 transition-colors"
-            >
-              Não tem uma conta? Cadastre-se gratuitamente
+          <div className="text-center text-sm">
+            <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">
+              Criar conta gratuita
             </Link>
           </div>
         </form>
