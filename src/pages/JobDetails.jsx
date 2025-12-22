@@ -83,7 +83,7 @@ export default function JobDetails() {
                     <span className="flex items-center"><Calendar className="w-4 h-4 mr-1"/> {new Date(job.created_at).toLocaleDateString()}</span>
                 </div>
             </div>
-            <Button variant="outline" onClick={handleCopyLink}><Share2 className="w-4 h-4 mr-2"/> Compartilhar</Button>
+            <Button variant="outline" onClick={handleCopyLink}><Share2 className="w-4 h-4 mr-2"/> Formulário de Candidatura </Button>
         </div>
       </div>
 

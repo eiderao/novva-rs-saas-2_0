@@ -8,10 +8,13 @@ import StateSelect from '../components/inputs/StateSelect';
 import { Loader2, UploadCloud, CheckCircle, AlertCircle } from 'lucide-react';
 
 const ApplyPage = () => {
-  const { jobId } = useParams();
-  const [jobTitle, setJobTitle] = useState('');
-  
+  // CORREÇÃO AQUI: O Router passa 'id', não 'jobId'
+  const { id } = useParams(); 
+  // Para facilitar, vamos renomear internamente para jobId
+  const jobId = id;
+
   // Estados de controle
+  const [jobTitle, setJobTitle] = useState('');
   const [isVagaClosed, setIsVagaClosed] = useState(false);
   const [loadingPage, setLoadingPage] = useState(true);
   const [errorPage, setErrorPage] = useState('');

@@ -14,7 +14,7 @@ const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Busca robusta do Tenant ID
+  // Busca o Tenant ID assim que o modal abre
   useEffect(() => {
     if (open) {
       const fetchTenantId = async () => {
@@ -33,9 +33,9 @@ const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
           
         } catch (err) {
           console.error('Erro ao buscar tenant:', err);
+          setError("Erro ao carregar configurações da empresa.");
         }
       };
-      
       fetchTenantId();
     }
   }, [open]);
@@ -85,7 +85,7 @@ const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
       onClose={handleClose}
       title="Criar Nova Vaga"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-6">
         
         <div>
           <Label htmlFor="jobTitle">Título da Vaga</Label>
@@ -93,22 +93,28 @@ const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
             id="jobTitle"
             required
             autoFocus
-            placeholder="Ex: Desenvolvedor Senior"
+            placeholder="Ex: Analista Financeiro"
             value={jobTitle}
             onChange={(e) => setJobTitle(e.target.value)}
             disabled={loading}
           />
         </div>
 
-        {tenantId ? (
-            <AreaSelect 
-                currentTenantId={tenantId}
-                selectedAreaId={departmentId}
-                onSelectArea={setDepartmentId}
-            />
-        ) : (
-            <div className="text-sm text-gray-500 py-2">Carregando permissões...</div>
-        )}
+        {/* Ponto 4: Área Select agora lida melhor com o estado de loading interno */}
+        <div className="space-y-2">
+            {tenantId ? (
+                <AreaSelect 
+                    currentTenantId={tenantId}
+                    selectedAreaId={departmentId}
+                    onSelectArea={setDepartmentId}
+                />
+            ) : (
+                <div className="flex items-center text-sm text-gray-500 bg-gray-50 p-3 rounded-md">
+                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                   Carregando departamentos...
+                </div>
+            )}
+        </div>
 
         {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-sm text-red-700">
@@ -117,7 +123,7 @@ const CreateJobModal = ({ open, handleClose, onJobCreated }) => {
             </div>
         )}
         
-        <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
+        <div className="flex justify-end gap-3 pt-2">
           <Button type="button" variant="outline" onClick={handleClose} disabled={loading}>
             Cancelar
           </Button>
