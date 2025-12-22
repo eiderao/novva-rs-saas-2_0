@@ -1,4 +1,4 @@
-// api/createJob.js (Versão Final "Area-Aware")
+// api/createJob.js (Versão V2.0 - Freemium Limit & Full Fields)
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(request, response) {
@@ -8,59 +8,97 @@ export default async function handler(request, response) {
   }
   try {
     const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-
     const authHeader = request.headers['authorization'];
     if (!authHeader) return response.status(401).json({ error: 'Não autorizado.' });
+    
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
     if (userError) return response.status(401).json({ error: 'Token inválido.' });
     
     const { data: userData } = await supabaseAdmin.from('users').select('tenantId').eq('id', user.id).single();
-    if (!userData) return response.status(404).json({ error: 'Perfil de usuário não encontrado.' });
+    if (!userData) return response.status(404).json({ error: 'Perfil não encontrado.' });
     const tenantId = userData.tenantId;
 
+    // Busca dados do plano e contagem atual
     const { data: tenant, error: tenantError } = await supabaseAdmin
       .from('tenants')
-      .select('plan:plans(job_limit)')
+      .select('plan:plans(id, job_limit)')
       .eq('id', tenantId)
       .single();
+    
     if (tenantError) throw tenantError;
 
+    // REGRA 6: Limite de Vagas Ativas apenas (especialmente Freemium)
     const job_limit = tenant.plan.job_limit;
-
-    // Lógica de limite dinâmica (job_limit === -1 é ilimitado)
+    
+    // Se o limite for diferente de -1 (ilimitado), verificamos
     if (job_limit !== -1) {
       const { count, error: countError } = await supabaseAdmin
         .from('jobs')
         .select('*', { count: 'exact', head: true })
-        .eq('tenantId', tenantId);
+        .eq('tenantId', tenantId)
+        .eq('status', 'active'); // Conta apenas ativas!
+
       if (countError) throw countError;
+      
       if (count >= job_limit) {
-        return response.status(403).json({ error: `Limite de ${job_limit} vagas atingido para o seu plano.` });
+        return response.status(403).json({ 
+            error: `Limite de ${job_limit} vagas ativas atingido para o plano ${tenant.plan.id}. Arquive ou exclua uma vaga para criar outra.` 
+        });
       }
     }
 
-    // --- MUDANÇA AQUI: Recebendo também o ID do departamento ---
-    const { title, company_department_id } = request.body; 
+    // Recebe todos os campos novos
+    const { 
+        title, 
+        description, 
+        requirements, 
+        type, 
+        location_type, 
+        company_department_id 
+    } = request.body;
+
+    if (!title) return response.status(400).json({ error: 'O título da vaga é obrigatório.' });
     
-    if (!title) { return response.status(400).json({ error: 'O título da vaga é obrigatório.' }); }
+    // Prepara objeto de inserção com campos seguros
+    const insertData = {
+        title,
+        tenantId,
+        status: 'active',
+        description: description || '',
+        requirements: requirements || '',
+        type: type || 'CLT',
+        location_type: location_type || 'Híbrido',
+        // Inicia com parâmetros padrão se não existirem
+        parameters: { 
+            triagem: [], 
+            cultura: [], 
+            tecnico: [], 
+            notas: [
+                {id: '1', nome: 'Abaixo', valor: 0},
+                {id: '2', nome: 'Atende', valor: 50},
+                {id: '3', nome: 'Supera', valor: 100}
+            ] 
+        }
+    };
+
+    // Só adiciona o departamento se ele vier preenchido
+    if (company_department_id) {
+        insertData.company_department_id = company_department_id;
+    }
     
     const { data: newJob, error: insertError } = await supabaseAdmin
       .from('jobs')
-      .insert({ 
-          title: title, 
-          tenantId: tenantId, 
-          status: 'active',
-          company_department_id: company_department_id || null // Salva o ID ou null se não vier
-      })
+      .insert(insertData)
       .select()
       .single();
       
     if (insertError) throw insertError;
     
     return response.status(201).json({ newJob });
+
   } catch (error) {
-    console.error("Erro na função createJob:", error);
+    console.error("Erro createJob:", error);
     return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
   }
 }
