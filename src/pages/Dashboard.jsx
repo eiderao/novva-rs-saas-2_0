@@ -2,192 +2,164 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import { useAuth } from '../context/AuthContext';
-import { formatStatus } from '../utils/formatters';
-import { Button } from '../components/ui/button';
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
-import { Badge } from '../components/ui/badge';
-import { Plus, Loader2, Users, Briefcase, Building2, Crown, User, AlertCircle } from 'lucide-react';
+import { Plus, Briefcase, Users, Building } from 'lucide-react';
+import { Button } from '../components/ui/button'; // Se não tiver, use HTML button normal temporariamente
 import CreateJobModal from '../components/jobs/CreateJobModal';
 
-const Dashboard = () => {
-    const navigate = useNavigate();
-    const { currentUser } = useAuth(); // Usando currentUser correto
-    
-    const [jobs, setJobs] = useState([]);
-    const [meta, setMeta] = useState({ companyName: '...', userName: '...', planId: '...' });
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [openCreateModal, setOpenCreateModal] = useState(false);
-    
-    const [statusFilter, setStatusFilter] = useState('active');
-    const [deptFilter, setDeptFilter] = useState('all');
+export default function Dashboard() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [jobs, setJobs] = useState([]);
+  const [departments, setDepartments] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // Filtros
+  const [deptFilter, setDeptFilter] = useState('all');
 
-    // BUSCA DIRETA NO BANCO (Client-Side)
-    const fetchData = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            if (!currentUser) return;
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      if (!user) return;
 
-            // 1. Busca Perfil (Nome e Tenant)
-            const { data: profile, error: profileError } = await supabase
-                .from('user_profiles')
-                .select(`name, tenantId, tenants ( companyName, planId )`)
-                .eq('id', currentUser.id)
-                .single();
+      // 1. Busca Tenant ID
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('tenantId')
+        .eq('id', user.id)
+        .single();
 
-            if (profileError) throw profileError;
+      if (!profile) return;
 
-            // 2. Busca Vagas do Tenant
-            const { data: jobsData, error: jobsError } = await supabase
-                .from('jobs')
-                .select(`
-                    *,
-                    company_departments ( name ),
-                    applications ( count )
-                `)
-                .eq('tenantId', profile.tenantId);
+      // 2. Busca Departamentos (Para mapear ID -> Nome)
+      const { data: depts } = await supabase
+        .from('company_departments')
+        .select('id, name')
+        .eq('tenantId', profile.tenantId);
+      
+      const deptMap = {};
+      depts?.forEach(d => deptMap[d.id] = d.name);
+      setDepartments(deptMap);
 
-            if (jobsError) throw jobsError;
+      // 3. Busca Vagas
+      const { data: jobsData } = await supabase
+        .from('jobs')
+        .select('*, applications(count)')
+        .eq('tenantId', profile.tenantId);
 
-            // 3. Processamento
-            const formattedJobs = (jobsData || []).map(job => ({
-                ...job,
-                candidateCount: job.applications?.[0]?.count || 0,
-                deptName: job.company_departments?.name || 'Geral'
-            })).sort((a, b) => {
-                // Ordenação: Depto > Data
-                const deptCompare = a.deptName.localeCompare(b.deptName);
-                if (deptCompare !== 0) return deptCompare;
-                return new Date(b.created_at) - new Date(a.created_at);
-            });
+      // Processa e Ordena (Regra 5)
+      const processed = (jobsData || []).map(j => ({
+        ...j,
+        deptName: deptMap[j.company_department_id] || 'Geral',
+        candidateCount: j.applications?.[0]?.count || 0
+      })).sort((a, b) => {
+        // Ordem: Depto (A-Z) -> Data (Desc)
+        const deptCompare = a.deptName.localeCompare(b.deptName);
+        if (deptCompare !== 0) return deptCompare;
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
 
-            setJobs(formattedJobs);
-            setMeta({
-                companyName: profile.tenants?.companyName || 'Minha Empresa',
-                userName: profile.name || currentUser.email,
-                planId: profile.tenants?.planId || 'free'
-            });
+      setJobs(processed);
 
-        } catch (err) {
-            console.error("Erro Dashboard:", err);
-            setError("Erro ao carregar dados. Verifique sua conexão.");
-        } finally {
-            setLoading(false);
-        }
-    };
+    } catch (error) {
+      console.error("Erro Dashboard:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    useEffect(() => { 
-        if (currentUser) fetchData(); 
-    }, [currentUser]);
+  useEffect(() => { fetchData(); }, [user]);
 
-    // Filtros
-    const uniqueDepartments = useMemo(() => [...new Set(jobs.map(j => j.deptName))].sort(), [jobs]);
-    
-    const processedJobs = useMemo(() => {
-        return jobs.filter(job => {
-            const matchStatus = statusFilter === 'all' || job.status === statusFilter;
-            const matchDept = deptFilter === 'all' || job.deptName === deptFilter;
-            return matchStatus && matchDept;
-        });
-    }, [jobs, statusFilter, deptFilter]);
+  const filteredJobs = useMemo(() => {
+    return deptFilter === 'all' 
+      ? jobs 
+      : jobs.filter(j => j.deptName === deptFilter);
+  }, [jobs, deptFilter]);
 
-    const activeJobs = jobs.filter(j => j.status === 'active');
-    const totalCandidates = jobs.reduce((acc, j) => acc + (j.candidateCount || 0), 0);
-    const avgCandidates = activeJobs.length ? (totalCandidates / activeJobs.length).toFixed(1) : 0;
+  const uniqueDepts = [...new Set(Object.values(departments))].sort();
 
-    const getStatusVariant = (status) => {
-        return status === 'active' ? 'success' : status === 'filled' ? 'default' : 'secondary';
-    };
+  if (loading) return <div className="p-10 text-center">Carregando...</div>;
 
-    if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-blue-600"/></div>;
+  return (
+    <div className="p-8 max-w-7xl mx-auto">
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Painel de Vagas</h1>
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="bg-blue-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-blue-700"
+        >
+          <Plus className="w-4 h-4 mr-2"/> Nova Vaga
+        </button>
+      </div>
 
-    return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-lg border shadow-sm">
-                <div>
-                    <div className="flex items-center gap-2 mb-1">
-                        <Building2 className="w-5 h-5 text-gray-400" />
-                        <h1 className="text-2xl font-bold tracking-tight text-gray-900">{meta.companyName}</h1>
-                        <span className="text-gray-300 mx-2">|</span>
-                        <div className="flex items-center gap-2 text-gray-600 font-medium">
-                            <User className="w-4 h-4" /> {meta.userName}
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-500 mt-2">
-                        <span>Painel de Vagas</span>
-                        <span className="flex items-center text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full font-medium capitalize ml-2">
-                            <Crown className="w-3 h-3 mr-1" /> Plano {meta.planId}
-                        </span>
-                    </div>
-                </div>
-                <Button onClick={() => setOpenCreateModal(true)}>
-                    <Plus className="mr-2 h-4 w-4" /> Nova Vaga
-                </Button>
-            </div>
-
-            {error && <div className="p-4 bg-red-50 text-red-700 rounded border border-red-200 flex items-center gap-2"><AlertCircle className="w-5 h-5"/>{error}</div>}
-
-            {/* KPIs */}
-            <div className="grid gap-4 md:grid-cols-3">
-                <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Vagas Ativas</CardTitle><Briefcase className="h-4 w-4 text-gray-500"/></CardHeader><CardContent><div className="text-2xl font-bold">{activeJobs.length}</div></CardContent></Card>
-                <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Candidatos/Vaga</CardTitle><Users className="h-4 w-4 text-gray-500"/></CardHeader><CardContent><div className="text-2xl font-bold">{avgCandidates}</div></CardContent></Card>
-                <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Total Candidatos</CardTitle><div>📄</div></CardHeader><CardContent><div className="text-2xl font-bold">{totalCandidates}</div></CardContent></Card>
-            </div>
-
-            {/* Lista */}
-            <Card>
-                <CardHeader>
-                    <div className="flex flex-col sm:flex-row justify-between gap-4">
-                        <CardTitle>Painel de Vagas</CardTitle>
-                        <div className="flex gap-2">
-                            <select className="h-9 rounded-md border border-gray-300 text-sm px-3 bg-white" value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
-                                <option value="all">Todos Departamentos</option>
-                                {uniqueDepartments.map(d => <option key={d} value={d}>{d}</option>)}
-                            </select>
-                            <select className="h-9 rounded-md border border-gray-300 text-sm px-3 bg-white" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                                <option value="active">Ativas</option>
-                                <option value="filled">Preenchidas</option>
-                                <option value="inactive">Inativas</option>
-                                <option value="all">Todas</option>
-                            </select>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    {processedJobs.length === 0 ? (
-                        <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg border border-dashed">Nenhuma vaga encontrada.</div>
-                    ) : (
-                        <div className="relative w-full overflow-auto">
-                            <table className="w-full caption-bottom text-sm text-left">
-                                <thead className="bg-gray-50/50 [&_tr]:border-b">
-                                    <tr>
-                                        <th className="h-10 px-4 font-medium text-gray-500">Empresa / Área</th>
-                                        <th className="h-10 px-4 font-medium text-gray-500">Título</th>
-                                        <th className="h-10 px-4 font-medium text-gray-500">Status</th>
-                                        <th className="h-10 px-4 font-medium text-gray-500 text-center">Candidatos</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="[&_tr:last-child]:border-0">
-                                    {processedJobs.map((job) => (
-                                        <tr key={job.id} className="border-b transition-colors hover:bg-gray-50 cursor-pointer group" onClick={() => navigate(`/jobs/${job.id}`)}>
-                                            <td className="p-4 align-middle text-gray-600"><span className="font-medium text-gray-900">{meta.companyName}</span> <span className="text-gray-300 mx-2">/</span> {job.deptName}</td>
-                                            <td className="p-4 align-middle font-medium text-blue-600 group-hover:underline">{job.title}</td>
-                                            <td className="p-4 align-middle"><Badge variant={getStatusVariant(job.status)}>{formatStatus(job.status)}</Badge></td>
-                                            <td className="p-4 align-middle text-center"><Badge variant="outline">{job.candidateCount}</Badge></td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
-
-            <CreateJobModal open={openCreateModal} handleClose={() => setOpenCreateModal(false)} onJobCreated={fetchData} />
+      {/* Filtros e KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="bg-white p-4 rounded shadow border">
+          <p className="text-sm text-gray-500">Vagas Ativas</p>
+          <p className="text-2xl font-bold">{jobs.filter(j => j.status === 'active').length}</p>
         </div>
-    );
-};
+        <div className="bg-white p-4 rounded shadow border">
+          <p className="text-sm text-gray-500">Total Candidatos</p>
+          <p className="text-2xl font-bold">{jobs.reduce((acc, j) => acc + j.candidateCount, 0)}</p>
+        </div>
+      </div>
 
-export default Dashboard;
+      <div className="bg-white rounded-lg shadow border overflow-hidden">
+        <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+          <h2 className="font-semibold text-gray-700">Listagem</h2>
+          <select 
+            className="border rounded p-1 text-sm"
+            value={deptFilter}
+            onChange={(e) => setDeptFilter(e.target.value)}
+          >
+            <option value="all">Todos Departamentos</option>
+            {uniqueDepts.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
+        
+        <table className="w-full text-left text-sm">
+          <thead className="bg-gray-50 text-gray-500 border-b">
+            <tr>
+              <th className="p-4">Empresa / Área</th>
+              <th className="p-4">Vaga</th>
+              <th className="p-4">Status</th>
+              <th className="p-4 text-center">Candidatos</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredJobs.map(job => (
+              <tr 
+                key={job.id} 
+                className="border-b hover:bg-gray-50 cursor-pointer transition"
+                onClick={() => navigate(`/jobs/${job.id}`)}
+              >
+                <td className="p-4 text-gray-600 font-medium">
+                  {/* Assumindo nome fixo da empresa por enquanto para simplificar */}
+                  Novva <span className="text-gray-300 mx-1">/</span> {job.deptName}
+                </td>
+                <td className="p-4 font-semibold text-blue-600">{job.title}</td>
+                <td className="p-4">
+                  <span className={`px-2 py-1 rounded-full text-xs ${job.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100'}`}>
+                    {job.status === 'active' ? 'Ativa' : 'Fechada'}
+                  </span>
+                </td>
+                <td className="p-4 text-center">
+                  <span className="bg-gray-100 px-2 py-1 rounded text-xs">{job.candidateCount}</span>
+                </td>
+              </tr>
+            ))}
+            {filteredJobs.length === 0 && (
+              <tr><td colSpan="4" className="p-8 text-center text-gray-500">Nenhuma vaga encontrada.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <CreateJobModal 
+        open={isModalOpen} 
+        handleClose={() => setIsModalOpen(false)} 
+        onJobCreated={fetchData} 
+      />
+    </div>
+  );
+}
