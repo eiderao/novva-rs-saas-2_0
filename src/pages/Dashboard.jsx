@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabase/client';
-import { useNavigate } from 'react-router-dom'; // Navegação necessária
+import { useNavigate } from 'react-router-dom';
 import CreateJobModal from '../components/jobs/CreateJobModal';
-import { Briefcase, Users, Plus, AlertTriangle, Settings } from 'lucide-react';
+import { Briefcase, Users, Plus, Settings as SettingsIcon } from 'lucide-react';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -11,7 +11,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deptFilter, setDeptFilter] = useState('all');
-  const [fixing, setFixing] = useState(false); // Estado para o botão de reparo
+  const [fixing, setFixing] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -32,7 +32,7 @@ export default function Dashboard() {
 
       setProfile(userProfile);
 
-      // 2. Se tiver Tenant, busca vagas e departamentos
+      // 2. Se tiver Tenant, busca vagas
       if (userProfile?.tenantId) {
         const [jobsResult, deptsResult] = await Promise.all([
           supabase.from('jobs').select('*').eq('tenantId', userProfile.tenantId),
@@ -42,7 +42,6 @@ export default function Dashboard() {
         const rawJobs = jobsResult.data || [];
         const depts = deptsResult.data || [];
         
-        // Mapeamento de Departamentos
         const deptMap = {};
         depts.forEach(d => deptMap[d.id] = d.name);
 
@@ -51,7 +50,6 @@ export default function Dashboard() {
           deptName: j.company_department_id ? (deptMap[j.company_department_id] || 'Geral') : 'Geral'
         }));
 
-        // Ordenação: Data de criação (mais recente primeiro)
         processed.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         setJobs(processed);
       }
@@ -62,13 +60,11 @@ export default function Dashboard() {
     }
   };
 
-  // --- LÓGICA DE AUTO-REPARO (Para novos usuários vindos do Registro) ---
   const fixAccount = async () => {
     setFixing(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
-      // 1. Cria Empresa
       const { data: newTenant, error: tError } = await supabase
         .from('tenants')
         .insert({ "companyName": "Minha Empresa" })
@@ -76,18 +72,18 @@ export default function Dashboard() {
         .single();
       if (tError) throw tError;
 
-      // 2. Vincula Usuário à Empresa
       const { error: pError } = await supabase
         .from('user_profiles')
         .upsert({
           id: user.id,
           name: user.email.split('@')[0],
-          "tenantId": newTenant.id
+          "tenantId": newTenant.id,
+          role: 'admin'
         });
       if (pError) throw pError;
 
       alert("Conta configurada com sucesso!");
-      fetchData(); // Recarrega a tela
+      fetchData();
     } catch (err) {
       alert("Erro ao configurar: " + err.message);
     } finally {
@@ -95,7 +91,6 @@ export default function Dashboard() {
     }
   };
 
-  // Filtros
   const filteredJobs = useMemo(() => {
     if (deptFilter === 'all') return jobs;
     return jobs.filter(j => j.deptName === deptFilter);
@@ -115,13 +110,17 @@ export default function Dashboard() {
             <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600">
               {profile?.name || 'Usuário'}
             </span>
-            <button onClick={() => supabase.auth.signOut()} className="text-red-500 hover:underline ml-2">
+            <span className="text-gray-300">|</span>
+            <button onClick={() => navigate('/settings')} className="text-gray-600 hover:text-blue-600 flex items-center gap-1">
+               <SettingsIcon size={14} /> Configurações
+            </button>
+            <span className="text-gray-300">|</span>
+            <button onClick={() => supabase.auth.signOut()} className="text-red-500 hover:underline">
               Sair
             </button>
           </div>
         </div>
         
-        {/* Botão Nova Vaga só aparece se tiver conta configurada */}
         {profile?.tenantId && (
           <button 
             onClick={() => setIsModalOpen(true)}
@@ -132,34 +131,22 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* --- CENÁRIO 1: CONTA NOVA (SEM EMPRESA) --- */}
       {!profile?.tenantId ? (
         <div className="bg-yellow-50 border border-yellow-200 p-8 rounded-lg text-center shadow-sm max-w-2xl mx-auto">
-          <div className="flex justify-center mb-4">
-            <div className="p-3 bg-yellow-100 rounded-full text-yellow-600">
-              <Settings size={32} />
-            </div>
-          </div>
           <h2 className="text-xl font-bold text-yellow-800 mb-2">Finalizar Configuração da Conta</h2>
           <p className="text-yellow-700 mb-6">
-            Bem-vindo ao Novva R&S! Para começar a criar vagas, precisamos configurar seu ambiente de trabalho (Empresa).
+            Bem-vindo ao Novva R&S! Para começar, precisamos configurar sua empresa.
           </p>
           <button 
             onClick={fixAccount} 
             disabled={fixing}
-            className="bg-yellow-600 text-white px-6 py-3 rounded-md font-bold hover:bg-yellow-700 shadow transition flex items-center justify-center gap-2 mx-auto"
+            className="bg-yellow-600 text-white px-6 py-3 rounded-md font-bold hover:bg-yellow-700 shadow transition"
           >
-            {fixing ? 'Configurando...' : (
-              <>
-                <Settings className="w-4 h-4" /> Configurar Automaticamente
-              </>
-            )}
+            {fixing ? 'Configurando...' : '⚙️ Configurar Minha Empresa Agora'}
           </button>
         </div>
       ) : (
-        /* --- CENÁRIO 2: DASHBOARD OPERACIONAL --- */
         <>
-          {/* KPIs */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             <div className="bg-white p-6 rounded shadow border border-gray-100 flex items-center gap-4">
               <div className="p-3 bg-blue-100 text-blue-600 rounded-full"><Briefcase size={24}/></div>
@@ -177,7 +164,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Lista de Vagas */}
           <div className="bg-white rounded shadow border overflow-hidden">
             <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
               <h2 className="font-semibold text-gray-700">Listagem de Vagas</h2>
@@ -211,7 +197,7 @@ export default function Dashboard() {
                   filteredJobs.map(job => (
                     <tr 
                       key={job.id} 
-                      onClick={() => navigate(`/jobs/${job.id}`)} // AQUI ESTÁ O CLIQUE
+                      onClick={() => navigate(`/jobs/${job.id}`)}
                       className="border-b hover:bg-blue-50 transition cursor-pointer group"
                     >
                       <td className="p-4 text-gray-600">{job.deptName}</td>
