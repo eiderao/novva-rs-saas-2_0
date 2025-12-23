@@ -6,7 +6,8 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import JobDetails from './pages/JobDetails';
 import ApplicationDetails from './pages/ApplicationDetails';
-import Settings from './pages/Settings'; // Rota nova
+import Settings from './pages/Settings';
+import ApplyJob from './pages/ApplyJob'; // NOVO IMPORT
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -30,11 +31,14 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Rotas Públicas */}
+        {/* ROTAS PÚBLICAS (Candidatos) */}
+        <Route path="/apply/:jobId" element={<ApplyJob />} />
+
+        {/* ROTAS DE AUTENTICAÇÃO */}
         <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
         <Route path="/register" element={!session ? <Register /> : <Navigate to="/" />} />
         
-        {/* Rotas Protegidas */}
+        {/* ROTAS PROTEGIDAS (Admin/Recrutador) */}
         <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" />} />
         <Route path="/jobs/:jobId" element={session ? <JobDetails /> : <Navigate to="/login" />} />
         <Route path="/applications/:appId" element={session ? <ApplicationDetails /> : <Navigate to="/login" />} />

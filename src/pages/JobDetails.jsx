@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-import { ArrowLeft, Users, Settings, Trash2, Save, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Users, Settings, Trash2, Save, AlertTriangle, Share2, Copy } from 'lucide-react';
 import JobCriteria from '../components/jobs/JobCriteria';
-import AreaSelect from '../components/AreaSelect'; // Reutilizando o componente de área
+import AreaSelect from '../components/AreaSelect';
 
 export default function JobDetails() {
   const { jobId } = useParams();
@@ -78,6 +78,13 @@ export default function JobDetails() {
     } else {
         alert("Rode o SQL de inserção de candidato fictício primeiro!");
     }
+  };
+
+  // --- NOVA FUNÇÃO: COPIAR LINK PÚBLICO ---
+  const copyPublicLink = () => {
+    const url = `${window.location.origin}/apply/${jobId}`;
+    navigator.clipboard.writeText(url);
+    alert("Link de candidatura copiado para a área de transferência!");
   };
 
   // --- AÇÃO: ATUALIZAR DADOS DA VAGA ---
@@ -182,11 +189,28 @@ export default function JobDetails() {
            <p className="text-gray-500">{job?.location_type} • {job?.type} • Criada em {new Date(job?.created_at).toLocaleDateString()}</p>
         </div>
         
-        {job?.status === 'active' && (
-          <button onClick={createFakeCandidate} className="text-sm text-blue-600 underline hover:text-blue-800">
-            + Simular Candidato
-          </button>
-        )}
+        <div className="flex gap-2">
+            {/* BOTÃO DE COMPARTILHAR LINK */}
+            {job?.status === 'active' && (
+                <button 
+                  onClick={copyPublicLink}
+                  className="flex items-center gap-2 px-3 py-2 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100 font-medium text-sm transition border border-indigo-100"
+                  title="Copiar link para candidatos"
+                >
+                    <Share2 size={16}/> Copiar Link
+                </button>
+            )}
+
+            {/* BOTÃO DE SIMULAR INTERNAMENTE */}
+            {job?.status === 'active' && (
+              <button 
+                onClick={createFakeCandidate} 
+                className="text-sm text-blue-600 underline hover:text-blue-800 ml-2 px-3 py-2"
+              >
+                  + Simular Internamente
+              </button>
+            )}
+        </div>
       </div>
 
       {/* Navegação de Abas */}
@@ -235,7 +259,7 @@ export default function JobDetails() {
         /* --- CONTEÚDO: CONFIGURAÇÕES --- */
         <div className="space-y-6">
           
-          {/* 1. EDITAR DADOS DA VAGA (NOVO) */}
+          {/* 1. EDITAR DADOS DA VAGA */}
           <div className="bg-white rounded shadow border p-6">
             <h2 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b">Dados da Vaga</h2>
             <form onSubmit={handleUpdateJob} className="space-y-4">
@@ -316,7 +340,7 @@ export default function JobDetails() {
             </form>
           </div>
 
-          {/* 2. GERENCIAMENTO DE STATUS (JÁ EXISTENTE) */}
+          {/* 2. GERENCIAMENTO DE STATUS */}
           <div className="bg-white rounded shadow border p-6">
             <h2 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b">Status e Ciclo de Vida</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -358,7 +382,7 @@ export default function JobDetails() {
             </div>
           </div>
 
-          {/* 3. CRITÉRIOS DE AVALIAÇÃO (JÁ EXISTENTE) */}
+          {/* 3. CRITÉRIOS DE AVALIAÇÃO */}
           <div className="bg-white rounded shadow border p-6">
             <JobCriteria job={job} onUpdate={fetchData} />
           </div>
