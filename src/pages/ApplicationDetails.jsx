@@ -16,41 +16,25 @@ export default function ApplicationDetails() {
   const fetchData = async () => {
     setLoading(true);
 
-    // 1. CONSULTA PADRÃO (SEM APELIDOS/ALIASES)
-    // Usamos os nomes reais das tabelas: 'candidates' e 'jobs'.
-    // Isso evita o erro de sintaxe que apareceu no console.
+    // VOLTAMOS PARA A SINTAXE DE LINHA ÚNICA (Mais compatível)
+    // Usamos 'candidate:candidates(*)' para trazer os dados já dentro do objeto 'candidate'
     const { data, error } = await supabase
       .from('applications')
-      .select(`
-        *,
-        candidates (*),
-        jobs (*)
-      `)
+      .select('*, candidate:candidates(*), job:jobs(*)')
       .eq('id', appId)
       .single();
 
     if (error) {
-      console.error("Erro ao buscar dados:", error);
-      alert("Erro ao carregar dados. Verifique o console (F12) para detalhes.");
+      // Isso vai mostrar o erro REAL no console (ex: "ambiguous relationship")
+      console.error("ERRO DETALHADO:", JSON.stringify(error, null, 2));
+      alert(`Erro ao buscar dados: ${error.message || 'Consulte o console (F12)'}`);
     } else {
-      // 2. TRATAMENTO MANUAL NO JAVASCRIPT
-      // O Supabase retorna 'candidates' (plural), mas nosso layout espera 'candidate' (singular).
-      // Fazemos essa conversão aqui para não quebrar o layout.
-      
-      // Verifica se veio como array ou objeto e normaliza
-      const candidateData = Array.isArray(data.candidates) ? data.candidates[0] : data.candidates;
-      const jobData = Array.isArray(data.jobs) ? data.jobs[0] : data.jobs;
-
-      setApp({
-        ...data,
-        candidate: candidateData, // Mapeia para 'candidate'
-        job: jobData              // Mapeia para 'job'
-      });
+      setApp(data);
     }
     setLoading(false);
   };
 
-  // --- FUNÇÕES DE VISUALIZAÇÃO (Mantidas para corrigir os rótulos e Education) ---
+  // --- FUNÇÕES DE FORMATAÇÃO VISUAL (Mantidas para corrigir os rótulos) ---
 
   const translateLabel = (key) => {
     const map = {
@@ -69,6 +53,7 @@ export default function ApplicationDetails() {
   };
 
   const renderEducation = (edu) => {
+    // Proteção contra dados inválidos
     if (!edu || typeof edu !== 'object') return <span className="text-gray-500">Não informado</span>;
     
     const nivelMap = { 
