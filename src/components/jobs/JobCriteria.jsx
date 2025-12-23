@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
-import { Save, Plus, Trash2, Copy } from 'lucide-react';
+import { Save, Plus, Trash2, Copy, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function JobCriteria({ job, onUpdate }) {
-  // Estrutura padrão segura
   const defaultParams = {
     triagem: [],
     cultura: [],
@@ -21,19 +20,41 @@ export default function JobCriteria({ job, onUpdate }) {
   const [allJobs, setAllJobs] = useState([]);
 
   useEffect(() => {
-    // Carrega outras vagas para a função de "Copiar de..."
     const fetchJobs = async () => {
       const { data } = await supabase
         .from('jobs')
         .select('id, title')
-        .neq('id', job.id) // Não trazer a própria vaga
+        .neq('id', job.id)
         .order('created_at', { ascending: false });
       setAllJobs(data || []);
     };
     fetchJobs();
   }, [job.id]);
 
+  // Função auxiliar para somar pesos de uma seção
+  const getSectionTotal = (sectionKey) => {
+    const items = params[sectionKey] || [];
+    return items.reduce((acc, item) => acc + (Number(item.weight) || 0), 0);
+  };
+
   const handleSave = async () => {
+    // Validação: Todas as seções devem somar 100 (ou 0 se estiverem vazias, opcionalmente)
+    const sections = ['triagem', 'cultura', 'tecnico'];
+    const errors = [];
+
+    sections.forEach(sec => {
+      const total = getSectionTotal(sec);
+      // Regra: Se tiver itens, deve somar 100. Se não tiver itens, passa (total 0).
+      if ((params[sec] && params[sec].length > 0) && total !== 100) {
+        errors.push(`A seção ${sec.toUpperCase()} soma ${total}% (deve ser 100%).`);
+      }
+    });
+
+    if (errors.length > 0) {
+      alert(`Erro de Validação:\n\n${errors.join('\n')}\n\nAjuste os pesos antes de salvar.`);
+      return;
+    }
+
     setLoading(true);
     const { error } = await supabase
       .from('jobs')
@@ -53,13 +74,12 @@ export default function JobCriteria({ job, onUpdate }) {
     const { data } = await supabase.from('jobs').select('parameters').eq('id', importJobId).single();
     if (data?.parameters) {
       setParams(data.parameters);
-      alert("Critérios importados! Clique em salvar para confirmar.");
+      alert("Critérios importados! Verifique os pesos e salve.");
     }
   };
 
-  // Funções de Manipulação do State
   const addItem = (section) => {
-    const newItem = { name: '', weight: 1 };
+    const newItem = { name: '', weight: 0 }; // Começa com 0 para forçar o usuário a definir
     setParams({ ...params, [section]: [...(params[section] || []), newItem] });
   };
 
@@ -75,54 +95,81 @@ export default function JobCriteria({ job, onUpdate }) {
     setParams({ ...params, [section]: newList });
   };
 
-  const renderSection = (title, key, color) => (
-    <div className="bg-gray-50 p-4 rounded border mb-4">
-      <div className="flex justify-between items-center mb-3">
-        <h3 className={`font-bold uppercase text-sm ${color}`}>{title}</h3>
-        <button onClick={() => addItem(key)} className="text-xs flex items-center gap-1 text-blue-600 font-bold hover:underline">
-          <Plus size={14}/> Adicionar Critério
-        </button>
-      </div>
-      
-      {(!params[key] || params[key].length === 0) && <p className="text-sm text-gray-400 italic">Nenhum critério definido.</p>}
+  const renderSection = (title, key, color) => {
+    const totalWeight = getSectionTotal(key);
+    const isValid = totalWeight === 100;
+    const isEmpty = !params[key] || params[key].length === 0;
 
-      <div className="space-y-2">
-        {(params[key] || []).map((item, idx) => (
-          <div key={idx} className="flex gap-2 items-center">
-            <input 
-              className="flex-1 border p-1 rounded text-sm"
-              placeholder="Nome do Critério (Ex: Comunicação)"
-              value={item.name}
-              onChange={e => updateItem(key, idx, 'name', e.target.value)}
-            />
-            <div className="w-20">
-              <input 
-                type="number"
-                className="w-full border p-1 rounded text-sm text-center"
-                placeholder="Peso"
-                value={item.weight}
-                onChange={e => updateItem(key, idx, 'weight', e.target.value)}
-                title="Peso do critério"
-              />
+    // Estado visual do indicador
+    let statusColor = "text-gray-400";
+    let statusIcon = null;
+    let statusText = "Vazio (0%)";
+
+    if (!isEmpty) {
+      if (isValid) {
+        statusColor = "text-green-600";
+        statusIcon = <CheckCircle2 size={16} />;
+        statusText = "Total: 100% (OK)";
+      } else {
+        statusColor = "text-red-600";
+        statusIcon = <AlertCircle size={16} />;
+        statusText = `Total: ${totalWeight}% (Faltam ${100 - totalWeight}%)`;
+      }
+    }
+
+    return (
+      <div className={`bg-gray-50 p-4 rounded border mb-4 ${!isEmpty && !isValid ? 'border-red-200 bg-red-50' : ''}`}>
+        <div className="flex justify-between items-center mb-3">
+          <div className="flex flex-col">
+            <h3 className={`font-bold uppercase text-sm ${color}`}>{title}</h3>
+            <div className={`text-xs font-bold flex items-center gap-1 mt-1 ${statusColor}`}>
+              {statusIcon} {statusText}
             </div>
-            <button onClick={() => removeItem(key, idx)} className="text-red-500 hover:bg-red-100 p-1 rounded">
-              <Trash2 size={14}/>
-            </button>
           </div>
-        ))}
+          <button onClick={() => addItem(key)} className="text-xs flex items-center gap-1 text-blue-600 font-bold hover:underline">
+            <Plus size={14}/> Adicionar Critério
+          </button>
+        </div>
+        
+        {isEmpty && <p className="text-sm text-gray-400 italic">Nenhum critério definido.</p>}
+
+        <div className="space-y-2">
+          {(params[key] || []).map((item, idx) => (
+            <div key={idx} className="flex gap-2 items-center">
+              <input 
+                className="flex-1 border p-1 rounded text-sm"
+                placeholder="Nome do Critério (Ex: Comunicação)"
+                value={item.name}
+                onChange={e => updateItem(key, idx, 'name', e.target.value)}
+              />
+              <div className="w-24 relative">
+                <input 
+                  type="number"
+                  className="w-full border p-1 rounded text-sm text-center pr-6"
+                  placeholder="%"
+                  value={item.weight}
+                  onChange={e => updateItem(key, idx, 'weight', e.target.value)}
+                />
+                <span className="absolute right-2 top-1 text-gray-400 text-xs">%</span>
+              </div>
+              <button onClick={() => removeItem(key, idx)} className="text-red-500 hover:bg-red-100 p-1 rounded">
+                <Trash2 size={14}/>
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-end border-b pb-4">
         <div>
           <h2 className="text-lg font-bold text-gray-800">Configuração da Avaliação</h2>
-          <p className="text-sm text-gray-500">Defina o que será avaliado nesta vaga.</p>
+          <p className="text-sm text-gray-500">Defina os critérios e seus pesos (Soma deve ser 100%).</p>
         </div>
         
-        {/* Importador Rápido */}
         <div className="flex gap-2 items-center">
           <select 
             className="border p-2 rounded text-sm max-w-[200px]"
@@ -146,10 +193,9 @@ export default function JobCriteria({ job, onUpdate }) {
         <div>
           {renderSection('Técnico / Hard Skills', 'tecnico', 'text-blue-600')}
           
-          {/* Configuração de Notas */}
-          <div className="bg-gray-50 p-4 rounded border">
+          <div className="bg-white p-4 rounded border shadow-sm">
             <h3 className="font-bold uppercase text-sm text-gray-600 mb-3">Régua de Notas</h3>
-            <p className="text-xs text-gray-500 mb-3">Defina os valores que compõem a média.</p>
+            <p className="text-xs text-gray-500 mb-3">Valores usados no cálculo da média ponderada.</p>
             {params.notas.map((nota, idx) => (
               <div key={idx} className="flex gap-2 items-center mb-2">
                 <input 
@@ -181,7 +227,7 @@ export default function JobCriteria({ job, onUpdate }) {
         <button 
           onClick={handleSave} 
           disabled={loading}
-          className="bg-blue-600 text-white px-6 py-2 rounded flex items-center gap-2 hover:bg-blue-700"
+          className="bg-blue-600 text-white px-6 py-2 rounded flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Save size={18}/> {loading ? 'Salvando...' : 'Salvar Configuração'}
         </button>
