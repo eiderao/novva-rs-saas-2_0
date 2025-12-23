@@ -9,8 +9,8 @@ export default function JobCriteria({ job, onUpdate }) {
     tecnico: [],
     notas: [
       { id: '1', nome: 'Abaixo', valor: 0 },
-      { id: '2', nome: 'Atende', valor: 50 },
-      { id: '3', nome: 'Supera', valor: 100 }
+      { id: '2', nome: 'Atende', valor: 5 },
+      { id: '3', nome: 'Supera', valor: 10 }
     ]
   };
 
@@ -31,27 +31,67 @@ export default function JobCriteria({ job, onUpdate }) {
     fetchJobs();
   }, [job.id]);
 
-  // Função auxiliar para somar pesos de uma seção
+  // --- LÓGICA DE CRITÉRIOS (PESOS) ---
   const getSectionTotal = (sectionKey) => {
     const items = params[sectionKey] || [];
     return items.reduce((acc, item) => acc + (Number(item.weight) || 0), 0);
   };
 
+  const addItem = (section) => {
+    const newItem = { name: '', weight: 0 };
+    setParams({ ...params, [section]: [...(params[section] || []), newItem] });
+  };
+
+  const removeItem = (section, index) => {
+    const newList = [...params[section]];
+    newList.splice(index, 1);
+    setParams({ ...params, [section]: newList });
+  };
+
+  const updateItem = (section, index, field, value) => {
+    const newList = [...params[section]];
+    newList[index][field] = value;
+    setParams({ ...params, [section]: newList });
+  };
+
+  // --- LÓGICA DA RÉGUA DE NOTAS (NOVA) ---
+  const addNoteLevel = () => {
+    const newNote = { id: crypto.randomUUID(), nome: '', valor: 0 };
+    setParams({ ...params, notas: [...(params.notas || []), newNote] });
+  };
+
+  const removeNoteLevel = (index) => {
+    const newNotas = [...params.notas];
+    newNotas.splice(index, 1);
+    setParams({ ...params, notas: newNotas });
+  };
+
+  const updateNoteLevel = (index, field, value) => {
+    const newNotas = [...params.notas];
+    newNotas[index][field] = value;
+    setParams({ ...params, notas: newNotas });
+  };
+
+  // --- SALVAR E IMPORTAR ---
   const handleSave = async () => {
-    // Validação: Todas as seções devem somar 100 (ou 0 se estiverem vazias, opcionalmente)
+    // 1. Validação de Pesos
     const sections = ['triagem', 'cultura', 'tecnico'];
     const errors = [];
 
     sections.forEach(sec => {
       const total = getSectionTotal(sec);
-      // Regra: Se tiver itens, deve somar 100. Se não tiver itens, passa (total 0).
       if ((params[sec] && params[sec].length > 0) && total !== 100) {
         errors.push(`A seção ${sec.toUpperCase()} soma ${total}% (deve ser 100%).`);
       }
     });
 
+    // 2. Validação da Régua de Notas
+    if (!params.notas || params.notas.length < 2) {
+      errors.push("A Régua de Notas deve ter pelo menos 2 níveis (ex: Min e Max).");
+    }
+
     if (errors.length > 0) {
-      alert(`Erro de Validação:\n\n${errors.join('\n')}\n\nAjuste os pesos antes de salvar.`);
+      alert(`Erro de Validação:\n\n${errors.join('\n')}\n\nAjuste antes de salvar.`);
       return;
     }
 
@@ -78,29 +118,12 @@ export default function JobCriteria({ job, onUpdate }) {
     }
   };
 
-  const addItem = (section) => {
-    const newItem = { name: '', weight: 0 }; // Começa com 0 para forçar o usuário a definir
-    setParams({ ...params, [section]: [...(params[section] || []), newItem] });
-  };
-
-  const removeItem = (section, index) => {
-    const newList = [...params[section]];
-    newList.splice(index, 1);
-    setParams({ ...params, [section]: newList });
-  };
-
-  const updateItem = (section, index, field, value) => {
-    const newList = [...params[section]];
-    newList[index][field] = value;
-    setParams({ ...params, [section]: newList });
-  };
-
+  // --- RENDERIZADORES ---
   const renderSection = (title, key, color) => {
     const totalWeight = getSectionTotal(key);
     const isValid = totalWeight === 100;
     const isEmpty = !params[key] || params[key].length === 0;
 
-    // Estado visual do indicador
     let statusColor = "text-gray-400";
     let statusIcon = null;
     let statusText = "Vazio (0%)";
@@ -137,7 +160,7 @@ export default function JobCriteria({ job, onUpdate }) {
           {(params[key] || []).map((item, idx) => (
             <div key={idx} className="flex gap-2 items-center">
               <input 
-                className="flex-1 border p-1 rounded text-sm"
+                className="flex-1 border p-1 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500"
                 placeholder="Nome do Critério (Ex: Comunicação)"
                 value={item.name}
                 onChange={e => updateItem(key, idx, 'name', e.target.value)}
@@ -145,7 +168,7 @@ export default function JobCriteria({ job, onUpdate }) {
               <div className="w-24 relative">
                 <input 
                   type="number"
-                  className="w-full border p-1 rounded text-sm text-center pr-6"
+                  className="w-full border p-1 rounded text-sm text-center pr-6 outline-none focus:ring-1 focus:ring-blue-500"
                   placeholder="%"
                   value={item.weight}
                   onChange={e => updateItem(key, idx, 'weight', e.target.value)}
@@ -190,35 +213,56 @@ export default function JobCriteria({ job, onUpdate }) {
           {renderSection('Triagem (RH)', 'triagem', 'text-purple-600')}
           {renderSection('Fit Cultural', 'cultura', 'text-green-600')}
         </div>
+        
         <div>
           {renderSection('Técnico / Hard Skills', 'tecnico', 'text-blue-600')}
           
-          <div className="bg-white p-4 rounded border shadow-sm">
-            <h3 className="font-bold uppercase text-sm text-gray-600 mb-3">Régua de Notas</h3>
-            <p className="text-xs text-gray-500 mb-3">Valores usados no cálculo da média ponderada.</p>
-            {params.notas.map((nota, idx) => (
-              <div key={idx} className="flex gap-2 items-center mb-2">
-                <input 
-                  className="flex-1 border p-1 rounded text-sm"
-                  value={nota.nome}
-                  onChange={e => {
-                    const newNotas = [...params.notas];
-                    newNotas[idx].nome = e.target.value;
-                    setParams({...params, notas: newNotas});
-                  }}
-                />
-                <input 
-                  type="number"
-                  className="w-20 border p-1 rounded text-sm text-center"
-                  value={nota.valor}
-                  onChange={e => {
-                    const newNotas = [...params.notas];
-                    newNotas[idx].valor = e.target.value;
-                    setParams({...params, notas: newNotas});
-                  }}
-                />
+          {/* CONFIGURAÇÃO DA RÉGUA DE NOTAS (DINÂMICA) */}
+          <div className="bg-white p-4 rounded border shadow-sm border-l-4 border-l-orange-400">
+            <div className="flex justify-between items-center mb-3">
+              <div>
+                <h3 className="font-bold uppercase text-sm text-gray-800">Régua de Notas</h3>
+                <p className="text-xs text-gray-500">Defina os níveis e valores para o cálculo.</p>
               </div>
-            ))}
+              <button onClick={addNoteLevel} className="text-xs flex items-center gap-1 text-orange-600 font-bold hover:underline">
+                <Plus size={14}/> Novo Nível
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex gap-2 text-xs font-bold text-gray-400 px-1">
+                <span className="flex-1">Nome do Nível</span>
+                <span className="w-20 text-center">Nota</span>
+                <span className="w-6"></span>
+              </div>
+              
+              {(params.notas || []).map((nota, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <input 
+                    className="flex-1 border p-1 rounded text-sm outline-none focus:ring-1 focus:ring-orange-500"
+                    value={nota.nome}
+                    placeholder="Ex: Atende"
+                    onChange={e => updateNoteLevel(idx, 'nome', e.target.value)}
+                  />
+                  <input 
+                    type="number"
+                    className="w-20 border p-1 rounded text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
+                    value={nota.valor}
+                    placeholder="0"
+                    onChange={e => updateNoteLevel(idx, 'valor', e.target.value)}
+                  />
+                  <button onClick={() => removeNoteLevel(idx)} className="text-red-400 hover:text-red-600 p-1">
+                    <Trash2 size={14}/>
+                  </button>
+                </div>
+              ))}
+              
+              {(!params.notas || params.notas.length === 0) && (
+                <p className="text-sm text-red-500 italic py-2 text-center bg-red-50 rounded">
+                  Defina pelo menos 2 níveis de nota.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -227,7 +271,7 @@ export default function JobCriteria({ job, onUpdate }) {
         <button 
           onClick={handleSave} 
           disabled={loading}
-          className="bg-blue-600 text-white px-6 py-2 rounded flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="bg-blue-600 text-white px-6 py-2 rounded flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm"
         >
           <Save size={18}/> {loading ? 'Salvando...' : 'Salvar Configuração'}
         </button>
