@@ -3,15 +3,31 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import { ArrowLeft, Users, Settings, Trash2, Save, AlertTriangle } from 'lucide-react';
 import JobCriteria from '../components/jobs/JobCriteria';
+import AreaSelect from '../components/AreaSelect'; // Reutilizando o componente de área
 
 export default function JobDetails() {
   const { jobId } = useParams();
   const navigate = useNavigate();
+  
+  // Estados de Dados
   const [job, setJob] = useState(null);
   const [candidates, setCandidates] = useState([]);
+  
+  // Estados de UI
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('candidates'); // 'candidates' ou 'settings'
-  const [statusLoading, setStatusLoading] = useState(false);
+  const [saving, setSaving] = useState(false); // Para o botão de salvar dados
+  const [statusLoading, setStatusLoading] = useState(false); // Para status/exclusão
+  const [activeTab, setActiveTab] = useState('candidates'); 
+
+  // Estado do Formulário de Edição
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    requirements: '',
+    type: 'CLT',
+    location_type: 'Híbrido',
+    company_department_id: ''
+  });
 
   useEffect(() => {
     fetchData();
@@ -19,7 +35,7 @@ export default function JobDetails() {
 
   const fetchData = async () => {
     setLoading(true);
-    // 1. Vaga
+    // 1. Busca Vaga
     const { data: j, error } = await supabase.from('jobs').select('*').eq('id', jobId).single();
     
     if (error) {
@@ -28,8 +44,18 @@ export default function JobDetails() {
       return;
     }
     setJob(j);
+    
+    // Preenche o formulário de edição com os dados atuais
+    setFormData({
+      title: j.title || '',
+      description: j.description || '',
+      requirements: j.requirements || '',
+      type: j.type || 'CLT',
+      location_type: j.location_type || 'Híbrido',
+      company_department_id: j.company_department_id || ''
+    });
 
-    // 2. Candidatos
+    // 2. Busca Candidatos
     const { data: apps } = await supabase
       .from('applications')
       .select('*, candidate:candidates(*)')
@@ -54,8 +80,32 @@ export default function JobDetails() {
     }
   };
 
-  // --- FUNÇÕES DE GERENCIAMENTO ---
+  // --- AÇÃO: ATUALIZAR DADOS DA VAGA ---
+  const handleUpdateJob = async (e) => {
+    e.preventDefault();
+    setSaving(true);
 
+    const payload = {
+        ...formData,
+        company_department_id: formData.company_department_id ? parseInt(formData.company_department_id) : null
+    };
+
+    const { error } = await supabase
+      .from('jobs')
+      .update(payload)
+      .eq('id', jobId);
+
+    if (error) {
+      alert("Erro ao atualizar: " + error.message);
+    } else {
+      alert("Dados da vaga atualizados com sucesso!");
+      // Atualiza o objeto job local para refletir no cabeçalho
+      setJob({ ...job, ...payload });
+    }
+    setSaving(false);
+  };
+
+  // --- AÇÃO: MUDAR STATUS ---
   const handleStatusChange = async (newStatus) => {
     setStatusLoading(true);
     const { error } = await supabase
@@ -71,6 +121,7 @@ export default function JobDetails() {
     setStatusLoading(false);
   };
 
+  // --- AÇÃO: EXCLUIR VAGA ---
   const handleDeleteJob = async () => {
     const confirmDelete = window.confirm(
       "Tem certeza que deseja EXCLUIR esta vaga?\n\nIsso apagará todas as candidaturas e avaliações associadas permanentemente.\n\nEssa ação não pode ser desfeita."
@@ -85,12 +136,12 @@ export default function JobDetails() {
         setStatusLoading(false);
       } else {
         alert("Vaga excluída com sucesso.");
-        navigate('/'); // Volta para o Dashboard
+        navigate('/'); 
       }
     }
   };
 
-  // Helper para cores de status
+  // Helpers Visuais
   const getStatusColor = (status) => {
     switch (status) {
       case 'active': return 'bg-green-100 text-green-800 border-green-200';
@@ -131,7 +182,6 @@ export default function JobDetails() {
            <p className="text-gray-500">{job?.location_type} • {job?.type} • Criada em {new Date(job?.created_at).toLocaleDateString()}</p>
         </div>
         
-        {/* Só permite simular candidato se a vaga estiver ativa */}
         {job?.status === 'active' && (
           <button onClick={createFakeCandidate} className="text-sm text-blue-600 underline hover:text-blue-800">
             + Simular Candidato
@@ -139,7 +189,7 @@ export default function JobDetails() {
         )}
       </div>
 
-      {/* Tabs */}
+      {/* Navegação de Abas */}
       <div className="flex gap-6 border-b mb-6">
         <button 
           onClick={() => setActiveTab('candidates')}
@@ -155,7 +205,7 @@ export default function JobDetails() {
         </button>
       </div>
 
-      {/* Conteúdo da Aba */}
+      {/* --- CONTEÚDO: CANDIDATOS --- */}
       {activeTab === 'candidates' ? (
         <div className="bg-white rounded shadow border">
           {candidates.length === 0 ? (
@@ -182,54 +232,133 @@ export default function JobDetails() {
           )}
         </div>
       ) : (
+        /* --- CONTEÚDO: CONFIGURAÇÕES --- */
         <div className="space-y-6">
           
-          {/* PAINEL DE STATUS E EXCLUSÃO */}
+          {/* 1. EDITAR DADOS DA VAGA (NOVO) */}
           <div className="bg-white rounded shadow border p-6">
-            <h2 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b">Gerenciamento da Vaga</h2>
-            
+            <h2 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b">Dados da Vaga</h2>
+            <form onSubmit={handleUpdateJob} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Título</label>
+                    <input 
+                        required 
+                        className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500"
+                        value={formData.title}
+                        onChange={e => setFormData({...formData, title: e.target.value})}
+                    />
+                </div>
+
+                {job?.tenantId && (
+                    <AreaSelect 
+                        tenantId={job.tenantId} 
+                        value={formData.company_department_id}
+                        onChange={val => setFormData({...formData, company_department_id: val})}
+                    />
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Modelo</label>
+                        <select 
+                            className="w-full border p-2 rounded bg-white" 
+                            value={formData.location_type} 
+                            onChange={e => setFormData({...formData, location_type: e.target.value})}
+                        >
+                            <option>Presencial</option>
+                            <option>Híbrido</option>
+                            <option>Remoto</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Contrato</label>
+                        <select 
+                            className="w-full border p-2 rounded bg-white" 
+                            value={formData.type} 
+                            onChange={e => setFormData({...formData, type: e.target.value})}
+                        >
+                            <option>CLT</option>
+                            <option>PJ</option>
+                            <option>Estágio</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+                    <textarea 
+                        className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" 
+                        rows="3" 
+                        value={formData.description} 
+                        onChange={e => setFormData({...formData, description: e.target.value})}
+                    />
+                </div>
+
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Requisitos</label>
+                    <textarea 
+                        className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" 
+                        rows="3" 
+                        value={formData.requirements} 
+                        onChange={e => setFormData({...formData, requirements: e.target.value})}
+                    />
+                </div>
+
+                <div className="flex justify-end pt-2">
+                    <button 
+                        type="submit" 
+                        disabled={saving}
+                        className="bg-blue-600 text-white px-6 py-2 rounded flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50"
+                    >
+                        <Save size={16}/> {saving ? 'Salvando...' : 'Salvar Alterações'}
+                    </button>
+                </div>
+            </form>
+          </div>
+
+          {/* 2. GERENCIAMENTO DE STATUS (JÁ EXISTENTE) */}
+          <div className="bg-white rounded shadow border p-6">
+            <h2 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b">Status e Ciclo de Vida</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Coluna 1: Status */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Status da Vaga</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Status Atual</label>
                 <div className="flex gap-2">
                   <select 
                     className="flex-1 border p-2 rounded bg-gray-50 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    value={job.status}
+                    value={job?.status}
                     onChange={(e) => handleStatusChange(e.target.value)}
                     disabled={statusLoading}
                   >
                     <option value="active">Ativa (Recebendo candidatos)</option>
                     <option value="inactive">Inativa (Pausada)</option>
-                    <option value="closed">Fechada (Vaga preenchida)</option>
+                    <option value="closed">Fechada (Preenchida)</option>
                     <option value="canceled">Cancelada</option>
                   </select>
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  Vagas <strong>Ativas</strong> consomem o limite do seu plano. Inative ou Feche vagas antigas para liberar espaço.
+                  Apenas vagas <strong>Ativas</strong> contam para o limite do plano.
                 </p>
               </div>
 
-              {/* Coluna 2: Zona de Perigo */}
               <div className="border-l pl-8 border-gray-100">
                  <h3 className="text-sm font-bold text-red-600 mb-2 flex items-center gap-2">
                    <AlertTriangle size={16}/> Zona de Perigo
                  </h3>
                  <p className="text-xs text-gray-500 mb-3">
-                   A exclusão é irreversível. Todos os dados de candidatos vinculados a esta vaga serão perdidos.
+                   A exclusão apaga todos os dados desta vaga.
                  </p>
                  <button 
                    onClick={handleDeleteJob}
                    disabled={statusLoading}
                    className="border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 px-4 py-2 rounded text-sm font-medium flex items-center gap-2 transition w-full justify-center"
                  >
-                   <Trash2 size={16}/> {statusLoading ? 'Processando...' : 'Excluir Vaga Permanentemente'}
+                   <Trash2 size={16}/> Excluir Vaga
                  </button>
               </div>
             </div>
           </div>
 
-          {/* PAINEL DE CRITÉRIOS (REUTILIZADO) */}
+          {/* 3. CRITÉRIOS DE AVALIAÇÃO (JÁ EXISTENTE) */}
           <div className="bg-white rounded shadow border p-6">
             <JobCriteria job={job} onUpdate={fetchData} />
           </div>
