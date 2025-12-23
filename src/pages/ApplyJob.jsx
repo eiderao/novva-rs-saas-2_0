@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-import { Building, MapPin, Briefcase, CheckCircle, Send, GraduationCap, User, Link as LinkIcon, FileText } from 'lucide-react';
+import { Building, MapPin, Briefcase, CheckCircle, Send, GraduationCap, User, Link as LinkIcon, FileText, Upload, Paperclip } from 'lucide-react';
 
 export default function ApplyJob() {
   const { jobId } = useParams();
@@ -10,26 +10,28 @@ export default function ApplyJob() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Estado alinhado com a tabela 'candidates' da V2.0 e 'applications'
+  // Estados para Upload de Arquivo
+  const [resumeType, setResumeType] = useState('file'); // 'file' ou 'link'
+  const [resumeFile, setResumeFile] = useState(null);
+
+  // Estado do Formulário
   const [formData, setFormData] = useState({
-    // Campos da tabela candidates (V2.0)
     name: '',
     email: '',
     phone: '',
     city: '',
-    state: '',            // Coluna 'state' da V2
-    linkedin_profile: '', // Coluna 'linkedin_profile' da V2
-    github_profile: '',   // Coluna 'github_profile' da V2
-    resume_url: '',       // Coluna 'resume_url' da V2
+    state: '',
+    linkedin_profile: '',
+    github_profile: '',
+    resume_url: '', // Será preenchido automaticamente após upload
     
-    // Campos lógicos (armazenados no JSON formData da aplicação)
     motivation: '',
-    education_level: '',       // Médio, Técnico, Superior, Pós
-    education_status: '',      // Completo, Cursando, Incompleto
-    course_name: '',           // Apenas se Técnico/Superior/Pós
-    institution: '',           // Apenas se Técnico/Superior/Pós
-    conclusion_date: '',       // Se Completo (Ano) ou Cursando (Previsão Mês/Ano)
-    current_period: ''         // Apenas se Cursando
+    education_level: '',
+    education_status: '',
+    course_name: '',
+    institution: '',
+    conclusion_date: '',
+    current_period: ''
   });
 
   useEffect(() => {
@@ -37,7 +39,6 @@ export default function ApplyJob() {
   }, [jobId]);
 
   const fetchJobDetails = async () => {
-    // Busca dados públicos da vaga (RLS público configurado anteriormente)
     const { data, error } = await supabase
       .from('jobs')
       .select('title, description, requirements, location_type, type, status')
@@ -56,15 +57,49 @@ export default function ApplyJob() {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setResumeFile(e.target.files[0]);
+    }
+  };
+
+  const uploadResumeToStorage = async () => {
+    if (!resumeFile) return null;
+
+    const fileExt = resumeFile.name.split('.').pop();
+    const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    // 1. Upload para o bucket 'resumes'
+    const { error: uploadError } = await supabase.storage
+      .from('resumes')
+      .upload(filePath, resumeFile);
+
+    if (uploadError) throw new Error("Erro no upload do arquivo: " + uploadError.message);
+
+    // 2. Pegar URL pública
+    const { data } = supabase.storage.from('resumes').getPublicUrl(filePath);
+    return data.publicUrl;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
 
     try {
       if (job.status !== 'active') throw new Error("Esta vaga não está mais aceitando candidaturas.");
+      
+      let finalResumeUrl = formData.resume_url;
 
-      // 1. Upsert na tabela 'candidates'
-      // Usa os campos exatos da V2.0 (linkedin_profile, github_profile, state)
+      // --- LÓGICA DE UPLOAD ---
+      if (resumeType === 'file') {
+        if (!resumeFile) throw new Error("Por favor, selecione um arquivo de currículo.");
+        finalResumeUrl = await uploadResumeToStorage();
+      } else {
+        if (!formData.resume_url) throw new Error("Por favor, informe o link do currículo.");
+      }
+
+      // 1. Upsert Candidato
       const { data: candidate, error: candError } = await supabase
         .from('candidates')
         .upsert({
@@ -75,15 +110,15 @@ export default function ApplyJob() {
             state: formData.state,
             linkedin_profile: formData.linkedin_profile,
             github_profile: formData.github_profile,
-            resume_url: formData.resume_url,
+            resume_url: finalResumeUrl, // Usa a URL gerada ou o link colado
             updated_at: new Date()
-        }, { onConflict: 'email' })
+        }, { onConflict: 'email' }) // Isso agora vai funcionar com a constraint criada no SQL
         .select()
         .single();
 
       if (candError) throw candError;
 
-      // 2. Monta o JSON para a tabela 'applications' (Dados variáveis de escolaridade)
+      // 2. Prepara Application Data
       const appPayload = {
         motivation: formData.motivation,
         education: {
@@ -91,13 +126,13 @@ export default function ApplyJob() {
             status: formData.education_status,
             course: formData.course_name,
             institution: formData.institution,
-            date: formData.conclusion_date, 
+            date: formData.conclusion_date,
             period: formData.current_period
         },
         applied_at: new Date().toISOString()
       };
 
-      // 3. Insere na tabela 'applications'
+      // 3. Insert Application
       const { error: appError } = await supabase
         .from('applications')
         .insert({
@@ -121,7 +156,6 @@ export default function ApplyJob() {
     }
   };
 
-  // --- REGRAS DE EXIBIÇÃO ---
   const isSuperiorOrTech = ['tecnico', 'superior', 'pos', 'mestrado'].includes(formData.education_level);
   const isStudying = formData.education_status === 'cursando';
   const isCompleted = formData.education_status === 'completo';
@@ -138,7 +172,7 @@ export default function ApplyJob() {
                         <CheckCircle className="text-green-600 w-12 h-12" />
                     </div>
                 </div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-2">Candidatura Recebida!</h2>
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">Candidatura Enviada!</h2>
                 <p className="text-gray-600 mb-6">
                     Seus dados foram enviados com sucesso para a vaga de <strong>{job.title}</strong>.
                 </p>
@@ -155,22 +189,18 @@ export default function ApplyJob() {
       <div className="max-w-5xl mx-auto bg-white rounded-xl shadow-xl overflow-hidden border border-gray-100">
         
         {/* Header da Vaga */}
-        <div className="bg-slate-800 p-8 text-white relative overflow-hidden">
-            <div className="relative z-10">
-                <h1 className="text-3xl font-bold mb-3">{job.title}</h1>
-                <div className="flex flex-wrap gap-4 text-slate-300 text-sm font-medium">
-                    <span className="flex items-center gap-1 bg-slate-700 px-3 py-1 rounded-full"><Briefcase size={14}/> {job.type}</span>
-                    <span className="flex items-center gap-1 bg-slate-700 px-3 py-1 rounded-full"><MapPin size={14}/> {job.location_type}</span>
-                    <span className="flex items-center gap-1 bg-slate-700 px-3 py-1 rounded-full"><Building size={14}/> Novva R&S</span>
-                </div>
+        <div className="bg-slate-800 p-8 text-white relative">
+            <h1 className="text-3xl font-bold mb-3">{job.title}</h1>
+            <div className="flex flex-wrap gap-4 text-slate-300 text-sm font-medium">
+                <span className="flex items-center gap-1 bg-slate-700 px-3 py-1 rounded-full"><Briefcase size={14}/> {job.type}</span>
+                <span className="flex items-center gap-1 bg-slate-700 px-3 py-1 rounded-full"><MapPin size={14}/> {job.location_type}</span>
+                <span className="flex items-center gap-1 bg-slate-700 px-3 py-1 rounded-full"><Building size={14}/> Novva R&S</span>
             </div>
         </div>
 
         <div className="grid lg:grid-cols-12">
-            
-            {/* Coluna Esquerda: Detalhes da Vaga (5 cols) */}
-            <div className="lg:col-span-5 p-8 bg-gray-50 border-r border-gray-100">
-                <div className="sticky top-8 space-y-8">
+            <div className="lg:col-span-5 p-8 bg-gray-50 border-r border-gray-100 sticky top-0 h-fit">
+                <div className="space-y-8">
                     <div>
                         <h3 className="font-bold text-slate-800 text-lg mb-3 flex items-center gap-2">
                             <FileText size={20} className="text-blue-600"/> Descrição
@@ -188,13 +218,12 @@ export default function ApplyJob() {
                 </div>
             </div>
 
-            {/* Coluna Direita: Formulário (7 cols) */}
             <div className="lg:col-span-7 p-8 bg-white">
                 <h2 className="text-2xl font-bold text-slate-800 mb-6 pb-2 border-b border-gray-100">Ficha de Inscrição</h2>
                 
                 <form onSubmit={handleSubmit} className="space-y-8">
                     
-                    {/* 1. DADOS PESSOAIS */}
+                    {/* DADOS PESSOAIS */}
                     <section>
                         <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide">
                             <User size={16}/> Dados Básicos
@@ -202,29 +231,28 @@ export default function ApplyJob() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div className="md:col-span-2">
                                 <label className="block text-xs font-bold text-gray-500 mb-1">Nome Completo *</label>
-                                <input required className="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition" 
+                                <input required className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
                                     value={formData.name} onChange={e => handleInputChange('name', e.target.value)} />
                             </div>
                             <div className="md:col-span-2">
                                 <label className="block text-xs font-bold text-gray-500 mb-1">Email *</label>
-                                <input required type="email" className="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition" 
+                                <input required type="email" className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
                                     value={formData.email} onChange={e => handleInputChange('email', e.target.value)} />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 mb-1">Telefone / Celular *</label>
-                                <input required className="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition" 
-                                    placeholder="(00) 00000-0000"
+                                <input required className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
                                     value={formData.phone} onChange={e => handleInputChange('phone', e.target.value)} />
                             </div>
                             <div className="grid grid-cols-3 gap-2">
                                 <div className="col-span-2">
                                     <label className="block text-xs font-bold text-gray-500 mb-1">Cidade</label>
-                                    <input className="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition" 
+                                    <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
                                         value={formData.city} onChange={e => handleInputChange('city', e.target.value)} />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-1">UF</label>
-                                    <select className="w-full border border-gray-300 p-2.5 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-100 outline-none"
+                                    <select className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
                                         value={formData.state} onChange={e => handleInputChange('state', e.target.value)}>
                                         <option value="">--</option>
                                         {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => (
@@ -236,44 +264,76 @@ export default function ApplyJob() {
                         </div>
                     </section>
 
-                    {/* 2. LINKS E PORTFÓLIO */}
+                    {/* CURRÍCULO E LINKS (COM UPLOAD) */}
                     <section>
                         <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6">
-                            <LinkIcon size={16}/> Links Profissionais
+                            <Paperclip size={16}/> Currículo e Links
                         </h4>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Link do Currículo (PDF/Drive) *</label>
-                                <input required className="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition" 
-                                    placeholder="https://..."
-                                    value={formData.resume_url} onChange={e => handleInputChange('resume_url', e.target.value)} />
+                        
+                        {/* Toggle Tipo de Currículo */}
+                        <div className="bg-gray-50 p-4 rounded-lg border mb-4">
+                            <label className="block text-xs font-bold text-gray-500 mb-2">Como deseja enviar seu currículo?</label>
+                            <div className="flex gap-4 mb-4">
+                                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                    <input type="radio" name="resumeType" checked={resumeType === 'file'} onChange={() => setResumeType('file')} />
+                                    <Upload size={16} className="text-gray-600"/> Enviar Arquivo (PDF/DOC)
+                                </label>
+                                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                    <input type="radio" name="resumeType" checked={resumeType === 'link'} onChange={() => setResumeType('link')} />
+                                    <LinkIcon size={16} className="text-gray-600"/> Colar Link (Drive/LinkedIn)
+                                </label>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                            {resumeType === 'file' ? (
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">Perfil LinkedIn</label>
-                                    <input className="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition" 
-                                        placeholder="linkedin.com/in/..."
-                                        value={formData.linkedin_profile} onChange={e => handleInputChange('linkedin_profile', e.target.value)} />
+                                    <input 
+                                      type="file" 
+                                      accept=".pdf,.doc,.docx"
+                                      onChange={handleFileChange}
+                                      className="block w-full text-sm text-slate-500
+                                        file:mr-4 file:py-2 file:px-4
+                                        file:rounded-full file:border-0
+                                        file:text-sm file:font-semibold
+                                        file:bg-blue-50 file:text-blue-700
+                                        hover:file:bg-blue-100"
+                                    />
+                                    <p className="text-xs text-gray-400 mt-1">Formatos aceitos: PDF, DOC, DOCX. Máx 5MB.</p>
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">Perfil GitHub / Portfólio</label>
-                                    <input className="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition" 
-                                        placeholder="github.com/..."
-                                        value={formData.github_profile} onChange={e => handleInputChange('github_profile', e.target.value)} />
-                                </div>
+                            ) : (
+                                <input 
+                                    className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                    placeholder="Cole aqui o link do seu currículo..."
+                                    value={formData.resume_url} 
+                                    onChange={e => handleInputChange('resume_url', e.target.value)} 
+                                />
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Linkedin (Opcional)</label>
+                                <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                    placeholder="linkedin.com/in/..."
+                                    value={formData.linkedin_profile} onChange={e => handleInputChange('linkedin_profile', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">GitHub / Portfólio (Opcional)</label>
+                                <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                    placeholder="github.com/..."
+                                    value={formData.github_profile} onChange={e => handleInputChange('github_profile', e.target.value)} />
                             </div>
                         </div>
                     </section>
 
-                    {/* 3. ESCOLARIDADE (LÓGICA CONDICIONAL COMPLETA) */}
+                    {/* ESCOLARIDADE (CONDICIONAL) */}
                     <section>
                         <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6">
-                            <GraduationCap size={16}/> Formação Acadêmica
+                            <GraduationCap size={16}/> Formação
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 mb-1">Nível de Escolaridade *</label>
-                                <select required className="w-full border border-gray-300 p-2.5 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-100 outline-none"
+                                <select required className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
                                     value={formData.education_level} onChange={e => handleInputChange('education_level', e.target.value)}
                                 >
                                     <option value="">Selecione...</option>
@@ -285,49 +345,45 @@ export default function ApplyJob() {
                                 </select>
                             </div>
 
-                            {/* Só exibe Status se tiver Nível selecionado */}
                             {formData.education_level && (
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-1">Status *</label>
-                                    <select required className="w-full border border-gray-300 p-2.5 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-100 outline-none"
+                                    <select required className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
                                         value={formData.education_status} onChange={e => handleInputChange('education_status', e.target.value)}
                                     >
                                         <option value="">Selecione...</option>
                                         <option value="completo">Completo</option>
-                                        <option value="cursando">Cursando (Em andamento)</option>
+                                        <option value="cursando">Cursando</option>
                                         <option value="incompleto">Incompleto / Trancado</option>
                                     </select>
                                 </div>
                             )}
 
-                            {/* Lógica: Se Técnico/Superior E Status definido */}
                             {isSuperiorOrTech && formData.education_status && (
                                 <>
                                     <div className="md:col-span-2">
                                         <label className="block text-xs font-bold text-gray-500 mb-1">Nome do Curso *</label>
-                                        <input required className="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition" 
-                                            placeholder="Ex: Engenharia de Software"
+                                        <input required className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
                                             value={formData.course_name} onChange={e => handleInputChange('course_name', e.target.value)} />
                                     </div>
                                     <div className="md:col-span-2">
                                         <label className="block text-xs font-bold text-gray-500 mb-1">Instituição de Ensino *</label>
-                                        <input required className="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition" 
+                                        <input required className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
                                             value={formData.institution} onChange={e => handleInputChange('institution', e.target.value)} />
                                     </div>
                                 </>
                             )}
 
-                            {/* Lógica: Cursando -> Previsão + Período */}
                             {isSuperiorOrTech && isStudying && (
                                 <>
                                     <div>
                                         <label className="block text-xs font-bold text-gray-500 mb-1">Previsão de Formatura *</label>
-                                        <input required type="month" className="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 outline-none" 
+                                        <input required type="month" className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100" 
                                             value={formData.conclusion_date} onChange={e => handleInputChange('conclusion_date', e.target.value)} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-gray-500 mb-1">Período Atual *</label>
-                                        <select required className="w-full border border-gray-300 p-2.5 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-100 outline-none"
+                                        <select required className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
                                             value={formData.current_period} onChange={e => handleInputChange('current_period', e.target.value)}
                                         >
                                             <option value="">Selecione...</option>
@@ -337,26 +393,23 @@ export default function ApplyJob() {
                                 </>
                             )}
 
-                            {/* Lógica: Completo -> Ano de Conclusão */}
                             {isSuperiorOrTech && isCompleted && (
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-1">Ano de Conclusão *</label>
-                                    <input required type="number" min="1970" max="2030" className="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 outline-none" 
-                                        placeholder="Ex: 2022"
+                                    <input required type="number" min="1970" max="2030" className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100" 
                                         value={formData.conclusion_date} onChange={e => handleInputChange('conclusion_date', e.target.value)} />
                                 </div>
                             )}
                         </div>
                     </section>
 
-                    {/* 4. MOTIVAÇÃO */}
+                    {/* MOTIVAÇÃO */}
                     <section>
                         <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6">
                             <FileText size={16}/> Motivação
                         </h4>
                         <label className="block text-xs font-bold text-gray-500 mb-1">Por que você quer esta vaga?</label>
-                        <textarea className="w-full border border-gray-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition" rows="4" 
-                            placeholder="Conte um pouco sobre suas experiências e objetivos..."
+                        <textarea className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" rows="4" 
                             value={formData.motivation} onChange={e => handleInputChange('motivation', e.target.value)} />
                     </section>
 
@@ -365,7 +418,7 @@ export default function ApplyJob() {
                             disabled={submitting}
                             className="w-full bg-blue-600 text-white font-bold py-4 rounded-lg hover:bg-blue-700 transition flex justify-center items-center gap-2 shadow-lg disabled:opacity-70"
                         >
-                           {submitting ? 'Enviando Inscrição...' : <><Send size={18}/> Confirmar Candidatura</>}
+                           {submitting ? 'Enviando...' : <><Send size={18}/> Confirmar Candidatura</>}
                         </button>
                     </div>
                 </form>
