@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-import { ArrowLeft, Briefcase, Mail, Phone, MapPin, Calendar, BookOpen, FileText, Download, Star } from 'lucide-react';
+import EvaluationForm from '../components/EvaluationForm';
+import { ArrowLeft, Mail, MapPin, BookOpen, FileText, Calendar, Download } from 'lucide-react';
 
 export default function ApplicationDetails() {
   const { appId } = useParams();
   const navigate = useNavigate();
-  const [app, setApp] = useState(null);
+  
+  const [appData, setAppData] = useState(null);
+  const [job, setJob] = useState(null);
+  const [myEvaluation, setMyEvaluation] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -15,203 +19,191 @@ export default function ApplicationDetails() {
 
   const fetchData = async () => {
     setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
 
-    // --- LÓGICA ANTIGA (QUE FUNCIONA) ---
-    // Removemos os "apelidos" (candidate:...) que estavam causando erro.
-    // Buscamos pelo nome exato da tabela.
-    const { data, error } = await supabase
-      .from('applications')
-      .select(`
-        *,
-        candidates (*),
-        jobs (*)
-      `)
-      .eq('id', appId)
-      .single();
+      // 1. Busca Aplicação + Candidato (MÉTODO SEGURO)
+      // Usamos 'candidates(*)' sem apelidos para evitar erros de relacionamento
+      const { data: application, error: appError } = await supabase
+        .from('applications')
+        .select('*, candidates(*)')
+        .eq('id', appId)
+        .single();
+      
+      if (appError) throw appError;
 
-    if (error) {
-      console.error("Erro ao buscar:", error);
-      alert("Erro ao carregar dados.");
-    } else {
-      // AJUSTE MANUAL (Seguro):
-      // O Supabase retorna 'candidates' (plural), nós jogamos para 'candidate' (singular)
-      // para o resto da tela funcionar.
-      const candidateObj = Array.isArray(data.candidates) ? data.candidates[0] : data.candidates;
-      const jobObj = Array.isArray(data.jobs) ? data.jobs[0] : data.jobs;
+      // Normaliza o dado (caso venha como array ou objeto)
+      const candidateObj = Array.isArray(application.candidates) 
+        ? application.candidates[0] 
+        : application.candidates;
 
-      setApp({
-        ...data,
-        candidate: candidateObj,
-        job: jobObj
+      setAppData({
+        ...application,
+        candidate: candidateObj
       });
+
+      // 2. Busca Vaga
+      if (application.jobId) {
+        const { data: jobData } = await supabase
+            .from('jobs')
+            .select('*')
+            .eq('id', application.jobId)
+            .single();
+        setJob(jobData);
+      }
+
+      // 3. Busca Avaliação existente
+      if (user) {
+        const { data: evalData } = await supabase
+          .from('evaluations')
+          .select('*')
+          .eq('application_id', appId)
+          .eq('evaluator_id', user.id)
+          .maybeSingle();
+        setMyEvaluation(evalData);
+      }
+
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao carregar dados: " + (err.message || "Erro desconhecido"));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  // --- APENAS A FORMATAÇÃO VISUAL (Para corrigir o [object Object]) ---
-
+  // --- FUNÇÕES DE FORMATAÇÃO (Mantidas para a interface ficar correta) ---
+  
   const translateLabel = (key) => {
     const map = {
       motivation: "Carta de Apresentação",
       education: "Formação Acadêmica",
       applied_at: "Data da Candidatura",
-      resume_url: "Currículo"
+      resume_url: "Currículo",
+      linkedin_profile: "LinkedIn",
+      github_profile: "GitHub/Portfólio"
     };
-    return map[key] || key;
+    return map[key] || key.toUpperCase();
   };
 
   const renderEducation = (edu) => {
     if (!edu || typeof edu !== 'object') return <span className="text-gray-500">Não informado</span>;
     
-    // Mapeamento de valores para texto bonito
-    const nivelMap = { 
-        medio: 'Ensino Médio', 
-        tecnico: 'Técnico', 
-        superior: 'Ensino Superior', 
-        pos: 'Pós-Graduação', 
-        mestrado: 'Mestrado/Doutorado' 
-    };
-    const statusMap = { 
-        completo: 'Concluído', 
-        cursando: 'Cursando', 
-        incompleto: 'Incompleto' 
-    };
+    const nivelMap = { medio: 'Ensino Médio', tecnico: 'Técnico', superior: 'Superior', pos: 'Pós-Graduação', mestrado: 'Mestrado' };
+    const statusMap = { completo: 'Concluído', cursando: 'Cursando', incompleto: 'Incompleto' };
 
     const nivel = nivelMap[edu.level] || edu.level || 'Nível não informado';
     const status = statusMap[edu.status] || edu.status || '';
 
     return (
-      <div className="bg-white p-4 rounded border border-gray-200 shadow-sm mt-2">
-        <div className="flex justify-between items-start">
-            <div>
-                <p className="font-bold text-gray-800 text-lg">{nivel}</p>
-                {(edu.course || edu.institution) && (
-                   <p className="text-gray-700 font-medium mt-1">
-                     {edu.course || ''} 
-                     {edu.course && edu.institution ? <span className="text-gray-400 mx-2">|</span> : ''} 
-                     {edu.institution || ''}
-                   </p>
-                )}
-            </div>
-            {status && (
-                <span className={`text-xs px-2 py-1 rounded font-bold uppercase ${status === 'Concluído' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-                    {status}
-                </span>
-            )}
-        </div>
-        
+      <div className="bg-gray-50 p-3 rounded border border-gray-200 text-sm mt-1">
+        <p className="font-bold text-gray-800">{nivel} {status && <span className="font-normal text-gray-500">• {status}</span>}</p>
+        {(edu.course || edu.institution) && (
+           <p className="text-gray-700 mt-1">{edu.course} {edu.institution ? `| ${edu.institution}` : ''}</p>
+        )}
         {(edu.date || edu.period) && (
-           <div className="mt-3 text-sm text-gray-500 flex gap-4 pt-2 border-t border-gray-100">
-             {edu.date && <span>📅 {status === 'Cursando' ? 'Previsão:' : 'Conclusão:'} {edu.date}</span>}
-             {edu.period && <span>🎓 Período: {edu.period}</span>}
-           </div>
+           <p className="text-gray-500 text-xs mt-1">
+             {edu.date && `Data: ${edu.date} `} {edu.period && `• ${edu.period}`}
+           </p>
         )}
       </div>
     );
   };
 
-  if (loading) return <div className="p-10 text-center">Carregando perfil...</div>;
-  if (!app) return null;
+  if (loading) return <div className="p-10 text-center">Carregando candidato...</div>;
+  if (!appData) return <div className="p-10 text-center">Candidato não encontrado.</div>;
 
-  // Garante que formData existe para não quebrar a tela
-  const formData = app.formData || {};
+  const defaultParams = {
+    triagem: [], cultura: [], tecnico: [],
+    notas: [{id:'1',nome:'Abaixo',valor:0}, {id:'2',nome:'Atende',valor:50}, {id:'3',nome:'Supera',valor:100}]
+  };
+
+  const params = job?.parameters || defaultParams;
+  const formData = appData.formData || {};
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="p-8 max-w-6xl mx-auto bg-gray-50 min-h-screen">
       <button onClick={() => navigate(-1)} className="flex items-center text-gray-500 hover:text-gray-900 mb-6">
-        <ArrowLeft className="w-4 h-4 mr-2"/> Voltar para a Vaga
+        <ArrowLeft className="w-4 h-4 mr-2"/> Voltar
       </button>
 
-      {/* CABEÇALHO */}
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden mb-6">
-        <div className="p-8 border-b bg-gradient-to-r from-gray-50 to-white flex justify-between items-start">
-            <div className="flex gap-6">
-                <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-md uppercase">
-                    {app.candidate?.name?.[0] || '?'}
-                </div>
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-900">{app.candidate?.name || 'Candidato'}</h1>
-                    <div className="flex items-center gap-2 mt-1 text-gray-600">
-                        <Briefcase size={16} />
-                        <span className="font-medium">{app.job?.title || 'Vaga'}</span>
-                    </div>
-                    
-                    <div className="flex flex-wrap gap-6 mt-4 text-sm text-gray-600">
-                        <span className="flex items-center gap-2"><MapPin size={16}/> {app.candidate?.city} - {app.candidate?.state}</span>
-                        <span className="flex items-center gap-2"><Mail size={16}/> {app.candidate?.email}</span>
-                        <span className="flex items-center gap-2"><Phone size={16}/> {app.candidate?.phone}</span>
-                    </div>
-                </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Coluna Esquerda: Info do Candidato */}
+        <div className="lg:col-span-1 space-y-6">
+          <div className="bg-white p-6 rounded-lg shadow-sm border">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-3xl mb-4 uppercase">
+                {appData.candidate?.name?.[0] || '?'}
+              </div>
+              <h1 className="text-xl font-bold text-gray-900">{appData.candidate?.name}</h1>
+              <p className="text-sm text-gray-500 mt-1">{job?.title}</p>
             </div>
-
-            {app.candidate?.resume_url && (
-            <a 
-                href={app.candidate.resume_url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow flex items-center gap-2 transition"
-            >
-                <Download size={16}/> Baixar Currículo
-            </a>
-            )}
-        </div>
-
-        {/* LINKS */}
-        {(app.candidate?.linkedin_profile || app.candidate?.github_profile) && (
-            <div className="px-8 py-3 bg-gray-50 border-b flex gap-6 text-sm">
-                {app.candidate.linkedin_profile && (
-                    <a href={app.candidate.linkedin_profile} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-medium">LinkedIn</a>
-                )}
-                {app.candidate.github_profile && (
-                    <a href={app.candidate.github_profile} target="_blank" rel="noreferrer" className="text-gray-700 hover:underline font-medium">GitHub</a>
-                )}
-            </div>
-        )}
-
-        <div className="p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
             
-            {/* DADOS DO FORMULÁRIO */}
-            <div className="lg:col-span-2 space-y-8">
-                
-                {/* 1. ESCOLARIDADE FORMATADA */}
-                {formData.education && (
-                    <section>
-                        <h3 className="text-sm font-bold text-gray-400 uppercase mb-1 flex items-center gap-2">
-                            <BookOpen size={16}/> {translateLabel('education')}
-                        </h3>
+            <div className="mt-6 space-y-3 border-t pt-4">
+              <div className="flex items-center text-sm text-gray-600">
+                <Mail className="w-4 h-4 mr-3 text-gray-400"/> {appData.candidate?.email}
+              </div>
+              <div className="flex items-center text-sm text-gray-600">
+                <MapPin className="w-4 h-4 mr-3 text-gray-400"/> {appData.candidate?.city || 'Não informado'}
+              </div>
+              {appData.candidate?.resume_url && (
+                <a href={appData.candidate.resume_url} target="_blank" rel="noreferrer" className="flex items-center text-sm text-blue-600 hover:underline mt-2">
+                    <Download className="w-4 h-4 mr-3"/> Ver Currículo
+                </a>
+              )}
+            </div>
+
+            <div className="mt-6 pt-4 border-t">
+               <h4 className="font-bold text-sm mb-4 text-gray-700">Detalhes da Inscrição</h4>
+               <div className="space-y-4">
+                 
+                 {/* 1. ESCOLARIDADE */}
+                 {formData.education && (
+                    <div>
+                        <span className="text-xs text-gray-400 uppercase font-semibold flex items-center gap-1">
+                            <BookOpen size={12}/> {translateLabel('education')}
+                        </span>
                         {renderEducation(formData.education)}
-                    </section>
-                )}
+                    </div>
+                 )}
 
-                {/* 2. MOTIVAÇÃO FORMATADA */}
-                {formData.motivation && (
-                    <section>
-                        <h3 className="text-sm font-bold text-gray-400 uppercase mb-3 flex items-center gap-2">
-                            <FileText size={16}/> {translateLabel('motivation')}
-                        </h3>
-                        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-gray-700 whitespace-pre-line leading-relaxed">
+                 {/* 2. MOTIVAÇÃO */}
+                 {formData.motivation && (
+                    <div>
+                        <span className="text-xs text-gray-400 uppercase font-semibold flex items-center gap-1">
+                            <FileText size={12}/> {translateLabel('motivation')}
+                        </span>
+                        <p className="text-sm text-gray-800 mt-1 bg-gray-50 p-2 rounded border border-gray-100 whitespace-pre-line">
                             {formData.motivation}
-                        </div>
-                    </section>
-                )}
+                        </p>
+                    </div>
+                 )}
 
-                <div className="pt-4 border-t text-sm text-gray-400 flex items-center gap-2">
-                    <Calendar size={14}/> Candidatou-se em: {new Date(app.created_at).toLocaleString('pt-BR')}
-                </div>
-            </div>
+                 {/* 3. DATA */}
+                 <div>
+                    <span className="text-xs text-gray-400 uppercase font-semibold flex items-center gap-1">
+                        <Calendar size={12}/> Data de Envio
+                    </span>
+                    <p className="text-sm text-gray-800 mt-1">
+                        {new Date(appData.created_at).toLocaleDateString('pt-BR')}
+                    </p>
+                 </div>
 
-            {/* AVALIAÇÃO */}
-            <div className="bg-yellow-50 p-6 rounded-lg border border-yellow-100 h-fit">
-                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                    <Star size={18} className="text-yellow-600 fill-yellow-600"/> Avaliação Rápida
-                </h3>
-                <p className="text-sm text-gray-600 mb-4">
-                    Avalie este candidato para o ranking.
-                </p>
-                <div className="h-2 bg-yellow-200 rounded animate-pulse w-full mb-2"></div>
-                <div className="h-2 bg-yellow-200 rounded animate-pulse w-2/3"></div>
+               </div>
             </div>
+          </div>
         </div>
+
+        {/* Coluna Direita: Avaliação */}
+        <div className="lg:col-span-2">
+          <EvaluationForm 
+            applicationId={appData.id}
+            jobParameters={params}
+            initialData={myEvaluation}
+            onSaved={fetchData} 
+          />
+        </div>
+
       </div>
     </div>
   );
