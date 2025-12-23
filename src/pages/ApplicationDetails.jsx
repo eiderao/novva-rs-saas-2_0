@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-import { ArrowLeft, User, Mail, Phone, MapPin, Calendar, BookOpen, FileText, Download, Star } from 'lucide-react';
+import EvaluationForm from '../components/EvaluationForm';
+import { ArrowLeft, User, Mail, MapPin } from 'lucide-react';
 
 export default function ApplicationDetails() {
-  const { appId } = useParams();
+  const { appId } = useParams(); // ID da Aplicação
   const navigate = useNavigate();
-  const [app, setApp] = useState(null);
-  const [evaluation, setEvaluation] = useState({ notes: '', score: 0 }); // Estado simples para avaliação
+  
+  const [appData, setAppData] = useState(null);
+  const [job, setJob] = useState(null);
+  const [myEvaluation, setMyEvaluation] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -16,179 +19,110 @@ export default function ApplicationDetails() {
 
   const fetchData = async () => {
     setLoading(true);
-    // Busca aplicação + dados do candidato
-    const { data, error } = await supabase
-      .from('applications')
-      .select('*, candidate:candidates(*), job:jobs(title)')
-      .eq('id', appId)
-      .single();
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
 
-    if (error) {
-      alert("Erro ao buscar candidato.");
-      navigate('/');
-    } else {
-      setApp(data);
-      // Se já tiver avaliação, carrega aqui (lógica futura)
+      // 1. Busca Aplicação + Candidato
+      const { data: application, error: appError } = await supabase
+        .from('applications')
+        .select('*, candidate:candidates(*)')
+        .eq('id', appId)
+        .single();
+      
+      if (appError) throw appError;
+      setAppData(application);
+
+      // 2. Busca Vaga (para pegar os parâmetros de avaliação)
+      const { data: jobData } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('id', application.jobId)
+        .single();
+      setJob(jobData);
+
+      // 3. Busca Avaliação existente deste usuário (se houver)
+      if (user) {
+        const { data: evalData } = await supabase
+          .from('evaluations')
+          .select('*')
+          .eq('application_id', appId)
+          .eq('evaluator_id', user.id)
+          .maybeSingle();
+        setMyEvaluation(evalData);
+      }
+
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao carregar dados.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  // --- FUNÇÕES AUXILIARES DE FORMATAÇÃO ---
+  if (loading) return <div className="p-10 text-center">Carregando candidato...</div>;
+  if (!appData) return <div className="p-10 text-center">Candidato não encontrado.</div>;
 
-  const translateLabel = (key) => {
-    const map = {
-      motivation: "Carta de Apresentação / Motivação",
-      education: "Formação Acadêmica",
-      applied_at: "Data da Candidatura"
-    };
-    return map[key] || key.toUpperCase();
+  // Parâmetros padrão se a vaga não tiver nada configurado
+  const defaultParams = {
+    triagem: [], cultura: [], tecnico: [],
+    notas: [{id:'1',nome:'Abaixo',valor:0}, {id:'2',nome:'Atende',valor:50}, {id:'3',nome:'Supera',valor:100}]
   };
 
-  const renderEducation = (edu) => {
-    if (!edu || typeof edu !== 'object') return "Não informado";
-    
-    // Mapeia valores para português amigável
-    const nivelMap = { medio: 'Ensino Médio', tecnico: 'Técnico', superior: 'Superior', pos: 'Pós-Graduação' };
-    
-    return (
-      <div className="bg-gray-50 p-3 rounded border border-gray-100 text-sm">
-        <p className="font-bold text-gray-800">
-          {nivelMap[edu.level] || edu.level} <span className="font-normal text-gray-500">• {edu.status}</span>
-        </p>
-        {(edu.course || edu.institution) && (
-           <p className="text-gray-700 mt-1">
-             {edu.course} {edu.course && edu.institution ? 'na' : ''} {edu.institution}
-           </p>
-        )}
-        {(edu.date || edu.period) && (
-           <p className="text-gray-500 text-xs mt-1">
-             {edu.date ? `Conclusão: ${edu.date}` : ''} {edu.period ? `• ${edu.period}` : ''}
-           </p>
-        )}
-      </div>
-    );
-  };
-
-  // --- AÇÃO DE AVALIAR (Exemplo Simplificado) ---
-  const handleSaveEvaluation = async () => {
-    // Aqui você conectaria com a tabela 'evaluations' que criamos antes
-    alert("Funcionalidade de salvar avaliação será conectada aqui.");
-  };
-
-  if (loading) return <div className="p-10 text-center">Carregando...</div>;
-  if (!app) return null;
-
-  // Extrai dados do JSON formData
-  const { formData } = app;
-  // Filtra chaves que queremos exibir (ignorando nulos ou objetos vazios)
-  const displayKeys = Object.keys(formData).filter(k => formData[k]);
+  const params = job?.parameters || defaultParams;
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="p-8 max-w-6xl mx-auto bg-gray-50 min-h-screen">
       <button onClick={() => navigate(-1)} className="flex items-center text-gray-500 hover:text-gray-900 mb-6">
         <ArrowLeft className="w-4 h-4 mr-2"/> Voltar
       </button>
 
-      {/* Cartão do Candidato */}
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden mb-6">
-        <div className="p-6 border-b bg-gray-50 flex justify-between items-start">
-            <div className="flex gap-4">
-                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-2xl font-bold">
-                    {app.candidate.name?.[0]}
-                </div>
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">{app.candidate.name}</h1>
-                    <p className="text-gray-500 text-sm">{app.job?.title} • {app.candidate.city} - {app.candidate.state}</p>
-                    
-                    <div className="flex flex-wrap gap-4 mt-3 text-sm text-gray-600">
-                        <span className="flex items-center gap-1"><Mail size={14}/> {app.candidate.email}</span>
-                        <span className="flex items-center gap-1"><Phone size={14}/> {app.candidate.phone}</span>
-                    </div>
-                </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Coluna Esquerda: Info do Candidato */}
+        <div className="lg:col-span-1 space-y-6">
+          <div className="bg-white p-6 rounded-lg shadow-sm border">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-3xl mb-4">
+                {appData.candidate?.name?.[0]}
+              </div>
+              <h1 className="text-xl font-bold text-gray-900">{appData.candidate?.name}</h1>
+              <p className="text-sm text-gray-500 mt-1">{job?.title}</p>
             </div>
-
-            {/* Ações Rápidas */}
-            <div className="flex gap-2">
-                 {app.candidate.resume_url && (
-                    <a 
-                      href={app.candidate.resume_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="bg-white border text-gray-700 px-3 py-2 rounded text-sm hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <Download size={14}/> Ver Currículo
-                    </a>
-                 )}
-            </div>
-        </div>
-
-        {/* Links Externos */}
-        {(app.candidate.linkedin_profile || app.candidate.github_profile) && (
-            <div className="px-6 py-3 bg-gray-50 border-b flex gap-4 text-sm">
-                {app.candidate.linkedin_profile && (
-                    <a href={app.candidate.linkedin_profile.startsWith('http') ? app.candidate.linkedin_profile : `https://${app.candidate.linkedin_profile}`} target="_blank" className="text-blue-600 hover:underline">LinkedIn</a>
-                )}
-                {app.candidate.github_profile && (
-                    <a href={app.candidate.github_profile.startsWith('http') ? app.candidate.github_profile : `https://${app.candidate.github_profile}`} target="_blank" className="text-gray-700 hover:underline">GitHub / Portfólio</a>
-                )}
-            </div>
-        )}
-
-        <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-8">
             
-            {/* Coluna Esquerda: Respostas do Formulário */}
-            <div className="md:col-span-2 space-y-6">
-                <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">Respostas do Candidato</h3>
-                
-                {/* 1. Escolaridade (Tratamento Especial) */}
-                {formData.education && (
-                    <div>
-                        <h4 className="text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-1">
-                            <BookOpen size={14}/> {translateLabel('education')}
-                        </h4>
-                        {renderEducation(formData.education)}
-                    </div>
-                )}
-
-                {/* 2. Motivação (Tratamento Especial) */}
-                {formData.motivation && (
-                    <div>
-                        <h4 className="text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-1">
-                            <FileText size={14}/> {translateLabel('motivation')}
-                        </h4>
-                        <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded border border-gray-100 whitespace-pre-line">
-                            {formData.motivation}
-                        </p>
-                    </div>
-                )}
-
-                {/* 3. Data de Aplicação */}
-                {formData.applied_at && (
-                    <div>
-                        <h4 className="text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-1">
-                            <Calendar size={14}/> {translateLabel('applied_at')}
-                        </h4>
-                        <p className="text-sm text-gray-800">
-                            {new Date(formData.applied_at).toLocaleString('pt-BR')}
-                        </p>
-                    </div>
-                )}
+            <div className="mt-6 space-y-3 border-t pt-4">
+              <div className="flex items-center text-sm text-gray-600">
+                <Mail className="w-4 h-4 mr-3 text-gray-400"/> {appData.candidate?.email}
+              </div>
+              <div className="flex items-center text-sm text-gray-600">
+                <MapPin className="w-4 h-4 mr-3 text-gray-400"/> {appData.candidate?.city || 'Não informado'}
+              </div>
             </div>
 
-            {/* Coluna Direita: Avaliação Rápida (Placeholder) */}
-            <div className="bg-gray-50 p-4 rounded border h-fit">
-                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                    <Star size={16} className="text-yellow-500"/> Avaliação
-                </h3>
-                <div className="space-y-3">
-                    <p className="text-xs text-gray-500">Módulo de avaliação em desenvolvimento.</p>
-                    <button disabled className="w-full bg-blue-600 text-white py-2 rounded opacity-50 cursor-not-allowed text-sm">
-                        Avaliar Candidato
-                    </button>
-                </div>
+            <div className="mt-6 pt-4 border-t">
+               <h4 className="font-bold text-sm mb-2 text-gray-700">Respostas do Formulário</h4>
+               <div className="space-y-2">
+                 {Object.entries(appData.formData || {}).map(([k, v]) => (
+                   <div key={k}>
+                     <span className="text-xs text-gray-400 uppercase font-semibold">{k}</span>
+                     <p className="text-sm text-gray-800">{String(v)}</p>
+                   </div>
+                 ))}
+                 {Object.keys(appData.formData || {}).length === 0 && <p className="text-sm text-gray-400 italic">Sem respostas.</p>}
+               </div>
             </div>
-
+          </div>
         </div>
+
+        {/* Coluna Direita: Avaliação */}
+        <div className="lg:col-span-2">
+          <EvaluationForm 
+            applicationId={appData.id}
+            jobParameters={params}
+            initialData={myEvaluation}
+            onSaved={fetchData} // Recarrega após salvar
+          />
+        </div>
+
       </div>
     </div>
   );
