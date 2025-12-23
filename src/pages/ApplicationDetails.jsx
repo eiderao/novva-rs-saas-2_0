@@ -1,17 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-import EvaluationForm from '../components/EvaluationForm';
-import { ArrowLeft, User, Mail, MapPin } from 'lucide-react';
+import { ArrowLeft, Briefcase, Mail, Phone, MapPin, Calendar, BookOpen, FileText, Download, Star, AlertCircle } from 'lucide-react';
 
 export default function ApplicationDetails() {
-  const { appId } = useParams(); // ID da Aplicação
+  const { appId } = useParams();
   const navigate = useNavigate();
-  
-  const [appData, setAppData] = useState(null);
-  const [job, setJob] = useState(null);
-  const [myEvaluation, setMyEvaluation] = useState(null);
+  const [app, setApp] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -19,110 +16,223 @@ export default function ApplicationDetails() {
 
   const fetchData = async () => {
     setLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
+    setErrorMsg(null);
 
-      // 1. Busca Aplicação + Candidato
-      const { data: application, error: appError } = await supabase
-        .from('applications')
-        .select('*, candidate:candidates(*)')
-        .eq('id', appId)
-        .single();
-      
-      if (appError) throw appError;
-      setAppData(application);
+    // CONSULTA LIMPA
+    // Agora que o banco só tem UM relacionamento, não precisamos de alias complicado.
+    // Usamos os nomes das tabelas no plural, como o Supabase espera por padrão.
+    const { data, error } = await supabase
+      .from('applications')
+      .select(`
+        *,
+        candidates (*),
+        jobs (*)
+      `)
+      .eq('id', appId)
+      .single();
 
-      // 2. Busca Vaga (para pegar os parâmetros de avaliação)
-      const { data: jobData } = await supabase
-        .from('jobs')
-        .select('*')
-        .eq('id', application.jobId)
-        .single();
-      setJob(jobData);
+    if (error) {
+      console.error("Erro Supabase:", error);
+      setErrorMsg(error.message);
+    } else {
+      // TRATAMENTO DE DADOS
+      // O Supabase pode retornar um array ou objeto dependendo da versão da API.
+      // Isso garante que não quebre.
+      const candidateData = Array.isArray(data.candidates) ? data.candidates[0] : data.candidates;
+      const jobData = Array.isArray(data.jobs) ? data.jobs[0] : data.jobs;
 
-      // 3. Busca Avaliação existente deste usuário (se houver)
-      if (user) {
-        const { data: evalData } = await supabase
-          .from('evaluations')
-          .select('*')
-          .eq('application_id', appId)
-          .eq('evaluator_id', user.id)
-          .maybeSingle();
-        setMyEvaluation(evalData);
-      }
-
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao carregar dados.");
-    } finally {
-      setLoading(false);
+      setApp({
+        ...data,
+        candidate: candidateData,
+        job: jobData
+      });
     }
+    setLoading(false);
   };
 
-  if (loading) return <div className="p-10 text-center">Carregando candidato...</div>;
-  if (!appData) return <div className="p-10 text-center">Candidato não encontrado.</div>;
-
-  // Parâmetros padrão se a vaga não tiver nada configurado
-  const defaultParams = {
-    triagem: [], cultura: [], tecnico: [],
-    notas: [{id:'1',nome:'Abaixo',valor:0}, {id:'2',nome:'Atende',valor:50}, {id:'3',nome:'Supera',valor:100}]
+  // --- FUNÇÕES DE FORMATAÇÃO ---
+  const translateLabel = (key) => {
+    const map = {
+      motivation: "Carta de Apresentação",
+      education: "Formação Acadêmica",
+      applied_at: "Data da Candidatura",
+      resume_url: "Currículo"
+    };
+    return map[key] || key;
   };
 
-  const params = job?.parameters || defaultParams;
+  const renderEducation = (edu) => {
+    if (!edu || typeof edu !== 'object') return "Não informado";
+    
+    const nivelMap = { 
+        medio: 'Ensino Médio', 
+        tecnico: 'Ensino Técnico', 
+        superior: 'Ensino Superior', 
+        pos: 'Pós-Graduação',
+        mestrado: 'Mestrado/Doutorado' 
+    };
+    
+    const statusMap = {
+        completo: 'Concluído',
+        cursando: 'Cursando',
+        incompleto: 'Incompleto'
+    };
+
+    const nivel = nivelMap[edu.level] || edu.level || 'Nível não informado';
+    const status = statusMap[edu.status] || edu.status || '';
+
+    return (
+      <div className="bg-white p-4 rounded border border-gray-200 shadow-sm">
+        <div className="flex justify-between items-start">
+            <div>
+                <p className="font-bold text-gray-800 text-lg">{nivel}</p>
+                {(edu.course || edu.institution) && (
+                   <p className="text-gray-700 font-medium mt-1">
+                     {edu.course} <span className="text-gray-400 mx-1">|</span> {edu.institution}
+                   </p>
+                )}
+            </div>
+            {status && (
+                <span className={`text-xs px-2 py-1 rounded font-bold uppercase ${status === 'Concluído' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                    {status}
+                </span>
+            )}
+        </div>
+        
+        {(edu.date || edu.period) && (
+           <div className="mt-3 text-sm text-gray-500 flex gap-4">
+             {edu.date && <span>📅 {status === 'Cursando' ? 'Previsão:' : 'Conclusão:'} {edu.date}</span>}
+             {edu.period && <span>🎓 Período Atual: {edu.period}</span>}
+           </div>
+        )}
+      </div>
+    );
+  };
+
+  if (loading) return <div className="p-10 text-center">Carregando perfil...</div>;
+
+  if (errorMsg) {
+    return (
+        <div className="p-10 flex flex-col items-center justify-center text-red-600">
+            <AlertCircle size={48} className="mb-4"/>
+            <h2 className="text-xl font-bold mb-2">Erro ao carregar dados</h2>
+            <p className="mb-4 text-gray-600">Provavelmente um problema de conexão ou permissão.</p>
+            <code className="bg-red-50 p-4 rounded border border-red-200 text-sm font-mono block max-w-2xl text-left">
+                {errorMsg}
+            </code>
+            <button onClick={() => navigate('/')} className="mt-6 text-blue-600 underline">Voltar ao Dashboard</button>
+        </div>
+    );
+  }
+
+  if (!app || !app.candidate) return <div className="p-10 text-center">Candidato não encontrado.</div>;
+
+  const { formData } = app;
 
   return (
-    <div className="p-8 max-w-6xl mx-auto bg-gray-50 min-h-screen">
+    <div className="p-8 max-w-5xl mx-auto">
       <button onClick={() => navigate(-1)} className="flex items-center text-gray-500 hover:text-gray-900 mb-6">
-        <ArrowLeft className="w-4 h-4 mr-2"/> Voltar
+        <ArrowLeft className="w-4 h-4 mr-2"/> Voltar para a Vaga
       </button>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Coluna Esquerda: Info do Candidato */}
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white p-6 rounded-lg shadow-sm border">
-            <div className="flex flex-col items-center text-center">
-              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-3xl mb-4">
-                {appData.candidate?.name?.[0]}
-              </div>
-              <h1 className="text-xl font-bold text-gray-900">{appData.candidate?.name}</h1>
-              <p className="text-sm text-gray-500 mt-1">{job?.title}</p>
+      {/* CABEÇALHO DO CANDIDATO */}
+      <div className="bg-white rounded-lg shadow-sm border overflow-hidden mb-6">
+        <div className="p-8 border-b bg-gradient-to-r from-gray-50 to-white flex justify-between items-start">
+            <div className="flex gap-6">
+                <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-md uppercase">
+                    {app.candidate.name?.[0]}
+                </div>
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900">{app.candidate.name}</h1>
+                    <div className="flex items-center gap-2 mt-1 text-gray-600">
+                        <Briefcase size={16} />
+                        <span className="font-medium">{app.job?.title}</span>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-6 mt-4 text-sm text-gray-600">
+                        <span className="flex items-center gap-2"><MapPin size={16}/> {app.candidate.city} - {app.candidate.state}</span>
+                        <span className="flex items-center gap-2"><Mail size={16}/> {app.candidate.email}</span>
+                        <span className="flex items-center gap-2"><Phone size={16}/> {app.candidate.phone}</span>
+                    </div>
+                </div>
             </div>
+
+            {/* BOTÃO DE DOWNLOAD DO CURRÍCULO */}
+            {app.candidate.resume_url && (
+            <a 
+                href={app.candidate.resume_url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow flex items-center gap-2 transition"
+            >
+                <Download size={16}/> Baixar Currículo
+            </a>
+            )}
+        </div>
+
+        {/* LINKS SOCIAIS */}
+        {(app.candidate.linkedin_profile || app.candidate.github_profile) && (
+            <div className="px-8 py-3 bg-gray-50 border-b flex gap-6 text-sm">
+                {app.candidate.linkedin_profile && (
+                    <a href={app.candidate.linkedin_profile} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-medium">LinkedIn</a>
+                )}
+                {app.candidate.github_profile && (
+                    <a href={app.candidate.github_profile} target="_blank" rel="noreferrer" className="text-gray-700 hover:underline font-medium">GitHub / Portfólio</a>
+                )}
+            </div>
+        )}
+
+        <div className="p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
             
-            <div className="mt-6 space-y-3 border-t pt-4">
-              <div className="flex items-center text-sm text-gray-600">
-                <Mail className="w-4 h-4 mr-3 text-gray-400"/> {appData.candidate?.email}
-              </div>
-              <div className="flex items-center text-sm text-gray-600">
-                <MapPin className="w-4 h-4 mr-3 text-gray-400"/> {appData.candidate?.city || 'Não informado'}
-              </div>
+            {/* ESQUERDA: DADOS */}
+            <div className="lg:col-span-2 space-y-8">
+                {/* ESCOLARIDADE */}
+                {formData.education && (
+                    <section>
+                        <h3 className="text-sm font-bold text-gray-400 uppercase mb-3 flex items-center gap-2">
+                            <BookOpen size={16}/> {translateLabel('education')}
+                        </h3>
+                        {renderEducation(formData.education)}
+                    </section>
+                )}
+
+                {/* MOTIVAÇÃO */}
+                {formData.motivation && (
+                    <section>
+                        <h3 className="text-sm font-bold text-gray-400 uppercase mb-3 flex items-center gap-2">
+                            <FileText size={16}/> {translateLabel('motivation')}
+                        </h3>
+                        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-gray-700 whitespace-pre-line leading-relaxed">
+                            {formData.motivation}
+                        </div>
+                    </section>
+                )}
+
+                <div className="pt-4 border-t text-sm text-gray-400 flex items-center gap-2">
+                    <Calendar size={14}/> Candidatou-se em: {new Date(app.created_at).toLocaleString('pt-BR')}
+                </div>
             </div>
 
-            <div className="mt-6 pt-4 border-t">
-               <h4 className="font-bold text-sm mb-2 text-gray-700">Respostas do Formulário</h4>
-               <div className="space-y-2">
-                 {Object.entries(appData.formData || {}).map(([k, v]) => (
-                   <div key={k}>
-                     <span className="text-xs text-gray-400 uppercase font-semibold">{k}</span>
-                     <p className="text-sm text-gray-800">{String(v)}</p>
-                   </div>
-                 ))}
-                 {Object.keys(appData.formData || {}).length === 0 && <p className="text-sm text-gray-400 italic">Sem respostas.</p>}
-               </div>
+            {/* DIREITA: PAINEL DE AVALIAÇÃO */}
+            <div className="bg-yellow-50 p-6 rounded-lg border border-yellow-100 h-fit">
+                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <Star size={18} className="text-yellow-600 fill-yellow-600"/> Avaliação Rápida
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">
+                    Atribua uma nota preliminar para classificar este candidato.
+                </p>
+                
+                {/* Placeholder visual */}
+                <div className="space-y-3">
+                    <div className="h-2 bg-yellow-200 rounded animate-pulse w-full"></div>
+                    <div className="h-2 bg-yellow-200 rounded animate-pulse w-2/3"></div>
+                </div>
+                
+                <button disabled className="mt-6 w-full bg-yellow-600 text-white py-2 rounded font-medium opacity-70 cursor-not-allowed text-sm">
+                    Salvar Avaliação (Em breve)
+                </button>
             </div>
-          </div>
         </div>
-
-        {/* Coluna Direita: Avaliação */}
-        <div className="lg:col-span-2">
-          <EvaluationForm 
-            applicationId={appData.id}
-            jobParameters={params}
-            initialData={myEvaluation}
-            onSaved={fetchData} // Recarrega após salvar
-          />
-        </div>
-
       </div>
     </div>
   );
