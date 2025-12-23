@@ -1,23 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase/client';
 import AreaSelect from '../AreaSelect';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Copy } from 'lucide-react';
 
 export default function CreateJobModal({ open, onClose, onSuccess }) {
   const [tenantId, setTenantId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [limitError, setLimitError] = useState(null);
+  const [previousJobs, setPreviousJobs] = useState([]); // Lista de vagas para cópia
+  const [copyFromId, setCopyFromId] = useState(''); // ID da vaga selecionada para cópia
+
   const [formData, setFormData] = useState({
     title: '', description: '', requirements: '', type: 'CLT', location_type: 'Híbrido', company_department_id: ''
   });
 
   useEffect(() => {
     if (open) {
-      checkLimits();
+      initialize();
     }
   }, [open]);
 
-  const checkLimits = async () => {
+  const initialize = async () => {
     setLimitError(null);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -27,14 +30,13 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
     if (!profile?.tenantId) return;
     setTenantId(profile.tenantId);
 
-    // 2. Pega Plano via Tenant (usando coluna job_limit)
+    // 2. Verifica Limites
     const { data: tenant } = await supabase.from('tenants').select('planId').eq('id', profile.tenantId).single();
     const { data: plan } = await supabase.from('plans').select('job_limit').eq('id', tenant.planId || 'freemium').single();
     
     const limit = plan?.job_limit || 2;
     const isUnlimited = limit === -1;
 
-    // 3. Conta Vagas ATIVAS
     const { count } = await supabase
         .from('jobs')
         .select('*', { count: 'exact', head: true })
@@ -42,8 +44,16 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
         .eq('status', 'active');
 
     if (!isUnlimited && count >= limit) {
-        setLimitError(`Limite de vagas ativas atingido (${limit}). Inative ou encerre uma vaga existente para liberar espaço.`);
+        setLimitError(`Limite de vagas ativas atingido (${limit}).`);
     }
+
+    // 3. Busca vagas anteriores para permitir cópia de critérios
+    const { data: jobs } = await supabase
+        .from('jobs')
+        .select('id, title')
+        .eq('tenantId', profile.tenantId)
+        .order('created_at', { ascending: false });
+    setPreviousJobs(jobs || []);
   };
 
   const handleSubmit = async (e) => {
@@ -51,11 +61,29 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
     if (limitError) return;
     
     setLoading(true);
+    
+    let parameters = {}; // Padrão vazio
+
+    // Se escolheu copiar, busca os parâmetros da vaga origem
+    if (copyFromId) {
+        const { data } = await supabase.from('jobs').select('parameters').eq('id', copyFromId).single();
+        if (data?.parameters) {
+            parameters = data.parameters;
+        }
+    } else {
+        // Parâmetros Default
+        parameters = {
+            triagem: [], cultura: [], tecnico: [],
+            notas: [{id:'1',nome:'Abaixo',valor:0}, {id:'2',nome:'Atende',valor:50}, {id:'3',nome:'Supera',valor:100}]
+        };
+    }
+
     const payload = {
       ...formData,
       tenantId: tenantId,
       status: 'active',
-      company_department_id: formData.company_department_id ? parseInt(formData.company_department_id) : null
+      company_department_id: formData.company_department_id ? parseInt(formData.company_department_id) : null,
+      parameters: parameters // Salva os critérios copiados ou padrão
     };
 
     const { error } = await supabase.from('jobs').insert(payload);
@@ -63,6 +91,7 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
     if (error) alert('Erro: ' + error.message);
     else {
       setFormData({ title: '', description: '', requirements: '', type: 'CLT', location_type: 'Híbrido', company_department_id: '' });
+      setCopyFromId('');
       onSuccess();
       onClose();
     }
@@ -84,7 +113,7 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
                 <div className="bg-red-50 text-red-700 p-4 rounded border border-red-200 mb-4 flex items-start gap-3 text-left">
                     <AlertTriangle className="w-6 h-6 shrink-0" />
                     <div>
-                        <p className="font-bold">Upgrade Necessário</p>
+                        <p className="font-bold">Limite Atingido</p>
                         <p className="text-sm mt-1">{limitError}</p>
                     </div>
                 </div>
@@ -92,6 +121,26 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
             </div>
         ) : (
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            
+            {/* Seletor de Cópia - NOVIDADE */}
+            {previousJobs.length > 0 && (
+                <div className="bg-blue-50 p-3 rounded border border-blue-100 mb-4">
+                    <label className="block text-xs font-bold text-blue-800 mb-1 flex items-center gap-1">
+                        <Copy size={12}/> Copiar critérios de avaliação de:
+                    </label>
+                    <select 
+                        className="w-full border p-2 rounded text-sm bg-white"
+                        value={copyFromId}
+                        onChange={e => setCopyFromId(e.target.value)}
+                    >
+                        <option value="">-- Começar do Zero --</option>
+                        {previousJobs.map(j => (
+                            <option key={j.id} value={j.id}>{j.title}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Título da Vaga *</label>
                 <input required className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
