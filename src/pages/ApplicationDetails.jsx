@@ -16,30 +16,41 @@ export default function ApplicationDetails() {
   const fetchData = async () => {
     setLoading(true);
 
-    // 1. A CONSULTA QUE FUNCIONA
-    // Usamos 'candidate:candidates(*)' para forçar o retorno como objeto único 'candidate',
-    // e não uma lista 'candidates[]'. Isso evita o erro de código anterior.
+    // 1. CONSULTA PADRÃO (SEM APELIDOS/ALIASES)
+    // Usamos os nomes reais das tabelas: 'candidates' e 'jobs'.
+    // Isso evita o erro de sintaxe que apareceu no console.
     const { data, error } = await supabase
       .from('applications')
       .select(`
         *,
-        candidate:candidates(*),
-        job:jobs(*)
+        candidates (*),
+        jobs (*)
       `)
       .eq('id', appId)
       .single();
 
     if (error) {
       console.error("Erro ao buscar dados:", error);
-      alert("Erro ao carregar os detalhes. Verifique o console.");
-      navigate('/');
+      alert("Erro ao carregar dados. Verifique o console (F12) para detalhes.");
     } else {
-      setApp(data);
+      // 2. TRATAMENTO MANUAL NO JAVASCRIPT
+      // O Supabase retorna 'candidates' (plural), mas nosso layout espera 'candidate' (singular).
+      // Fazemos essa conversão aqui para não quebrar o layout.
+      
+      // Verifica se veio como array ou objeto e normaliza
+      const candidateData = Array.isArray(data.candidates) ? data.candidates[0] : data.candidates;
+      const jobData = Array.isArray(data.jobs) ? data.jobs[0] : data.jobs;
+
+      setApp({
+        ...data,
+        candidate: candidateData, // Mapeia para 'candidate'
+        job: jobData              // Mapeia para 'job'
+      });
     }
     setLoading(false);
   };
 
-  // --- FUNÇÕES DE FORMATAÇÃO VISUAL (Para corrigir rótulos e [object Object]) ---
+  // --- FUNÇÕES DE VISUALIZAÇÃO (Mantidas para corrigir os rótulos e Education) ---
 
   const translateLabel = (key) => {
     const map = {
@@ -58,7 +69,6 @@ export default function ApplicationDetails() {
   };
 
   const renderEducation = (edu) => {
-    // Se for nulo ou não for objeto, retorna vazio ou texto simples
     if (!edu || typeof edu !== 'object') return <span className="text-gray-500">Não informado</span>;
     
     const nivelMap = { 
