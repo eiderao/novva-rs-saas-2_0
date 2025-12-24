@@ -9,7 +9,15 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   
   const [currentUser, setCurrentUser] = useState(null);
-  const [tenant, setTenant] = useState({ name: '', plan: 'free' });
+  
+  // Estado da Empresa e Plano
+  const [tenant, setTenant] = useState({ 
+    name: '', 
+    planId: '', 
+    planName: 'Carregando...', 
+    userLimit: 1 
+  });
+  
   const [team, setTeam] = useState([]);
 
   useEffect(() => {
@@ -19,14 +27,14 @@ export default function Settings() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. Pega sessão
+      // 1. Pega usuário logado
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setLoading(false);
         return;
       }
 
-      // 2. Busca dados do usuário (Sem bloqueio RLS agora)
+      // 2. Busca dados do usuário
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
@@ -37,26 +45,45 @@ export default function Settings() {
       setCurrentUser(userData);
 
       if (userData?.tenantId) {
-        // 3. Busca Empresa
+        // 3. Busca Empresa e o ID do Plano
         const { data: tenantData } = await supabase
           .from('tenants')
-          .select('*')
+          .select('companyName, planId') // Busca planId, não plan
           .eq('id', userData.tenantId)
           .single();
         
+        let currentPlanName = 'Plano Desconhecido';
+        let currentLimit = 1; // Padrão de segurança
+
         if (tenantData) {
+          // 4. Busca Detalhes do Plano na tabela 'plans'
+          if (tenantData.planId) {
+             const { data: planData } = await supabase
+               .from('plans')
+               .select('name, user_limit')
+               .eq('id', tenantData.planId)
+               .single();
+             
+             if (planData) {
+               currentPlanName = planData.name;
+               currentLimit = planData.user_limit;
+             }
+          }
+
           setTenant({
             name: tenantData.companyName || '',
-            plan: tenantData.plan || 'free'
+            planId: tenantData.planId,
+            planName: currentPlanName,
+            userLimit: currentLimit
           });
         }
 
-        // 4. Busca Equipe (Lógica no Código: Só busca se for Admin)
+        // 5. Busca Equipe (Apenas se for Admin)
         if (userData.isAdmin === true) {
           const { data: teamData } = await supabase
             .from('users')
             .select('*')
-            .eq('tenantId', userData.tenantId) // Filtra pelo ID da empresa
+            .eq('tenantId', userData.tenantId)
             .order('email', { ascending: true });
           
           setTeam(teamData || []);
@@ -101,12 +128,11 @@ export default function Settings() {
     const safeStatus = currentStatus || 'inactive';
     const newStatus = safeStatus === 'active' ? 'inactive' : 'active';
     
-    // Validação simples de plano no front
+    // Validação usando o limite REAL do banco de dados
     if (newStatus === 'active') {
-        const limit = getLimit(tenant.plan);
         const activeCount = team.filter(u => u.status === 'active').length;
-        if (activeCount >= limit) {
-            return alert(`Limite do plano atingido (${limit}).`);
+        if (activeCount >= tenant.userLimit) {
+            return alert(`Limite do plano atingido (${tenant.userLimit} usuários). Faça upgrade do plano ${tenant.planName}.`);
         }
     }
 
@@ -125,11 +151,6 @@ export default function Settings() {
     const { error } = await supabase.from('users').delete().eq('id', userId);
     if (error) alert("Erro: " + error.message);
     else setTeam(team.filter(u => u.id !== userId));
-  };
-
-  const getLimit = (p) => {
-    const plan = (p || 'free').toLowerCase();
-    return plan === 'enterprise' ? 999 : (plan === 'pro' ? 5 : 1);
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
@@ -163,10 +184,17 @@ export default function Settings() {
                         disabled={!currentUser?.isAdmin}
                     />
                 </div>
-                <div className="bg-gray-50 p-4 rounded border mb-4">
-                    <p className="text-sm text-gray-600"><strong>Plano:</strong> <span className="uppercase font-bold text-blue-600">{tenant.plan}</span></p>
-                    <p className="text-xs text-gray-500 mt-1">Limite: <strong>{getLimit(tenant.plan)}</strong> usuários</p>
+                
+                {/* Exibição Correta do Plano vindo do Banco */}
+                <div className="bg-blue-50 p-4 rounded border border-blue-100 mb-4">
+                    <p className="text-sm text-blue-900">
+                        <strong>Plano Atual:</strong> <span className="font-bold text-lg uppercase ml-2">{tenant.planName}</span>
+                    </p>
+                    <p className="text-xs text-blue-700 mt-1">
+                        Limite de usuários ativos: <strong>{tenant.userLimit}</strong>
+                    </p>
                 </div>
+
                 {currentUser?.isAdmin && (
                     <button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Save size={16}/> Salvar</button>
                 )}
@@ -184,8 +212,8 @@ export default function Settings() {
                 <div className="bg-white rounded shadow border overflow-hidden">
                     <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
                         <h2 className="font-bold text-gray-700">Equipe ({team.length})</h2>
-                        <span className="text-xs bg-white px-2 py-1 rounded border">
-                            {team.filter(u => u.status === 'active').length} / {getLimit(tenant.plan)} ativos
+                        <span className={`text-xs px-2 py-1 rounded border ${team.filter(u => u.status === 'active').length >= tenant.userLimit ? 'bg-red-50 text-red-600 border-red-200' : 'bg-green-50 text-green-600 border-green-200'}`}>
+                            {team.filter(u => u.status === 'active').length} / {tenant.userLimit} licenças em uso
                         </span>
                     </div>
                     <table className="w-full text-left">
@@ -223,6 +251,7 @@ export default function Settings() {
                             ))}
                         </tbody>
                     </table>
+                    {team.length === 0 && <div className="p-8 text-center text-gray-500">Nenhum membro encontrado.</div>}
                 </div>
             )}
         </div>
