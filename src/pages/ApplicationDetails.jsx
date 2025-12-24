@@ -182,6 +182,7 @@ export default function ApplicationDetails() {
                <h4 className="font-bold text-sm mb-4 text-gray-700">Detalhes da Inscrição</h4>
                <div className="space-y-4">
                  
+                 {/* 1. ESCOLARIDADE */}
                  {formData.education && (
                     <div>
                         <span className="text-xs text-gray-400 uppercase font-semibold flex items-center gap-1">
@@ -191,6 +192,7 @@ export default function ApplicationDetails() {
                     </div>
                  )}
 
+                 {/* 2. MOTIVAÇÃO */}
                  {formData.motivation && (
                     <div>
                         <span className="text-xs text-gray-400 uppercase font-semibold flex items-center gap-1">
@@ -222,7 +224,6 @@ export default function ApplicationDetails() {
           <EvaluationForm 
             applicationId={appData.id}
             jobParameters={params}
-            // Passamos 'evaluation' que vem do banco (JSONB)
             initialData={appData.evaluation} 
             onSaved={fetchData} 
           />

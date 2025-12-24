@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase/client';
-import { Save, AlertCircle } from 'lucide-react';
+import { Save } from 'lucide-react';
 
 export default function EvaluationForm({ applicationId, jobParameters, initialData, onSaved }) {
-  // Estrutura inicial espelhando a versão 1.0
+  // Estrutura inicial corrigida
   const [evaluation, setEvaluation] = useState({
     triagem: initialData?.triagem || {},
     cultura: initialData?.cultura || {},
-    tecnico: initialData?.tÃ©cnico || initialData?.tecnico || {} // Fallback para acentuação
+    // CORREÇÃO AQUI: Usamos bracket notation ['técnico'] para evitar erro de sintaxe
+    tecnico: initialData?.['técnico'] || initialData?.tecnico || {} 
   });
   
   const [notes, setNotes] = useState(initialData?.anotacoes_gerais || '');
@@ -18,7 +19,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
         setEvaluation({
             triagem: initialData.triagem || {},
             cultura: initialData.cultura || {},
-            tecnico: initialData.tÃ©cnico || initialData.tecnico || {}
+            tecnico: initialData['técnico'] || initialData.tecnico || {}
         });
         setNotes(initialData.anotacoes_gerais || '');
     }
@@ -32,16 +33,15 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     const ratingParams = jobParameters.notas || [];
     let pillarScore = 0;
 
-    // Itera sobre os critérios definidos na vaga (ex: "Inglês", "Java")
+    // Itera sobre os critérios definidos na vaga
     criteriaList.forEach(criterion => {
         // Busca qual nota foi selecionada para este critério específico
-        // A chave no objeto evaluation é o NOME do critério (conforme v1.0)
         const selectedNoteId = evaluation[sectionName]?.[criterion.name];
         
         if (selectedNoteId) {
             const noteObj = ratingParams.find(n => n.id === selectedNoteId);
             if (noteObj) {
-                // FÓRMULA V1.0: (Valor da Nota * Peso) / 100
+                // FÓRMULA: (Valor da Nota * Peso) / 100
                 const points = (Number(noteObj.valor) * Number(criterion.weight)) / 100;
                 pillarScore += points;
             }
@@ -56,8 +56,9 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
       
       const s1 = calculatePillarScore('triagem', jobParameters.triagem);
       const s2 = calculatePillarScore('cultura', jobParameters.cultura);
-      // Backend as vezes usa 'tÃ©cnico' ou 'tecnico', normalizamos para o form
-      const s3 = calculatePillarScore('tecnico', jobParameters.tÃ©cnico || jobParameters.tecnico);
+      // Normaliza a busca pelo parâmetro técnico
+      const tecnicoParams = jobParameters['técnico'] || jobParameters.tecnico;
+      const s3 = calculatePillarScore('tecnico', tecnicoParams);
 
       // Soma simples dos 3 pilares (Máximo 30)
       return (s1 + s2 + s3).toFixed(1);
@@ -81,39 +82,38 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       const finalScore = calculateTotalScore();
 
-      // Estrutura de salvamento compatível com o backend v1.0
-      // O backend espera um JSONB na coluna 'evaluation' da tabela 'applications'
+      // Payload limpo e corrigido
       const payload = {
         triagem: evaluation.triagem,
         cultura: evaluation.cultura,
-        tÃ©cnico: evaluation.tecnico, // Mantendo acentuação para compatibilidade com backend antigo se necessário
+        tecnico: evaluation.tecnico, // Salva como 'tecnico' (sem acento) para padronizar
         anotacoes_gerais: notes,
         score_calculated: finalScore,
         updated_at: new Date()
       };
 
-      // 1. Atualiza a tabela applications (coluna evaluation e score_general)
+      // 1. Atualiza a tabela applications
       const { error: appError } = await supabase
         .from('applications')
         .update({ 
             evaluation: payload,
-            score_general: finalScore // Campo numérico para ordenação
+            score_general: finalScore 
         })
         .eq('id', applicationId);
 
       if (appError) throw appError;
 
-      // 2. (Opcional) Se você usar a tabela evaluations separada também:
+      // 2. Atualiza tabela evaluations (se existir)
       const { error: evalError } = await supabase
         .from('evaluations')
         .upsert({
             application_id: applicationId,
             evaluator_id: user.id,
-            scores: payload, // Salva o objeto completo
+            scores: payload,
             final_score: finalScore
         }, { onConflict: 'application_id, evaluator_id' });
 
-      if (evalError) console.warn("Aviso: Falha ao salvar na tabela secundária evaluations", evalError);
+      if (evalError) console.warn("Aviso tabela evaluations:", evalError);
 
       alert(`Avaliação salva! Nota Final: ${finalScore} / 30`);
       if (onSaved) onSaved();
@@ -154,8 +154,6 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                     <div className="grid grid-cols-3 gap-2">
                         {ratingScale.map(option => {
                             const isSelected = evaluation[key]?.[crit.name] === option.id;
-                            
-                            // Cálculo visual de quanto vale essa opção
                             const points = ((Number(option.valor) * Number(crit.weight)) / 100).toFixed(1);
 
                             return (
@@ -203,7 +201,8 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
       <div className="flex-1 overflow-y-auto pr-2 space-y-2">
           {renderSection("triagem", "1. Triagem", jobParameters.triagem)}
           {renderSection("cultura", "2. Fit Cultural", jobParameters.cultura)}
-          {renderSection("tecnico", "3. Teste Técnico", jobParameters.tÃ©cnico || jobParameters.tecnico)}
+          {/* Tenta buscar 'técnico' com ou sem acento nos parâmetros */}
+          {renderSection("tecnico", "3. Teste Técnico", jobParameters['técnico'] || jobParameters.tecnico)}
 
           <div className="mt-4 bg-white p-4 rounded border">
             <label className="font-bold text-gray-700 text-xs uppercase mb-2 block">Anotações Gerais</label>
