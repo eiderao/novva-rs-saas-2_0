@@ -3,7 +3,7 @@ import { supabase } from '../supabase/client';
 import { Building, Users, Save, Shield, CheckCircle, XCircle, Trash2, AlertTriangle } from 'lucide-react';
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState('company'); // 'company' ou 'team'
+  const [activeTab, setActiveTab] = useState('company');
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
   
@@ -19,7 +19,6 @@ export default function Settings() {
 
   const fetchSettings = async () => {
     setLoading(true);
-    // 1. Pega usuário atual
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
@@ -31,22 +30,28 @@ export default function Settings() {
     
     setCurrentUser(userData);
 
-    // CORREÇÃO AQUI: Usando 'tenantId' em vez de 'tenant_id'
     if (userData?.tenantId) {
-        // 2. Busca Empresa
+        // 1. BUSCA DADOS DA EMPRESA
         const { data: tenantData } = await supabase
             .from('tenants')
             .select('*')
             .eq('id', userData.tenantId)
             .single();
-        setTenant(tenantData || { name: '', plan: 'free' });
+        
+        // CORREÇÃO: Mapeia 'companyName' do banco para o estado local 'name'
+        if (tenantData) {
+            setTenant({
+                name: tenantData.companyName || '', // Aqui estava o problema de leitura
+                plan: tenantData.plan || 'free'
+            });
+        }
 
-        // 3. Busca Equipe (Se for admin)
+        // 2. BUSCA EQUIPE (Apenas Admin)
         if (userData.role === 'admin') {
             const { data: teamData } = await supabase
                 .from('users')
                 .select('*')
-                .eq('tenantId', userData.tenantId) // CORREÇÃO AQUI
+                .eq('tenantId', userData.tenantId)
                 .order('created_at', { ascending: true });
             setTeam(teamData || []);
         }
@@ -57,19 +62,19 @@ export default function Settings() {
   // --- AÇÕES DA EMPRESA ---
   const handleSaveCompany = async (e) => {
     e.preventDefault();
-    if (!currentUser?.tenantId) return; // CORREÇÃO AQUI
+    if (!currentUser?.tenantId) return;
 
+    // CORREÇÃO: Salva no campo 'companyName' em vez de 'name'
     const { error } = await supabase
         .from('tenants')
-        .update({ name: tenant.name })
-        .eq('id', currentUser.tenantId); // CORREÇÃO AQUI
+        .update({ companyName: tenant.name }) 
+        .eq('id', currentUser.tenantId);
 
     if (error) alert("Erro ao salvar: " + error.message);
     else alert("Dados da empresa atualizados!");
   };
 
   // --- AÇÕES DA EQUIPE ---
-
   const getPlanLimit = (plan) => {
     if (plan === 'enterprise') return 999;
     if (plan === 'pro') return 5;
@@ -79,7 +84,7 @@ export default function Settings() {
   const handleToggleStatus = async (userId, currentStatus) => {
     const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
     
-    // Verificação de Limite do Plano
+    // Verifica limite do plano antes de ativar
     if (newStatus === 'active') {
         const limit = getPlanLimit(tenant.plan);
         const activeCount = team.filter(u => u.status === 'active').length;
@@ -163,6 +168,7 @@ export default function Settings() {
         </button>
       </div>
 
+      {/* ABA EMPRESA */}
       {activeTab === 'company' && (
         <div className="bg-white p-6 rounded shadow border max-w-2xl">
             <h2 className="text-lg font-bold text-gray-800 mb-4">Dados da Organização</h2>
@@ -170,8 +176,8 @@ export default function Settings() {
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Empresa</label>
                     <input 
-                        className="w-full border p-2 rounded" 
-                        value={tenant.name || ''}
+                        className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" 
+                        value={tenant.name}
                         onChange={e => setTenant({...tenant, name: e.target.value})}
                     />
                 </div>
@@ -190,6 +196,7 @@ export default function Settings() {
         </div>
       )}
 
+      {/* ABA EQUIPE */}
       {activeTab === 'team' && (
         <div className="space-y-6">
             {currentUser?.role !== 'admin' && (
@@ -265,10 +272,6 @@ export default function Settings() {
                             ))}
                         </tbody>
                     </table>
-                    
-                    {team.length === 0 && (
-                        <div className="p-8 text-center text-gray-500">Nenhum membro encontrado.</div>
-                    )}
                 </div>
             )}
         </div>
