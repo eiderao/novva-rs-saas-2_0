@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-import { Building, Users, Save, Shield, CheckCircle, XCircle, Trash2, AlertTriangle } from 'lucide-react';
+import { Building, Users, Save, Shield, CheckCircle, XCircle, Trash2, AlertTriangle, ArrowLeft } from 'lucide-react';
 
 export default function Settings() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('company');
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
@@ -38,10 +40,9 @@ export default function Settings() {
             .eq('id', userData.tenantId)
             .single();
         
-        // CORREÇÃO: Mapeia 'companyName' do banco para o estado local 'name'
         if (tenantData) {
             setTenant({
-                name: tenantData.companyName || '', // Aqui estava o problema de leitura
+                name: tenantData.companyName || '', 
                 plan: tenantData.plan || 'free'
             });
         }
@@ -64,7 +65,6 @@ export default function Settings() {
     e.preventDefault();
     if (!currentUser?.tenantId) return;
 
-    // CORREÇÃO: Salva no campo 'companyName' em vez de 'name'
     const { error } = await supabase
         .from('tenants')
         .update({ companyName: tenant.name }) 
@@ -84,7 +84,6 @@ export default function Settings() {
   const handleToggleStatus = async (userId, currentStatus) => {
     const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
     
-    // Verifica limite do plano antes de ativar
     if (newStatus === 'active') {
         const limit = getPlanLimit(tenant.plan);
         const activeCount = team.filter(u => u.status === 'active').length;
@@ -151,6 +150,11 @@ export default function Settings() {
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
+      {/* BOTÃO VOLTAR (NOVO) */}
+      <button onClick={() => navigate('/')} className="flex items-center text-gray-500 hover:text-gray-900 mb-6 transition">
+        <ArrowLeft className="w-4 h-4 mr-2"/> Voltar para Dashboard
+      </button>
+
       <h1 className="text-3xl font-bold text-gray-900 mb-6">Configurações</h1>
 
       <div className="flex gap-6 border-b mb-6">
