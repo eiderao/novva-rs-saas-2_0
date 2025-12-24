@@ -10,7 +10,8 @@ import {
     FileText, 
     Calendar, 
     Download, 
-    TrendingUp 
+    TrendingUp,
+    Users
 } from 'lucide-react';
 
 export default function ApplicationDetails() {
@@ -19,6 +20,8 @@ export default function ApplicationDetails() {
   
   const [appData, setAppData] = useState(null);
   const [job, setJob] = useState(null);
+  const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null);
+  const [evaluatorsCount, setEvaluatorsCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,7 +31,9 @@ export default function ApplicationDetails() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. Busca Aplicação + Candidato
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // 1. Busca Aplicação (com a nota geral consolidada)
       const { data: application, error: appError } = await supabase
         .from('applications')
         .select('*, candidates(*)')
@@ -37,7 +42,6 @@ export default function ApplicationDetails() {
       
       if (appError) throw appError;
 
-      // Normaliza o objeto do candidato
       const candidateObj = Array.isArray(application.candidates) 
         ? application.candidates[0] 
         : application.candidates;
@@ -47,7 +51,7 @@ export default function ApplicationDetails() {
         candidate: candidateObj
       });
 
-      // 2. Busca Vaga (para pegar os parâmetros de avaliação)
+      // 2. Busca Vaga (Parâmetros)
       if (application.jobId) {
         const { data: jobData } = await supabase
             .from('jobs')
@@ -55,6 +59,30 @@ export default function ApplicationDetails() {
             .eq('id', application.jobId)
             .single();
         setJob(jobData);
+      }
+
+      // 3. Busca quantos avaliaram e a avaliação DO USUÁRIO ATUAL
+      // Isso permite que o formulário abra preenchido com O QUE EU FIZ, não o que os outros fizeram
+      const { data: allEvals, error: evalsError } = await supabase
+        .from('evaluations')
+        .select('evaluator_id, scores, notes')
+        .eq('application_id', appId);
+
+      if (!evalsError && allEvals) {
+          setEvaluatorsCount(allEvals.length);
+          
+          if (user) {
+              const myEval = allEvals.find(e => e.evaluator_id === user.id);
+              if (myEval) {
+                  // Reconstrói estrutura para o form
+                  setCurrentUserEvaluation({
+                      ...myEval.scores,
+                      anotacoes_gerais: myEval.notes || myEval.scores.anotacoes_gerais
+                  });
+              } else {
+                  setCurrentUserEvaluation(null);
+              }
+          }
       }
 
     } catch (err) {
@@ -65,51 +93,37 @@ export default function ApplicationDetails() {
     }
   };
 
-  // --- HELPER: Renderiza Educação ---
+  // --- HELPERS ---
   const renderEducation = (edu) => {
     if (!edu || typeof edu !== 'object') return <span className="text-gray-500">Não informado</span>;
-    
+    // ... (Mantém lógica anterior de mapeamento)
     const nivelMap = { medio: 'Ensino Médio', tecnico: 'Técnico', superior: 'Superior', pos: 'Pós-Graduação', mestrado: 'Mestrado' };
     const statusMap = { completo: 'Concluído', cursando: 'Cursando', incompleto: 'Incompleto' };
-
-    const nivel = nivelMap[edu.level] || edu.level || 'Nível não informado';
+    const nivel = nivelMap[edu.level] || edu.level || '';
     const status = statusMap[edu.status] || edu.status || '';
-
     return (
       <div className="bg-gray-50 p-3 rounded border border-gray-200 text-sm mt-1">
         <p className="font-bold text-gray-800">{nivel} {status && <span className="font-normal text-gray-500">• {status}</span>}</p>
-        {(edu.course || edu.institution) && (
-           <p className="text-gray-700 mt-1">{edu.course} {edu.institution ? `| ${edu.institution}` : ''}</p>
-        )}
-        {(edu.date || edu.period) && (
-           <p className="text-gray-500 text-xs mt-1">
-             {edu.date && `Data: ${edu.date} `} {edu.period && `• ${edu.period}`}
-           </p>
-        )}
+        <p className="text-gray-700 mt-1">{edu.course} {edu.institution ? `| ${edu.institution}` : ''}</p>
       </div>
     );
   };
 
-  // --- HELPER: Tradução ---
   const translateLabel = (key) => {
-    const map = {
-      motivation: "Carta de Apresentação",
-      education: "Formação Acadêmica",
-      applied_at: "Data da Candidatura"
-    };
+    const map = { motivation: "Carta de Apresentação", education: "Formação Acadêmica", applied_at: "Data da Candidatura" };
     return map[key] || key.toUpperCase();
   };
 
-  // --- HELPER: Renderiza Badge de Nota (Escala 0 a 30) ---
-  const renderScoreBadge = (score) => {
+  // --- Badge da Média 360 ---
+  const renderGlobalScore = (score, count) => {
     if (score === null || score === undefined) {
         return <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-sm font-medium border border-gray-200">Aguardando Avaliação</span>;
     }
     
+    // Escala 0-30 (Soma das médias dos 3 pilares)
     let colorClass = "bg-gray-50 text-gray-900 border-gray-200";
-    let label = "Nota Final";
+    let label = "Média da Equipe";
     
-    // Escala 0 a 30
     if (score >= 24) { 
         colorClass = "bg-green-50 text-green-700 border-green-200";
         label = "Perfil Excelente";
@@ -122,15 +136,23 @@ export default function ApplicationDetails() {
     }
 
     return (
-        <div className={`flex items-center gap-4 px-6 py-4 rounded-xl shadow-sm mt-4 border ${colorClass}`}>
-            <div className="p-2 bg-white bg-opacity-50 rounded-lg">
-                <TrendingUp size={28} />
+        <div className={`flex items-center justify-between px-6 py-4 rounded-xl shadow-sm mt-4 border ${colorClass}`}>
+            <div className="flex items-center gap-4">
+                <div className="p-2 bg-white bg-opacity-50 rounded-lg">
+                    <TrendingUp size={28} />
+                </div>
+                <div className="text-left">
+                    <span className="block text-xs uppercase font-bold opacity-80 tracking-wider mb-1">{label}</span>
+                    <span className="block text-3xl font-black leading-none">
+                        {Number(score).toFixed(2)} <span className="text-sm font-medium opacity-60">/ 30</span>
+                    </span>
+                </div>
             </div>
-            <div className="text-left">
-                <span className="block text-xs uppercase font-bold opacity-80 tracking-wider mb-1">{label}</span>
-                <span className="block text-3xl font-black leading-none">
-                    {Number(score).toFixed(1)} <span className="text-sm font-medium opacity-60">/ 30</span>
-                </span>
+            <div className="text-right border-l pl-4 border-gray-300 border-opacity-30">
+                <div className="flex items-center gap-1 text-sm font-bold opacity-80 justify-end">
+                    <Users size={14}/> {count}
+                </div>
+                <span className="text-[10px] uppercase tracking-wide opacity-60">Avaliadores</span>
             </div>
         </div>
     );
@@ -160,8 +182,8 @@ export default function ApplicationDetails() {
               <h1 className="text-xl font-bold text-gray-900">{appData.candidate?.name}</h1>
               <p className="text-sm text-gray-500 mt-1">{job?.title}</p>
               
-              {/* EXIBIÇÃO DA NOTA GERAL */}
-              {renderScoreBadge(appData.score_general)}
+              {/* EXIBIÇÃO DA NOTA GERAL 360 */}
+              {renderGlobalScore(appData.score_general, evaluatorsCount)}
             </div>
             
             <div className="mt-6 space-y-3 border-t pt-4">
@@ -181,8 +203,6 @@ export default function ApplicationDetails() {
             <div className="mt-6 pt-4 border-t">
                <h4 className="font-bold text-sm mb-4 text-gray-700">Detalhes da Inscrição</h4>
                <div className="space-y-4">
-                 
-                 {/* 1. ESCOLARIDADE */}
                  {formData.education && (
                     <div>
                         <span className="text-xs text-gray-400 uppercase font-semibold flex items-center gap-1">
@@ -191,8 +211,6 @@ export default function ApplicationDetails() {
                         {renderEducation(formData.education)}
                     </div>
                  )}
-
-                 {/* 2. MOTIVAÇÃO */}
                  {formData.motivation && (
                     <div>
                         <span className="text-xs text-gray-400 uppercase font-semibold flex items-center gap-1">
@@ -203,7 +221,6 @@ export default function ApplicationDetails() {
                         </p>
                     </div>
                  )}
-
                  <div>
                     <span className="text-xs text-gray-400 uppercase font-semibold flex items-center gap-1">
                         <Calendar size={12}/> Data de Envio
@@ -212,7 +229,6 @@ export default function ApplicationDetails() {
                         {new Date(appData.created_at).toLocaleDateString('pt-BR')}
                     </p>
                  </div>
-
                </div>
             </div>
           </div>
@@ -220,11 +236,11 @@ export default function ApplicationDetails() {
 
         {/* Coluna Direita: Avaliação */}
         <div className="lg:col-span-2">
-          {/* Componente de Avaliação */}
+          {/* Componente de Avaliação - Recebe os dados DO USUÁRIO LOGADO */}
           <EvaluationForm 
             applicationId={appData.id}
             jobParameters={params}
-            initialData={appData.evaluation} 
+            initialData={currentUserEvaluation} 
             onSaved={fetchData} 
           />
         </div>
