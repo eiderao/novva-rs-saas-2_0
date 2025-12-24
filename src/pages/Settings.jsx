@@ -8,11 +8,11 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState('company');
   const [loading, setLoading] = useState(true);
   
-  // Usuário Logado
+  // Usuário Logado e Permissões
   const [currentUser, setCurrentUser] = useState(null);
   
   // Dados do Formulário
-  const [tenant, setTenant] = useState({ name: '', plan: '' });
+  const [tenant, setTenant] = useState({ name: '', plan: 'free' });
   const [team, setTeam] = useState([]);
 
   useEffect(() => {
@@ -22,23 +22,27 @@ export default function Settings() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. Pega usuário da sessão
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      // 1. Pega usuário da sessão (Auth)
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) throw new Error("Usuário não autenticado.");
 
-      // 2. Busca dados detalhados na tabela 'users'
+      // 2. Busca dados detalhados na tabela 'users' (Public)
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
         .eq('id', user.id)
         .single();
 
-      if (userError) throw userError;
+      if (userError) {
+        console.error("Erro perfil:", userError);
+        throw new Error("Não foi possível carregar seu perfil.");
+      }
+      
       setCurrentUser(userData);
 
       if (userData?.tenantId) {
-        // 3. Busca Empresa (usando companyName)
-        const { data: tenantData } = await supabase
+        // 3. Busca Empresa
+        const { data: tenantData, error: tenantError } = await supabase
           .from('tenants')
           .select('*')
           .eq('id', userData.tenantId)
@@ -46,7 +50,7 @@ export default function Settings() {
         
         if (tenantData) {
           setTenant({
-            name: tenantData.companyName || '', // Mapeia companyName do banco
+            name: tenantData.companyName || '', // Campo correto
             plan: tenantData.plan || 'free'
           });
         }
@@ -57,63 +61,98 @@ export default function Settings() {
             .from('users')
             .select('*')
             .eq('tenantId', userData.tenantId)
-            .order('email', { ascending: true }); // Ordena por email já que name pode ser nulo
+            .order('email', { ascending: true });
           
-          if (!teamError) setTeam(teamData || []);
+          if (teamError) {
+              console.error("Erro time:", teamError);
+              // Não lança erro fatal aqui para permitir ver a aba da empresa
+          } else {
+              setTeam(teamData || []);
+          }
         }
       }
     } catch (error) {
-      console.error("Erro ao carregar:", error);
-      alert("Erro ao carregar configurações.");
+      console.error("Erro fatal:", error);
+      alert(`Erro ao carregar configurações: ${error.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // --- AÇÕES ---
+  // --- AÇÕES DO SISTEMA ---
 
   const handleSaveCompany = async (e) => {
     e.preventDefault();
-    if (!currentUser?.tenantId || !currentUser?.isAdmin) return;
+    if (!currentUser?.tenantId) return;
 
-    // Atualiza 'companyName'
-    const { error } = await supabase
-        .from('tenants')
-        .update({ companyName: tenant.name })
-        .eq('id', currentUser.tenantId);
+    try {
+        const { error } = await supabase
+            .from('tenants')
+            .update({ companyName: tenant.name }) // Campo correto
+            .eq('id', currentUser.tenantId);
 
-    if (error) alert("Erro ao salvar: " + error.message);
-    else alert("Empresa atualizada com sucesso!");
+        if (error) throw error;
+        alert("Empresa atualizada com sucesso!");
+    } catch (err) {
+        alert("Erro ao salvar: " + err.message);
+    }
   };
 
   const handleToggleAdmin = async (targetUserId, currentStatus) => {
-    // Inverte o status booleano
-    const newStatus = !currentStatus;
-    
-    const { error } = await supabase
-      .from('users')
-      .update({ isAdmin: newStatus })
-      .eq('id', targetUserId);
+    try {
+        const newStatus = !currentStatus;
+        
+        // Proteção contra remover o próprio admin
+        if (targetUserId === currentUser.id && newStatus === false) {
+             if (!window.confirm("ATENÇÃO: Você está removendo seus próprios direitos de Admin. Continuar?")) {
+                 return;
+             }
+        }
 
-    if (error) alert("Erro: " + error.message);
-    else {
-      // Atualiza lista local
-      setTeam(team.map(u => u.id === targetUserId ? { ...u, isAdmin: newStatus } : u));
+        const { error } = await supabase
+        .from('users')
+        .update({ isAdmin: newStatus })
+        .eq('id', targetUserId);
+
+        if (error) throw error;
+
+        // Atualiza lista local
+        setTeam(team.map(u => u.id === targetUserId ? { ...u, isAdmin: newStatus } : u));
+    } catch (err) {
+        alert("Erro ao alterar permissão: " + err.message);
     }
   };
 
   const handleToggleActive = async (targetUserId, currentStatus) => {
-    // Status é texto ('active' ou 'inactive')
-    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    try {
+        const safeStatus = currentStatus || 'inactive';
+        const newStatus = safeStatus === 'active' ? 'inactive' : 'active';
+        
+        // Verifica limites do plano
+        if (newStatus === 'active') {
+            const limit = getLimit(tenant.plan);
+            const activeCount = team.filter(u => u.status === 'active').length;
+            if (activeCount >= limit) {
+                alert(`Limite do plano atingido (${limit} usuários). Faça upgrade.`);
+                return;
+            }
+        }
 
-    const { error } = await supabase
-      .from('users')
-      .update({ status: newStatus })
-      .eq('id', targetUserId);
+        if (targetUserId === currentUser.id && newStatus === 'inactive') {
+            alert("Você não pode desativar a si mesmo.");
+            return;
+        }
 
-    if (error) alert("Erro: " + error.message);
-    else {
-      setTeam(team.map(u => u.id === targetUserId ? { ...u, status: newStatus } : u));
+        const { error } = await supabase
+        .from('users')
+        .update({ status: newStatus })
+        .eq('id', targetUserId);
+
+        if (error) throw error;
+
+        setTeam(team.map(u => u.id === targetUserId ? { ...u, status: newStatus } : u));
+    } catch (err) {
+        alert("Erro ao alterar status: " + err.message);
     }
   };
 
@@ -121,9 +160,13 @@ export default function Settings() {
     if (!window.confirm("Tem certeza que deseja excluir este usuário?")) return;
     if (targetUserId === currentUser.id) return alert("Não exclua a si mesmo.");
 
-    const { error } = await supabase.from('users').delete().eq('id', targetUserId);
-    if (error) alert("Erro: " + error.message);
-    else setTeam(team.filter(u => u.id !== targetUserId));
+    try {
+        const { error } = await supabase.from('users').delete().eq('id', targetUserId);
+        if (error) throw error;
+        setTeam(team.filter(u => u.id !== targetUserId));
+    } catch (err) {
+        alert("Erro ao excluir: " + err.message);
+    }
   };
 
   const getLimit = (p) => {
@@ -133,46 +176,62 @@ export default function Settings() {
     return 1;
   };
 
-  if (loading) return <div className="p-10 text-center">Carregando...</div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50">Carregando configurações...</div>;
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
-      <button onClick={() => navigate('/')} className="flex items-center text-gray-500 hover:text-gray-900 mb-6">
+      <button onClick={() => navigate('/')} className="flex items-center text-gray-500 hover:text-gray-900 mb-6 transition-colors">
         <ArrowLeft className="w-4 h-4 mr-2"/> Voltar para Dashboard
       </button>
 
-      <h1 className="text-3xl font-bold text-gray-900 mb-6">Configurações</h1>
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Configurações</h1>
+        {currentUser && (
+            <div className="text-sm text-gray-500 mt-2 md:mt-0">
+                Logado como: <span className="font-medium text-gray-800">{currentUser.email}</span> 
+                {currentUser.isAdmin && <span className="ml-2 bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-bold uppercase">Admin</span>}
+            </div>
+        )}
+      </div>
 
-      <div className="flex gap-6 border-b mb-6">
-        <button onClick={() => setActiveTab('company')} className={`pb-3 px-1 border-b-2 transition ${activeTab === 'company' ? 'border-blue-600 text-blue-600 font-bold' : 'border-transparent text-gray-500'}`}>
+      <div className="flex gap-6 border-b mb-6 overflow-x-auto">
+        <button onClick={() => setActiveTab('company')} className={`pb-3 px-1 border-b-2 transition whitespace-nowrap ${activeTab === 'company' ? 'border-blue-600 text-blue-600 font-bold' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
           <Building size={18} className="inline mr-2"/> Minha Empresa
         </button>
-        <button onClick={() => setActiveTab('team')} className={`pb-3 px-1 border-b-2 transition ${activeTab === 'team' ? 'border-blue-600 text-blue-600 font-bold' : 'border-transparent text-gray-500'}`}>
+        <button onClick={() => setActiveTab('team')} className={`pb-3 px-1 border-b-2 transition whitespace-nowrap ${activeTab === 'team' ? 'border-blue-600 text-blue-600 font-bold' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
           <Users size={18} className="inline mr-2"/> Gestão de Equipe
         </button>
       </div>
 
       {/* ABA EMPRESA */}
       {activeTab === 'company' && (
-        <div className="bg-white p-6 rounded shadow border max-w-2xl">
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 max-w-2xl">
+            <h2 className="text-lg font-bold text-gray-800 mb-4">Dados da Organização</h2>
             <form onSubmit={handleSaveCompany}>
-                <div className="mb-4">
+                <div className="mb-5">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Empresa</label>
                     <input 
-                      className="w-full border p-2 rounded" 
+                      className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
                       value={tenant.name} 
                       onChange={e => setTenant({...tenant, name: e.target.value})} 
-                      disabled={!currentUser?.isAdmin} // Só admin edita
+                      disabled={!currentUser?.isAdmin}
+                      placeholder="Ex: Minha Empresa Ltda"
                     />
+                    {!currentUser?.isAdmin && <p className="text-xs text-gray-400 mt-1">Apenas administradores podem editar.</p>}
                 </div>
-                <div className="bg-gray-50 p-4 rounded border mb-4">
-                    <p className="text-sm text-gray-600"><strong>Plano:</strong> <span className="uppercase font-bold text-blue-600">{tenant.plan}</span></p>
-                    <p className="text-xs text-gray-500 mt-1">Limite: <strong>{getLimit(tenant.plan)}</strong> usuários</p>
+                
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-6">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <p className="text-sm text-blue-900"><strong>Plano Atual:</strong> <span className="uppercase font-bold">{tenant.plan}</span></p>
+                            <p className="text-xs text-blue-700 mt-1">Limite de usuários ativos: <strong>{getLimit(tenant.plan)}</strong></p>
+                        </div>
+                    </div>
                 </div>
                 
                 {currentUser?.isAdmin && (
-                  <button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2">
-                    <Save size={16}/> Salvar
+                  <button className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition flex items-center gap-2 shadow-sm">
+                    <Save size={18}/> Salvar Alterações
                   </button>
                 )}
             </form>
@@ -183,61 +242,70 @@ export default function Settings() {
       {activeTab === 'team' && (
         <div className="space-y-6">
             {!currentUser?.isAdmin ? (
-                <div className="bg-yellow-100 p-4 rounded text-yellow-800 border border-yellow-200 flex items-center gap-2">
-                    <AlertTriangle size={18}/> Acesso restrito a Administradores.
+                <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 text-yellow-800 flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 flex-shrink-0" size={20}/> 
+                    <div>
+                        <strong className="block mb-1">Acesso Restrito</strong>
+                        Você não possui privilégios de Administrador para gerenciar a equipe.
+                    </div>
                 </div>
             ) : (
-                <div className="bg-white rounded shadow border overflow-hidden">
-                    <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-                        <h2 className="font-bold text-gray-700">Equipe ({team.length})</h2>
-                        <span className="text-xs bg-white px-2 py-1 rounded border">
-                            {team.filter(u => u.status === 'active').length} / {getLimit(tenant.plan)} ativos
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center flex-wrap gap-4">
+                        <div>
+                            <h2 className="font-bold text-gray-800 text-lg">Membros da Equipe</h2>
+                            <p className="text-sm text-gray-500">Gerencie o acesso dos colaboradores</p>
+                        </div>
+                        <span className={`text-xs px-3 py-1.5 rounded-full border font-medium ${team.filter(u => u.status === 'active').length >= getLimit(tenant.plan) ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+                            {team.filter(u => u.status === 'active').length} / {getLimit(tenant.plan)} licenças em uso
                         </span>
                     </div>
                     
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="border-b bg-gray-50 text-xs text-gray-500 uppercase">
-                                <th className="p-4">Usuário</th>
-                                <th className="p-4">Permissão</th>
-                                <th className="p-4">Status</th>
-                                <th className="p-4"></th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y">
-                            {team.map(u => (
-                                <tr key={u.id} className="hover:bg-gray-50">
-                                    <td className="p-4">
-                                        <div className="font-medium text-gray-900">{u.name || 'Sem nome'}</div>
-                                        <div className="text-sm text-gray-500">{u.email}</div>
-                                    </td>
-                                    <td className="p-4">
-                                        <button 
-                                          onClick={() => handleToggleAdmin(u.id, u.isAdmin)}
-                                          className={`text-xs px-2 py-1 rounded border font-bold uppercase flex items-center gap-1 ${u.isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-gray-100 text-gray-600'}`}
-                                        >
-                                          <Shield size={12}/> {u.isAdmin ? 'Admin' : 'Recrutador'}
-                                        </button>
-                                    </td>
-                                    <td className="p-4">
-                                        <button 
-                                          onClick={() => handleToggleActive(u.id, u.status)}
-                                          className={`text-xs px-2 py-1 rounded border font-bold uppercase flex items-center gap-1 ${u.status === 'active' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}
-                                        >
-                                          {u.status === 'active' ? <><CheckCircle size={12}/> Ativo</> : <><XCircle size={12}/> Inativo</>}
-                                        </button>
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        {u.id !== currentUser.id && (
-                                            <button onClick={() => handleDeleteUser(u.id)} className="text-gray-400 hover:text-red-600">
-                                                <Trash2 size={16}/>
-                                            </button>
-                                        )}
-                                    </td>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="border-b bg-gray-50 text-xs text-gray-500 uppercase tracking-wider">
+                                    <th className="p-4 font-semibold">Usuário</th>
+                                    <th className="p-4 font-semibold">Permissão</th>
+                                    <th className="p-4 font-semibold">Status</th>
+                                    <th className="p-4 font-semibold text-right">Ações</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {team.map(u => (
+                                    <tr key={u.id} className="hover:bg-gray-50 transition-colors">
+                                        <td className="p-4">
+                                            <div className="font-medium text-gray-900">{u.name || 'Usuário sem nome'}</div>
+                                            <div className="text-sm text-gray-500">{u.email}</div>
+                                        </td>
+                                        <td className="p-4">
+                                            <button 
+                                            onClick={() => handleToggleAdmin(u.id, u.isAdmin)}
+                                            className={`text-xs px-2.5 py-1 rounded-md border font-bold uppercase flex items-center gap-1.5 transition-all ${u.isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-200' : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'}`}
+                                            >
+                                            <Shield size={12}/> {u.isAdmin ? 'Admin' : 'Recrutador'}
+                                            </button>
+                                        </td>
+                                        <td className="p-4">
+                                            <button 
+                                            onClick={() => handleToggleActive(u.id, u.status)}
+                                            className={`text-xs px-2.5 py-1 rounded-md border font-bold uppercase flex items-center gap-1.5 transition-all ${u.status === 'active' ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-200' : 'bg-red-100 text-red-700 border-red-200 hover:bg-red-200'}`}
+                                            >
+                                            {u.status === 'active' ? <><CheckCircle size={12}/> Ativo</> : <><XCircle size={12}/> Inativo</>}
+                                            </button>
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            {u.id !== currentUser.id && (
+                                                <button onClick={() => handleDeleteUser(u.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition" title="Excluir">
+                                                    <Trash2 size={18}/>
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             )}
         </div>
