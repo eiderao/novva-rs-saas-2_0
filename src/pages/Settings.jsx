@@ -48,12 +48,12 @@ export default function Settings() {
         // 3. Busca Empresa e o ID do Plano
         const { data: tenantData } = await supabase
           .from('tenants')
-          .select('companyName, planId') // Busca planId, não plan
+          .select('companyName, planId') 
           .eq('id', userData.tenantId)
           .single();
         
         let currentPlanName = 'Plano Desconhecido';
-        let currentLimit = 1; // Padrão de segurança
+        let currentLimit = 1; 
 
         if (tenantData) {
           // 4. Busca Detalhes do Plano na tabela 'plans'
@@ -128,11 +128,14 @@ export default function Settings() {
     const safeStatus = currentStatus || 'inactive';
     const newStatus = safeStatus === 'active' ? 'inactive' : 'active';
     
-    // Validação usando o limite REAL do banco de dados
+    // CORREÇÃO: Validação de limite respeitando -1 (Ilimitado)
     if (newStatus === 'active') {
-        const activeCount = team.filter(u => u.status === 'active').length;
-        if (activeCount >= tenant.userLimit) {
-            return alert(`Limite do plano atingido (${tenant.userLimit} usuários). Faça upgrade do plano ${tenant.planName}.`);
+        // Se for diferente de -1, aplica a restrição numérica
+        if (tenant.userLimit !== -1) {
+            const activeCount = team.filter(u => u.status === 'active').length;
+            if (activeCount >= tenant.userLimit) {
+                return alert(`Limite do plano atingido (${tenant.userLimit} usuários). Faça upgrade do plano ${tenant.planName}.`);
+            }
         }
     }
 
@@ -151,6 +154,15 @@ export default function Settings() {
     const { error } = await supabase.from('users').delete().eq('id', userId);
     if (error) alert("Erro: " + error.message);
     else setTeam(team.filter(u => u.id !== userId));
+  };
+
+  // Helper para exibir texto amigável
+  const renderLimit = (limit) => limit === -1 ? "Ilimitado" : limit;
+
+  // Verificação visual para cor do badge (considera -1 como sempre verde)
+  const isLimitReached = () => {
+      if (tenant.userLimit === -1) return false;
+      return team.filter(u => u.status === 'active').length >= tenant.userLimit;
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
@@ -185,13 +197,12 @@ export default function Settings() {
                     />
                 </div>
                 
-                {/* Exibição Correta do Plano vindo do Banco */}
                 <div className="bg-blue-50 p-4 rounded border border-blue-100 mb-4">
                     <p className="text-sm text-blue-900">
                         <strong>Plano Atual:</strong> <span className="font-bold text-lg uppercase ml-2">{tenant.planName}</span>
                     </p>
                     <p className="text-xs text-blue-700 mt-1">
-                        Limite de usuários ativos: <strong>{tenant.userLimit}</strong>
+                        Limite de usuários ativos: <strong>{renderLimit(tenant.userLimit)}</strong>
                     </p>
                 </div>
 
@@ -212,8 +223,9 @@ export default function Settings() {
                 <div className="bg-white rounded shadow border overflow-hidden">
                     <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
                         <h2 className="font-bold text-gray-700">Equipe ({team.length})</h2>
-                        <span className={`text-xs px-2 py-1 rounded border ${team.filter(u => u.status === 'active').length >= tenant.userLimit ? 'bg-red-50 text-red-600 border-red-200' : 'bg-green-50 text-green-600 border-green-200'}`}>
-                            {team.filter(u => u.status === 'active').length} / {tenant.userLimit} licenças em uso
+                        
+                        <span className={`text-xs px-2 py-1 rounded border ${isLimitReached() ? 'bg-red-50 text-red-600 border-red-200' : 'bg-green-50 text-green-600 border-green-200'}`}>
+                            {team.filter(u => u.status === 'active').length} / {renderLimit(tenant.userLimit)} licenças em uso
                         </span>
                     </div>
                     <table className="w-full text-left">
