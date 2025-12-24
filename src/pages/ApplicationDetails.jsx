@@ -2,7 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import EvaluationForm from '../components/EvaluationForm';
-import { ArrowLeft, Mail, MapPin, BookOpen, FileText, Calendar, Download } from 'lucide-react';
+import { 
+    ArrowLeft, 
+    Mail, 
+    MapPin, 
+    BookOpen, 
+    FileText, 
+    Calendar, 
+    Download, 
+    TrendingUp 
+} from 'lucide-react';
 
 export default function ApplicationDetails() {
   const { appId } = useParams();
@@ -22,8 +31,8 @@ export default function ApplicationDetails() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
-      // 1. Busca Aplicação + Candidato (MÉTODO SEGURO)
-      // Usamos 'candidates(*)' sem apelidos para evitar erros de relacionamento
+      // 1. Busca Aplicação + Candidato
+      // Usamos 'candidates(*)' para trazer dados do candidato associado
       const { data: application, error: appError } = await supabase
         .from('applications')
         .select('*, candidates(*)')
@@ -32,7 +41,7 @@ export default function ApplicationDetails() {
       
       if (appError) throw appError;
 
-      // Normaliza o dado (caso venha como array ou objeto)
+      // Normaliza o objeto do candidato (caso o Supabase retorne array)
       const candidateObj = Array.isArray(application.candidates) 
         ? application.candidates[0] 
         : application.candidates;
@@ -42,7 +51,7 @@ export default function ApplicationDetails() {
         candidate: candidateObj
       });
 
-      // 2. Busca Vaga
+      // 2. Busca Vaga (para pegar os parâmetros de avaliação)
       if (application.jobId) {
         const { data: jobData } = await supabase
             .from('jobs')
@@ -52,7 +61,7 @@ export default function ApplicationDetails() {
         setJob(jobData);
       }
 
-      // 3. Busca Avaliação existente
+      // 3. Busca Avaliação existente deste usuário (se houver)
       if (user) {
         const { data: evalData } = await supabase
           .from('evaluations')
@@ -71,8 +80,7 @@ export default function ApplicationDetails() {
     }
   };
 
-  // --- FUNÇÕES DE FORMATAÇÃO (Mantidas para a interface ficar correta) ---
-  
+  // --- HELPER: Tradução de Labels ---
   const translateLabel = (key) => {
     const map = {
       motivation: "Carta de Apresentação",
@@ -85,6 +93,7 @@ export default function ApplicationDetails() {
     return map[key] || key.toUpperCase();
   };
 
+  // --- HELPER: Renderiza Educação ---
   const renderEducation = (edu) => {
     if (!edu || typeof edu !== 'object') return <span className="text-gray-500">Não informado</span>;
     
@@ -109,12 +118,53 @@ export default function ApplicationDetails() {
     );
   };
 
+  // --- HELPER: Renderiza Badge de Nota (Escala 0 a 30) ---
+  const renderScoreBadge = (score) => {
+    if (score === null || score === undefined) {
+        return <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-sm font-medium border border-gray-200">Aguardando Avaliação</span>;
+    }
+    
+    // Escala 0 a 30 (Soma dos 3 pilares de 0 a 10 cada)
+    let colorClass = "bg-gray-50 text-gray-900 border-gray-200";
+    let label = "Nota Final";
+    
+    // Lógica de Cores:
+    // >= 24 (Média 8 nos 3 pilares) -> Verde
+    // >= 15 (Média 5 nos 3 pilares) -> Amarelo
+    // < 15 -> Vermelho
+    if (score >= 24) { 
+        colorClass = "bg-green-50 text-green-700 border-green-200";
+        label = "Perfil Excelente";
+    } else if (score >= 15) { 
+        colorClass = "bg-yellow-50 text-yellow-700 border-yellow-200";
+        label = "Perfil na Média";
+    } else {
+        colorClass = "bg-red-50 text-red-700 border-red-200";
+        label = "Perfil Abaixo";
+    }
+
+    return (
+        <div className={`flex items-center gap-4 px-6 py-4 rounded-xl shadow-sm mt-4 border ${colorClass}`}>
+            <div className="p-2 bg-white bg-opacity-50 rounded-lg">
+                <TrendingUp size={28} />
+            </div>
+            <div className="text-left">
+                <span className="block text-xs uppercase font-bold opacity-80 tracking-wider mb-1">{label}</span>
+                <span className="block text-3xl font-black leading-none">
+                    {Number(score).toFixed(2)} <span className="text-sm font-medium opacity-60">/ 30</span>
+                </span>
+            </div>
+        </div>
+    );
+  };
+
   if (loading) return <div className="p-10 text-center">Carregando candidato...</div>;
   if (!appData) return <div className="p-10 text-center">Candidato não encontrado.</div>;
 
+  // Parâmetros padrão se a vaga não tiver nada configurado
   const defaultParams = {
     triagem: [], cultura: [], tecnico: [],
-    notas: [{id:'1',nome:'Abaixo',valor:0}, {id:'2',nome:'Atende',valor:50}, {id:'3',nome:'Supera',valor:100}]
+    notas: [{id:'1',nome:'Abaixo',valor:0}, {id:'2',nome:'Atende',valor:5}, {id:'3',nome:'Supera',valor:10}]
   };
 
   const params = job?.parameters || defaultParams;
@@ -122,7 +172,7 @@ export default function ApplicationDetails() {
 
   return (
     <div className="p-8 max-w-6xl mx-auto bg-gray-50 min-h-screen">
-      <button onClick={() => navigate(-1)} className="flex items-center text-gray-500 hover:text-gray-900 mb-6">
+      <button onClick={() => navigate(-1)} className="flex items-center text-gray-500 hover:text-gray-900 mb-6 transition">
         <ArrowLeft className="w-4 h-4 mr-2"/> Voltar
       </button>
 
@@ -132,11 +182,14 @@ export default function ApplicationDetails() {
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white p-6 rounded-lg shadow-sm border">
             <div className="flex flex-col items-center text-center">
-              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-3xl mb-4 uppercase">
+              <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center text-white font-bold text-4xl mb-4 shadow-md uppercase">
                 {appData.candidate?.name?.[0] || '?'}
               </div>
               <h1 className="text-xl font-bold text-gray-900">{appData.candidate?.name}</h1>
               <p className="text-sm text-gray-500 mt-1">{job?.title}</p>
+              
+              {/* EXIBIÇÃO DA NOTA GERAL */}
+              {renderScoreBadge(appData.score_general)}
             </div>
             
             <div className="mt-6 space-y-3 border-t pt-4">
@@ -147,8 +200,8 @@ export default function ApplicationDetails() {
                 <MapPin className="w-4 h-4 mr-3 text-gray-400"/> {appData.candidate?.city || 'Não informado'}
               </div>
               {appData.candidate?.resume_url && (
-                <a href={appData.candidate.resume_url} target="_blank" rel="noreferrer" className="flex items-center text-sm text-blue-600 hover:underline mt-2">
-                    <Download className="w-4 h-4 mr-3"/> Ver Currículo
+                <a href={appData.candidate.resume_url} target="_blank" rel="noreferrer" className="flex items-center text-sm text-blue-600 hover:underline mt-2 justify-center bg-blue-50 p-2 rounded">
+                    <Download className="w-4 h-4 mr-2"/> Ver Currículo
                 </a>
               )}
             </div>
@@ -196,6 +249,7 @@ export default function ApplicationDetails() {
 
         {/* Coluna Direita: Avaliação */}
         <div className="lg:col-span-2">
+          {/* Componente de Avaliação que faz os cálculos ponderados */}
           <EvaluationForm 
             applicationId={appData.id}
             jobParameters={params}
