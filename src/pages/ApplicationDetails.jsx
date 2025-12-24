@@ -19,7 +19,6 @@ export default function ApplicationDetails() {
   
   const [appData, setAppData] = useState(null);
   const [job, setJob] = useState(null);
-  const [myEvaluation, setMyEvaluation] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -29,10 +28,7 @@ export default function ApplicationDetails() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-
       // 1. Busca Aplicação + Candidato
-      // Usamos 'candidates(*)' para trazer dados do candidato associado
       const { data: application, error: appError } = await supabase
         .from('applications')
         .select('*, candidates(*)')
@@ -41,7 +37,7 @@ export default function ApplicationDetails() {
       
       if (appError) throw appError;
 
-      // Normaliza o objeto do candidato (caso o Supabase retorne array)
+      // Normaliza o objeto do candidato
       const candidateObj = Array.isArray(application.candidates) 
         ? application.candidates[0] 
         : application.candidates;
@@ -61,36 +57,12 @@ export default function ApplicationDetails() {
         setJob(jobData);
       }
 
-      // 3. Busca Avaliação existente deste usuário (se houver)
-      if (user) {
-        const { data: evalData } = await supabase
-          .from('evaluations')
-          .select('*')
-          .eq('application_id', appId)
-          .eq('evaluator_id', user.id)
-          .maybeSingle();
-        setMyEvaluation(evalData);
-      }
-
     } catch (err) {
       console.error(err);
       alert("Erro ao carregar dados: " + (err.message || "Erro desconhecido"));
     } finally {
       setLoading(false);
     }
-  };
-
-  // --- HELPER: Tradução de Labels ---
-  const translateLabel = (key) => {
-    const map = {
-      motivation: "Carta de Apresentação",
-      education: "Formação Acadêmica",
-      applied_at: "Data da Candidatura",
-      resume_url: "Currículo",
-      linkedin_profile: "LinkedIn",
-      github_profile: "GitHub/Portfólio"
-    };
-    return map[key] || key.toUpperCase();
   };
 
   // --- HELPER: Renderiza Educação ---
@@ -118,20 +90,26 @@ export default function ApplicationDetails() {
     );
   };
 
+  // --- HELPER: Tradução ---
+  const translateLabel = (key) => {
+    const map = {
+      motivation: "Carta de Apresentação",
+      education: "Formação Acadêmica",
+      applied_at: "Data da Candidatura"
+    };
+    return map[key] || key.toUpperCase();
+  };
+
   // --- HELPER: Renderiza Badge de Nota (Escala 0 a 30) ---
   const renderScoreBadge = (score) => {
     if (score === null || score === undefined) {
         return <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-sm font-medium border border-gray-200">Aguardando Avaliação</span>;
     }
     
-    // Escala 0 a 30 (Soma dos 3 pilares de 0 a 10 cada)
     let colorClass = "bg-gray-50 text-gray-900 border-gray-200";
     let label = "Nota Final";
     
-    // Lógica de Cores:
-    // >= 24 (Média 8 nos 3 pilares) -> Verde
-    // >= 15 (Média 5 nos 3 pilares) -> Amarelo
-    // < 15 -> Vermelho
+    // Escala 0 a 30
     if (score >= 24) { 
         colorClass = "bg-green-50 text-green-700 border-green-200";
         label = "Perfil Excelente";
@@ -151,7 +129,7 @@ export default function ApplicationDetails() {
             <div className="text-left">
                 <span className="block text-xs uppercase font-bold opacity-80 tracking-wider mb-1">{label}</span>
                 <span className="block text-3xl font-black leading-none">
-                    {Number(score).toFixed(2)} <span className="text-sm font-medium opacity-60">/ 30</span>
+                    {Number(score).toFixed(1)} <span className="text-sm font-medium opacity-60">/ 30</span>
                 </span>
             </div>
         </div>
@@ -161,13 +139,7 @@ export default function ApplicationDetails() {
   if (loading) return <div className="p-10 text-center">Carregando candidato...</div>;
   if (!appData) return <div className="p-10 text-center">Candidato não encontrado.</div>;
 
-  // Parâmetros padrão se a vaga não tiver nada configurado
-  const defaultParams = {
-    triagem: [], cultura: [], tecnico: [],
-    notas: [{id:'1',nome:'Abaixo',valor:0}, {id:'2',nome:'Atende',valor:5}, {id:'3',nome:'Supera',valor:10}]
-  };
-
-  const params = job?.parameters || defaultParams;
+  const params = job?.parameters || {};
   const formData = appData.formData || {};
 
   return (
@@ -210,7 +182,6 @@ export default function ApplicationDetails() {
                <h4 className="font-bold text-sm mb-4 text-gray-700">Detalhes da Inscrição</h4>
                <div className="space-y-4">
                  
-                 {/* 1. ESCOLARIDADE */}
                  {formData.education && (
                     <div>
                         <span className="text-xs text-gray-400 uppercase font-semibold flex items-center gap-1">
@@ -220,7 +191,6 @@ export default function ApplicationDetails() {
                     </div>
                  )}
 
-                 {/* 2. MOTIVAÇÃO */}
                  {formData.motivation && (
                     <div>
                         <span className="text-xs text-gray-400 uppercase font-semibold flex items-center gap-1">
@@ -232,7 +202,6 @@ export default function ApplicationDetails() {
                     </div>
                  )}
 
-                 {/* 3. DATA */}
                  <div>
                     <span className="text-xs text-gray-400 uppercase font-semibold flex items-center gap-1">
                         <Calendar size={12}/> Data de Envio
@@ -249,11 +218,12 @@ export default function ApplicationDetails() {
 
         {/* Coluna Direita: Avaliação */}
         <div className="lg:col-span-2">
-          {/* Componente de Avaliação que faz os cálculos ponderados */}
+          {/* Componente de Avaliação */}
           <EvaluationForm 
             applicationId={appData.id}
             jobParameters={params}
-            initialData={myEvaluation}
+            // Passamos 'evaluation' que vem do banco (JSONB)
+            initialData={appData.evaluation} 
             onSaved={fetchData} 
           />
         </div>

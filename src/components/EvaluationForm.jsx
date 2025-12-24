@@ -1,41 +1,48 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase/client';
-import { Save } from 'lucide-react';
+import { Save, AlertCircle } from 'lucide-react';
 
 export default function EvaluationForm({ applicationId, jobParameters, initialData, onSaved }) {
-  const [answers, setAnswers] = useState(initialData?.scores || {});
-  const [notes, setNotes] = useState(initialData?.notes || '');
+  // Estrutura inicial espelhando a versão 1.0
+  const [evaluation, setEvaluation] = useState({
+    triagem: initialData?.triagem || {},
+    cultura: initialData?.cultura || {},
+    tecnico: initialData?.tÃ©cnico || initialData?.tecnico || {} // Fallback para acentuação
+  });
+  
+  const [notes, setNotes] = useState(initialData?.anotacoes_gerais || '');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (initialData) {
-        setAnswers(initialData.scores || {});
-        setNotes(initialData.notes || '');
+        setEvaluation({
+            triagem: initialData.triagem || {},
+            cultura: initialData.cultura || {},
+            tecnico: initialData.tÃ©cnico || initialData.tecnico || {}
+        });
+        setNotes(initialData.anotacoes_gerais || '');
     }
   }, [initialData]);
 
-  // --- NOVA LÓGICA DE CÁLCULO POR PILAR ---
-  
-  // 1. Calcula a nota de UM pilar específico (ex: só Triagem)
-  // Retorna um valor de 0 a Nota Máxima da Escala (ex: 10)
-  const calculatePillarScore = (questions) => {
-    if (!questions || questions.length === 0) return 0;
+  // --- CÁLCULO DA NOTA PONDERADA (0 a 10 por pilar) ---
+  const calculatePillarScore = (sectionName, criteriaList) => {
+    if (!criteriaList || criteriaList.length === 0) return 0;
     
-    const ratingScale = jobParameters.notas || [];
+    // Mapeamento das notas (Ex: ID 1 -> Valor 10)
+    const ratingParams = jobParameters.notas || [];
     let pillarScore = 0;
 
-    questions.forEach(q => {
-        const selectedOptionId = answers[q.id];
-        if (selectedOptionId) {
-            const option = ratingScale.find(r => r.id === selectedOptionId);
-            if (option) {
-                // Peso da pergunta (ex: 20%)
-                const weightPercent = q.weight !== undefined ? Number(q.weight) : 0;
-                
-                // Cálculo: Nota da Opção * (Peso / 100)
-                // Ex: 5 (Atende) * (25 / 100) = 1.25 pontos
-                const points = Number(option.valor) * (weightPercent / 100);
-                
+    // Itera sobre os critérios definidos na vaga (ex: "Inglês", "Java")
+    criteriaList.forEach(criterion => {
+        // Busca qual nota foi selecionada para este critério específico
+        // A chave no objeto evaluation é o NOME do critério (conforme v1.0)
+        const selectedNoteId = evaluation[sectionName]?.[criterion.name];
+        
+        if (selectedNoteId) {
+            const noteObj = ratingParams.find(n => n.id === selectedNoteId);
+            if (noteObj) {
+                // FÓRMULA V1.0: (Valor da Nota * Peso) / 100
+                const points = (Number(noteObj.valor) * Number(criterion.weight)) / 100;
                 pillarScore += points;
             }
         }
@@ -44,19 +51,26 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     return pillarScore;
   };
 
-  // 2. Calcula o TOTAL GERAL (Soma dos 3 pilares)
-  // Máximo esperado: 30 (se a escala for até 10)
   const calculateTotalScore = () => {
       if (!jobParameters) return 0;
       
-      const scoreTriagem = calculatePillarScore(jobParameters.triagem);
-      const scoreCultura = calculatePillarScore(jobParameters.cultura);
-      const scoreTecnico = calculatePillarScore(jobParameters.tecnico);
+      const s1 = calculatePillarScore('triagem', jobParameters.triagem);
+      const s2 = calculatePillarScore('cultura', jobParameters.cultura);
+      // Backend as vezes usa 'tÃ©cnico' ou 'tecnico', normalizamos para o form
+      const s3 = calculatePillarScore('tecnico', jobParameters.tÃ©cnico || jobParameters.tecnico);
 
-      const total = scoreTriagem + scoreCultura + scoreTecnico;
-      
-      // Arredonda para 2 casas decimais para ficar bonito (ex: 22.50)
-      return Math.round(total * 100) / 100;
+      // Soma simples dos 3 pilares (Máximo 30)
+      return (s1 + s2 + s3).toFixed(1);
+  };
+
+  const handleChange = (section, criteriaName, noteId) => {
+      setEvaluation(prev => ({
+          ...prev,
+          [section]: {
+              ...prev[section],
+              [criteriaName]: noteId
+          }
+      }));
   };
 
   const handleSave = async () => {
@@ -67,29 +81,41 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       const finalScore = calculateTotalScore();
 
+      // Estrutura de salvamento compatível com o backend v1.0
+      // O backend espera um JSONB na coluna 'evaluation' da tabela 'applications'
       const payload = {
-        application_id: applicationId,
-        evaluator_id: user.id,
-        scores: answers,
-        notes: notes,
-        final_score: finalScore,
+        triagem: evaluation.triagem,
+        cultura: evaluation.cultura,
+        tÃ©cnico: evaluation.tecnico, // Mantendo acentuação para compatibilidade com backend antigo se necessário
+        anotacoes_gerais: notes,
+        score_calculated: finalScore,
         updated_at: new Date()
       };
 
-      const { error: evalError } = await supabase
-        .from('evaluations')
-        .upsert(payload, { onConflict: 'application_id, evaluator_id' });
-
-      if (evalError) throw evalError;
-
+      // 1. Atualiza a tabela applications (coluna evaluation e score_general)
       const { error: appError } = await supabase
         .from('applications')
-        .update({ score_general: finalScore })
+        .update({ 
+            evaluation: payload,
+            score_general: finalScore // Campo numérico para ordenação
+        })
         .eq('id', applicationId);
 
       if (appError) throw appError;
 
-      alert(`Avaliação salva! Nota Final Calculada: ${finalScore} / 30`);
+      // 2. (Opcional) Se você usar a tabela evaluations separada também:
+      const { error: evalError } = await supabase
+        .from('evaluations')
+        .upsert({
+            application_id: applicationId,
+            evaluator_id: user.id,
+            scores: payload, // Salva o objeto completo
+            final_score: finalScore
+        }, { onConflict: 'application_id, evaluator_id' });
+
+      if (evalError) console.warn("Aviso: Falha ao salvar na tabela secundária evaluations", evalError);
+
+      alert(`Avaliação salva! Nota Final: ${finalScore} / 30`);
       if (onSaved) onSaved();
 
     } catch (error) {
@@ -100,110 +126,104 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     }
   };
 
-  // Renderiza a seção com o subtotal calculado ao lado do título
-  const renderSection = (title, questions) => {
-    if (!questions || questions.length === 0) return null;
+  const renderSection = (key, title, criteria) => {
+    if (!criteria || criteria.length === 0) return null;
     
     const ratingScale = jobParameters.notas || [];
-    // Calcula a nota parcial deste pilar em tempo real
-    const partialScore = calculatePillarScore(questions).toFixed(2);
+    const currentScore = calculatePillarScore(key, criteria).toFixed(1);
 
     return (
       <div className="mb-6 bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
         <div className="flex justify-between items-center mb-4 border-b pb-2">
-            <h3 className="font-bold text-gray-800 uppercase text-sm tracking-wide">
-                {title}
-            </h3>
-            <span className="bg-gray-100 text-gray-700 text-xs font-bold px-2 py-1 rounded">
-                Parcial: {partialScore} pts
+            <h3 className="font-bold text-gray-800 uppercase text-sm tracking-wide">{title}</h3>
+            <span className="bg-blue-50 text-blue-700 text-xs font-bold px-2 py-1 rounded border border-blue-100">
+                Nota: {currentScore} / 10
             </span>
         </div>
 
         <div className="space-y-4">
-            {questions.map(q => {
-                const weightPercent = q.weight !== undefined ? Number(q.weight) : 0;
-
-                return (
-                    <div key={q.id} className="relative">
-                        <div className="flex justify-between items-start mb-1">
-                            <p className="text-sm font-medium text-gray-700 w-3/4">{q.text}</p>
-                            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                                Peso: {weightPercent}%
-                            </span>
-                        </div>
-                        
-                        <div className="flex gap-2 flex-wrap">
-                            {ratingScale.map(option => {
-                                const isSelected = answers[q.id] === option.id;
-                                let colorClass = isSelected 
-                                    ? "bg-blue-600 text-white border-blue-600 shadow-md"
-                                    : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50";
-                                
-                                // Simula o cálculo visual para o usuário
-                                const valCalc = (Number(option.valor) * (weightPercent / 100)).toFixed(2);
-
-                                return (
-                                    <button
-                                        key={option.id}
-                                        onClick={() => setAnswers({ ...answers, [q.id]: option.id })}
-                                        className={`px-3 py-1.5 text-xs rounded transition-all border ${colorClass}`}
-                                    >
-                                        {option.nome} 
-                                        {/* Mostra quanto vai somar na nota final */}
-                                        <span className={`text-[10px] ml-1 ${isSelected ? 'text-blue-100' : 'text-gray-400'}`}>
-                                            (+{valCalc})
-                                        </span>
-                                    </button>
-                                );
-                            })}
-                        </div>
+            {criteria.map((crit, idx) => (
+                <div key={idx} className="relative">
+                    <div className="flex justify-between items-end mb-2">
+                        <span className="text-sm font-medium text-gray-700 w-2/3">{crit.name}</span>
+                        <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                            Peso: {crit.weight}%
+                        </span>
                     </div>
-                );
-            })}
+                    
+                    <div className="grid grid-cols-3 gap-2">
+                        {ratingScale.map(option => {
+                            const isSelected = evaluation[key]?.[crit.name] === option.id;
+                            
+                            // Cálculo visual de quanto vale essa opção
+                            const points = ((Number(option.valor) * Number(crit.weight)) / 100).toFixed(1);
+
+                            return (
+                                <button
+                                    key={option.id}
+                                    onClick={() => handleChange(key, crit.name, option.id)}
+                                    className={`
+                                        py-2 px-1 text-xs rounded border transition-all text-center
+                                        ${isSelected 
+                                            ? 'bg-blue-600 text-white border-blue-600 font-bold shadow-md' 
+                                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                                        }
+                                    `}
+                                >
+                                    <div className="font-bold">{option.nome}</div>
+                                    <div className={`text-[10px] ${isSelected ? 'text-blue-200' : 'text-gray-400'}`}>
+                                        +{points} pts
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            ))}
         </div>
       </div>
     );
   };
 
-  if (!jobParameters) return <div className="p-4 text-center text-gray-500">Carregando parâmetros...</div>;
+  if (!jobParameters) return <div className="p-10 text-center">Carregando critérios...</div>;
 
   return (
-    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 h-full flex flex-col">
-      <div className="flex justify-between items-center mb-6 bg-white p-4 rounded border shadow-sm">
+    <div className="bg-gray-50 p-4 h-full flex flex-col">
+      <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-lg border shadow-sm sticky top-0 z-10">
         <div>
-            <h2 className="text-lg font-bold text-gray-800">Avaliação Técnica</h2>
-            <p className="text-xs text-gray-500">Some pontos nos 3 pilares</p>
+            <h2 className="text-lg font-bold text-gray-800">Avaliação</h2>
+            <p className="text-xs text-gray-500">Soma dos 3 pilares</p>
         </div>
         <div className="text-right">
-            <span className="text-xs text-gray-500 uppercase block font-bold">Nota Geral (0-30)</span>
-            <span className="text-3xl font-black text-blue-600">{calculateTotalScore().toFixed(2)}</span>
+            <span className="text-xs text-gray-500 uppercase block font-bold">Total</span>
+            <span className="text-3xl font-black text-blue-600">{calculateTotalScore()} <span className="text-sm text-gray-400 font-normal">/30</span></span>
         </div>
       </div>
 
-      <div className="overflow-y-auto flex-1 pr-2 space-y-2">
-          {renderSection("1. Triagem (Max 10)", jobParameters.triagem)}
-          {renderSection("2. Fit Cultural (Max 10)", jobParameters.cultura)}
-          {renderSection("3. Teste Técnico (Max 10)", jobParameters.tecnico)}
+      <div className="flex-1 overflow-y-auto pr-2 space-y-2">
+          {renderSection("triagem", "1. Triagem", jobParameters.triagem)}
+          {renderSection("cultura", "2. Fit Cultural", jobParameters.cultura)}
+          {renderSection("tecnico", "3. Teste Técnico", jobParameters.tÃ©cnico || jobParameters.tecnico)}
 
           <div className="mt-4 bg-white p-4 rounded border">
-            <label className="font-bold text-gray-700 text-xs uppercase mb-2 block">Anotações / Feedback</label>
+            <label className="font-bold text-gray-700 text-xs uppercase mb-2 block">Anotações Gerais</label>
             <textarea
                 className="w-full p-3 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50"
                 rows="3"
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
-                placeholder="Observações finais sobre o candidato..."
+                placeholder="Observações finais..."
             />
           </div>
       </div>
 
-      <div className="mt-4 pt-4 border-t flex justify-end">
+      <div className="mt-4 pt-4 border-t">
         <button 
             onClick={handleSave} 
             disabled={saving}
-            className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded shadow-lg font-bold flex items-center gap-2 transition disabled:opacity-50 transform hover:scale-105"
+            className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg shadow font-bold flex justify-center items-center gap-2 transition disabled:opacity-50"
         >
-            {saving ? "Salvando..." : <><Save size={18}/> Finalizar Avaliação</>}
+            {saving ? "Salvando..." : <><Save size={18}/> Salvar Avaliação</>}
         </button>
       </div>
     </div>
