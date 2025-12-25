@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabase/client';
 import { useNavigate } from 'react-router-dom';
 import CreateJobModal from '../components/jobs/CreateJobModal';
-import { Briefcase, Users, Plus, Settings as SettingsIcon } from 'lucide-react';
+import { Briefcase, Users, Plus, Settings as SettingsIcon, Clock } from 'lucide-react';
+import { differenceInDays, parseISO } from 'date-fns';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -35,7 +36,8 @@ export default function Dashboard() {
       // 2. Se tiver Tenant, busca vagas
       if (userProfile?.tenantId) {
         const [jobsResult, deptsResult] = await Promise.all([
-          supabase.from('jobs').select('*').eq('tenantId', userProfile.tenantId),
+          // Busca vagas e já conta os candidatos na query
+          supabase.from('jobs').select('*, applications(count)').eq('tenantId', userProfile.tenantId),
           supabase.from('company_departments').select('*').eq('tenantId', userProfile.tenantId)
         ]);
 
@@ -47,9 +49,14 @@ export default function Dashboard() {
 
         const processed = rawJobs.map(j => ({
           ...j,
-          deptName: j.company_department_id ? (deptMap[j.company_department_id] || 'Geral') : 'Geral'
+          deptName: j.company_department_id ? (deptMap[j.company_department_id] || 'Geral') : 'Geral',
+          // Garante que candidateCount seja número
+          candidateCount: j.applications?.[0]?.count || 0,
+          // Calcula dias desde a criação
+          daysOpen: differenceInDays(new Date(), parseISO(j.created_at))
         }));
 
+        // Ordena por data (mais recente primeiro)
         processed.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         setJobs(processed);
       }
@@ -60,6 +67,7 @@ export default function Dashboard() {
     }
   };
 
+  // Função para corrigir contas sem tenant (Mantida do original)
   const fixAccount = async () => {
     setFixing(true);
     try {
@@ -147,6 +155,7 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
+          {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             <div className="bg-white p-6 rounded shadow border border-gray-100 flex items-center gap-4">
               <div className="p-3 bg-blue-100 text-blue-600 rounded-full"><Briefcase size={24}/></div>
@@ -158,12 +167,13 @@ export default function Dashboard() {
             <div className="bg-white p-6 rounded shadow border border-gray-100 flex items-center gap-4">
               <div className="p-3 bg-green-100 text-green-600 rounded-full"><Users size={24}/></div>
               <div>
-                <p className="text-sm text-gray-500">Total Vagas</p>
-                <p className="text-2xl font-bold">{jobs.length}</p>
+                <p className="text-sm text-gray-500">Total Candidatos</p>
+                <p className="text-2xl font-bold">{jobs.reduce((acc, j) => acc + j.candidateCount, 0)}</p>
               </div>
             </div>
           </div>
 
+          {/* Tabela de Vagas */}
           <div className="bg-white rounded shadow border overflow-hidden">
             <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
               <h2 className="font-semibold text-gray-700">Listagem de Vagas</h2>
@@ -185,14 +195,15 @@ export default function Dashboard() {
                 <tr>
                   <th className="p-4 font-medium">Área / Depto</th>
                   <th className="p-4 font-medium">Título</th>
-                  <th className="p-4 font-medium">Modelo</th>
+                  <th className="p-4 font-medium text-center">Inscritos</th>
+                  <th className="p-4 font-medium text-center">Tempo</th>
                   <th className="p-4 font-medium">Status</th>
                   <th className="p-4 font-medium text-right">Ação</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredJobs.length === 0 ? (
-                  <tr><td colSpan="5" className="p-8 text-center text-gray-500">Nenhuma vaga encontrada.</td></tr>
+                  <tr><td colSpan="6" className="p-8 text-center text-gray-500">Nenhuma vaga encontrada.</td></tr>
                 ) : (
                   filteredJobs.map(job => (
                     <tr 
@@ -202,7 +213,12 @@ export default function Dashboard() {
                     >
                       <td className="p-4 text-gray-600">{job.deptName}</td>
                       <td className="p-4 font-bold text-gray-800 group-hover:text-blue-600">{job.title}</td>
-                      <td className="p-4 text-gray-600">{job.location_type}</td>
+                      <td className="p-4 text-center">
+                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-bold">{job.candidateCount}</span>
+                      </td>
+                      <td className="p-4 text-center text-gray-500 flex items-center justify-center gap-1">
+                          <Clock size={14}/> {job.daysOpen} dias
+                      </td>
                       <td className="p-4">
                         <span className={`px-2 py-1 rounded text-xs font-semibold ${job.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
                           {job.status === 'active' ? 'Ativa' : 'Inativa'}
