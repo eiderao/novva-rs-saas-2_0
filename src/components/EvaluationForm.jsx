@@ -52,18 +52,18 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     if (!hasAnswers || totalWeightAnswered === 0) return null;
 
     // Normalização: (Pontos Obtidos / Peso Respondido)
-    // Isso garante que a nota fique na escala 0-10 independentemente de quantos itens foram respondidos
+    // Isso garante que a nota fique na escala 0-10
     return (totalScore / totalWeightAnswered).toFixed(2);
   };
 
   // --- CÁLCULO 2: Minha Nota Final (Média dos 3 Pilares) ---
   const calculateMyTotalScore = () => {
-      // Se não houver nota no pilar, considera 0 para a média (penalidade por omissão), 
-      // ou use a lógica que preferir. Aqui assumo 0.
+      // Se um pilar não for avaliado (null), consideramos 0 para a média
       const s1 = parseFloat(calculatePillarScore('triagem', jobParameters.triagem) || 0);
       const s2 = parseFloat(calculatePillarScore('cultura', jobParameters.cultura) || 0);
-      // Fallback robusto para técnico
-      const s3 = parseFloat(calculatePillarScore('tecnico', jobParameters.tecnico || jobParameters['tÃ©cnico'] || jobParameters['técnico']) || 0);
+      // Fallback para técnico (vários nomes possíveis no banco)
+      const tecnicoParams = jobParameters.tecnico || jobParameters['tÃ©cnico'] || jobParameters['técnico'];
+      const s3 = parseFloat(calculatePillarScore('tecnico', tecnicoParams) || 0);
 
       // Média aritmética simples entre os 3 pilares
       const avg = (s1 + s2 + s3) / 3;
@@ -82,7 +82,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
       });
   };
 
-  // Atualiza a média global de TODOS os avaliadores na tabela applications
+  // --- CÁLCULO 3: Média Global (Todos os avaliadores) ---
   const updateCandidateGlobalScore = async () => {
       const { data: allEvaluations, error: fetchError } = await supabase
           .from('evaluations')
@@ -92,7 +92,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
       if (fetchError) throw fetchError;
       if (!allEvaluations || allEvaluations.length === 0) return;
 
-      // Média de todas as avaliações
+      // Soma todas as notas finais e divide pelo número de avaliadores
       const sum = allEvaluations.reduce((acc, curr) => acc + Number(curr.final_score), 0);
       const globalAverage = (sum / allEvaluations.length).toFixed(2);
 
@@ -110,7 +110,8 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       const scoreTriagem = calculatePillarScore('triagem', jobParameters.triagem);
       const scoreCultura = calculatePillarScore('cultura', jobParameters.cultura);
-      const scoreTecnico = calculatePillarScore('tecnico', jobParameters.tecnico || jobParameters['tÃ©cnico'] || jobParameters['técnico']);
+      const tecnicoParams = jobParameters.tecnico || jobParameters['tÃ©cnico'] || jobParameters['técnico'];
+      const scoreTecnico = calculatePillarScore('tecnico', tecnicoParams);
       
       const myFinalScore = calculateMyTotalScore();
 

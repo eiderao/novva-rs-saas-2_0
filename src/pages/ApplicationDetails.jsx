@@ -5,8 +5,9 @@ import EvaluationForm from '../components/EvaluationForm';
 import { 
     ArrowLeft, Mail, MapPin, BookOpen, FileText, Calendar, Download, TrendingUp, Users 
 } from 'lucide-react';
+// Imports explícitos para evitar erro de build
 import { 
-    Box, Container, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar 
+    Box, Container, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar
 } from '@mui/material';
 
 export default function ApplicationDetails() {
@@ -56,7 +57,7 @@ export default function ApplicationDetails() {
               if (myEval) {
                   setCurrentUserEvaluation({
                       ...myEval.scores,
-                      anotacoes_gerais: myEval.notes || myEval.scores.anotacoes_gerais,
+                      anotacoes_gerais: myEval.notes || myEval.scores?.anotacoes_gerais,
                       final_score: myEval.final_score
                   });
               } else {
