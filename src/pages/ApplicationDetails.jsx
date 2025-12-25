@@ -39,10 +39,11 @@ export default function ApplicationDetails() {
         jobParams = jobData.parameters || {};
       }
 
-      const { data: allEvals } = await supabase.from('evaluations').select('*, evaluator:users(email, name)').eq('application_id', appId);
+      // CORREÇÃO: Busca sem Join para evitar erro 400
+      const { data: allEvals, error: evalError } = await supabase.from('evaluations').select('*').eq('application_id', appId);
 
-      if (allEvals) {
-          // Fetch names
+      if (!evalError && allEvals) {
+          // Busca nomes
           const userIds = [...new Set(allEvals.map(e => e.evaluator_id))];
           let usersMap = {};
           if (userIds.length > 0) {
@@ -50,7 +51,11 @@ export default function ApplicationDetails() {
               users?.forEach(u => usersMap[u.id] = u.name || u.email);
           }
 
-          const evalsWithNames = allEvals.map(e => ({ ...e, evaluator_name: usersMap[e.evaluator_id] || 'Avaliador' }));
+          const evalsWithNames = allEvals.map(e => ({ 
+              ...e, 
+              evaluator_name: usersMap[e.evaluator_id] || 'Avaliador' 
+          }));
+
           setAllEvaluations(evalsWithNames);
           setEvaluatorsCount(evalsWithNames.length);
           
@@ -66,7 +71,7 @@ export default function ApplicationDetails() {
           setGlobalScore(validCount > 0 ? (sumTotal / validCount) : 0);
 
           if (user) {
-              const myEval = allEvals.find(e => e.evaluator_id === user.id);
+              const myEval = evalsWithNames.find(e => e.evaluator_id === user.id);
               if (myEval) {
                   const myScores = processEvaluation(myEval, jobParams);
                   setCurrentUserEvaluation({
@@ -97,15 +102,13 @@ export default function ApplicationDetails() {
     );
   };
 
-  // CORRECTED BADGES
   const renderScoreBadges = (gScore, myScore, count) => {
     const getBgColor = (s) => s >= 8 ? '#e8f5e9' : s >= 5 ? '#fff3e0' : '#ffebee';
     const getTextColor = (s) => s >= 8 ? '#2e7d32' : s >= 5 ? '#ef6c00' : '#c62828';
 
     return (
         <Box sx={{ display: 'flex', gap: 1, mt: 2, alignItems: 'stretch' }}>
-            {/* Global Note */}
-            <Paper elevation={0} sx={{ flex: 1, bgcolor: getBgColor(gScore), p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <Paper elevation={0} sx={{ flex: 1, bgcolor: getBgColor(gScore), p: 1, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                 <Typography variant="caption" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.65rem' }}>
                     Nota Global
                 </Typography>
@@ -117,8 +120,7 @@ export default function ApplicationDetails() {
                 </Typography>
             </Paper>
             
-            {/* My Note */}
-            <Paper elevation={0} sx={{ flex: 1, bgcolor: '#f3f4f6', p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <Paper elevation={0} sx={{ flex: 1, bgcolor: '#f3f4f6', p: 1, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                 <Typography variant="caption" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.65rem', mb: 1 }}>
                     Minha Nota
                 </Typography>
@@ -160,7 +162,7 @@ export default function ApplicationDetails() {
         </Grid>
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
-             {/* Passes allEvaluations for history */}
+             {/* Passa allEvaluations para popular o histórico */}
              <EvaluationForm applicationId={appData.id} jobParameters={params} initialData={currentUserEvaluation} allEvaluations={allEvaluations} onSaved={fetchData} />
           </Paper>
         </Grid>

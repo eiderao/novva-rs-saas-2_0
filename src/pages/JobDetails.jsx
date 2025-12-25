@@ -12,27 +12,37 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Delete as DeleteIcon, ContentCopy as ContentCopyIcon } from '@mui/icons-material';
 import { processEvaluation } from '../utils/evaluationLogic';
 
-// --- AUXILIARY COMPONENTS ---
+// --- MODAL DE CÓPIA ---
 const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 500, bgcolor: 'background.paper', boxShadow: 24, p: 4 };
-
 const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState('');
-  useEffect(() => { if (open) { const f = async () => { const { data } = await supabase.from('jobs').select('id, title').neq('id', currentJobId).eq('status', 'active'); setJobs(data || []); }; f(); } }, [open, currentJobId]);
-  const handleConfirm = async () => { if (!selectedJobId) return; const { data } = await supabase.from('jobs').select('parameters').eq('id', selectedJobId).single(); if (data?.parameters) onCopy(data.parameters); onClose(); };
+  useEffect(() => { 
+      if (open) { 
+          const f = async () => { 
+              const { data } = await supabase.from('jobs').select('id, title').neq('id', currentJobId).eq('status', 'active'); 
+              setJobs(data || []); 
+          }; 
+          f(); 
+      } 
+  }, [open, currentJobId]);
+  const handleConfirm = async () => { 
+      if (!selectedJobId) return; 
+      const { data } = await supabase.from('jobs').select('parameters').eq('id', selectedJobId).single(); 
+      if (data?.parameters) onCopy(data.parameters); 
+      onClose(); 
+  };
   return ( <Modal open={open} onClose={onClose}><Box sx={modalStyle}><Typography variant="h6">Copiar de Vaga</Typography><FormControl fullWidth margin="normal"><InputLabel>Vaga</InputLabel><Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga">{jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}</Select></FormControl><Button onClick={handleConfirm} variant="contained" fullWidth sx={{mt:2}} disabled={!selectedJobId}>Copiar</Button></Box></Modal> );
 };
 
+// --- SEÇÃO DE PARÂMETROS ---
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
   const handleChange = (i, f, v) => { 
       const n = [...criteria]; 
-      // Force conversion to number to prevent string concatenation
-      n[i] = { ...n[i], [f]: f==='weight' ? Number(v) : v }; 
+      n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; 
       onCriteriaChange(n); 
   };
-  // Guaranteed numeric sum
   const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
-  
   return (
     <Box sx={{mt:2}}>
         {criteria.map((c, i) => (
@@ -42,14 +52,13 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
                 <IconButton onClick={()=>onCriteriaChange(criteria.filter((_,idx)=>idx!==i))} color="error"><DeleteIcon/></IconButton>
             </Box>
         ))}
-        {/* CORRECTION: Button text changed to ADICIONAR */}
         <Button onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small">Adicionar</Button>
         <Typography color={total===100?'green':'red'} variant="caption" display="block" sx={{mt:1, fontWeight:'bold'}}>Total: {total}%</Typography>
     </Box>
   );
 };
 
-// --- MAIN PAGE ---
+// --- PÁGINA PRINCIPAL ---
 export default function JobDetails() {
   const { jobId } = useParams();
   const [job, setJob] = useState(null);
@@ -58,6 +67,7 @@ export default function JobDetails() {
   const [tabValue, setTabValue] = useState(0);
   const [applicants, setApplicants] = useState([]);
   const [allEvaluations, setAllEvaluations] = useState([]);
+  const [usersMap, setUsersMap] = useState({}); // Mapeamento ID -> Nome
   const [evaluatorFilter, setEvaluatorFilter] = useState('all');
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [feedback, setFeedback] = useState({ open: false, message: '', severity: 'success' });
@@ -68,7 +78,6 @@ export default function JobDetails() {
       try {
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         setJob(jobData);
-        // Ensures valid parameters object
         const params = jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] };
         setParameters(params);
 
@@ -77,41 +86,51 @@ export default function JobDetails() {
 
         const appIds = (appsData || []).map(a => a.id);
         if (appIds.length > 0) {
-            // Fetch ALL evaluations to cross-reference on the front-end
-            const { data: evalsData } = await supabase.from('evaluations').select('*, evaluator:users(email, name)').in('application_id', appIds);
+            // 1. Busca Avaliações (SEM JOIN QUEBRADO)
+            const { data: evalsData, error: evalsError } = await supabase.from('evaluations').select('*').in('application_id', appIds);
+            
+            if (evalsError) throw evalsError;
+            
             setAllEvaluations(evalsData || []);
+
+            // 2. Busca Nomes dos Avaliadores Separadamente
+            const userIds = [...new Set((evalsData || []).map(e => e.evaluator_id))];
+            if (userIds.length > 0) {
+                const { data: usersData } = await supabase.from('users').select('id, name, email').in('id', userIds);
+                const map = {};
+                usersData?.forEach(u => map[u.id] = u.name || u.email);
+                setUsersMap(map);
+            }
         }
-      } catch (err) { console.error(err); } finally { setLoading(false); }
+      } catch (err) { console.error("Erro ao carregar dados:", err); } finally { setLoading(false); }
     };
     fetchAllData();
   }, [jobId]);
 
-  // Unified Processing Logic
   const processedData = useMemo(() => {
     if (!parameters) return { chartData: [], evaluators: [] };
 
-    // Unique list of evaluators
-    const evaluators = Array.from(new Set(allEvaluations.map(e => e.evaluator_id))).map(id => {
-        const ev = allEvaluations.find(e => e.evaluator_id === id);
-        return { id, name: ev.evaluator?.name || ev.evaluator_name || 'Desconhecido' };
-    });
+    // Lista de avaliadores usando o mapa de nomes carregado
+    const evaluators = Object.keys(usersMap).map(id => ({
+        id, 
+        name: usersMap[id] || 'Desconhecido'
+    }));
 
     const chartData = applicants.map(app => {
-        // Filter evaluations for this candidate AND apply evaluator filter if selected
+        // Filtra avaliações para este candidato
         const appEvals = allEvaluations.filter(e => 
-            // String comparison for safety
             String(e.application_id) === String(app.id) && 
             (evaluatorFilter === 'all' || e.evaluator_id === evaluatorFilter)
         );
 
         let sumT = 0, sumC = 0, sumTc = 0, count = 0;
         let sumTotal = 0;
-        
+
         appEvals.forEach(ev => {
-            // Use universal calculator to ensure correct scores
+            // Recalcula notas na hora para garantir consistência
             const scores = processEvaluation(ev, parameters);
             
-            // Only count if there is a valid score
+            // Só conta se houver nota válida em algum pilar
             if (scores.total > 0 || scores.triagem > 0 || scores.cultura > 0 || scores.tecnico > 0) {
                 sumT += scores.triagem;
                 sumC += scores.cultura;
@@ -121,12 +140,11 @@ export default function JobDetails() {
             }
         });
 
-        // Averages (0-10)
+        // Médias
         const avgT = count > 0 ? sumT / count : 0;
         const avgC = count > 0 ? sumC / count : 0;
         const avgTc = count > 0 ? sumTc / count : 0;
-        // General Average of evaluators
-        const general = count > 0 ? sumTotal / count : 0;
+        const avgGeneral = count > 0 ? sumTotal / count : 0;
 
         return {
             appId: app.id,
@@ -135,14 +153,14 @@ export default function JobDetails() {
             triagem: Number(avgT.toFixed(1)),
             cultura: Number(avgC.toFixed(1)),
             tecnico: Number(avgTc.toFixed(1)),
-            total: Number(general.toFixed(1)), // This score should match the candidate screen
-            count: count, // Number of evaluations
+            total: Number(avgGeneral.toFixed(1)),
+            count: count,
             hired: app.isHired
         };
     }).sort((a, b) => b.total - a.total);
 
     return { chartData, evaluators };
-  }, [applicants, allEvaluations, evaluatorFilter, parameters]);
+  }, [applicants, allEvaluations, evaluatorFilter, parameters, usersMap]);
 
   const handleHireToggle = async (appId, currentStatus) => {
       const newStatus = !currentStatus;
@@ -163,6 +181,7 @@ export default function JobDetails() {
         <Container maxWidth="xl" sx={{ mt: 4 }}>
             <Paper sx={{ mb: 2 }}><Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered><Tab label="Candidatos" /><Tab label="Classificação" /><Tab label="Configurações" /></Tabs></Paper>
             
+            {/* ABA CANDIDATOS */}
             {tabValue === 0 && (
                 <Paper sx={{ p: 2 }}>
                     <Table>
@@ -179,6 +198,7 @@ export default function JobDetails() {
                 </Paper>
             )}
 
+            {/* ABA CLASSIFICAÇÃO */}
             {tabValue === 1 && (
                 <Grid container spacing={3} sx={{ mt: 1 }}>
                     <Grid item xs={12} md={8}>
@@ -223,7 +243,7 @@ export default function JobDetails() {
                                         <ListItem secondaryAction={<Checkbox checked={d.hired || false} onChange={() => handleHireToggle(d.appId, d.hired)} color="success" />}>
                                             <ListItemText 
                                                 primary={<Typography variant="body2" fontWeight="bold">{d.name}</Typography>}
-                                                secondary={<Typography variant="caption">Geral: {d.total.toFixed(1)}</Typography>}
+                                                secondary={<Typography variant="caption">Geral: {d.total.toFixed(1)} (T:{d.triagem} C:{d.cultura} Tc:{d.tecnico})</Typography>}
                                             />
                                         </ListItem>
                                         <Divider />
@@ -235,6 +255,7 @@ export default function JobDetails() {
                 </Grid>
             )}
 
+            {/* ABA CONFIGURAÇÕES */}
             {tabValue === 2 && (
                 <Box p={3}>
                     <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>Triagem</Typography><ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} /></Paper>
