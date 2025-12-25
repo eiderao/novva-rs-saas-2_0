@@ -31,7 +31,6 @@ export const processEvaluation = (evaluationObj, parameters) => {
     const answers = evaluationObj.scores || evaluationObj; 
     const ratingScale = parameters.notas || [];
     
-    // Normalização de nomes
     const pTriagem = parameters.triagem || [];
     const pCultura = parameters.cultura || [];
     const pTecnico = parameters.tecnico || parameters['técnico'] || parameters['tÃ©cnico'] || [];
@@ -40,7 +39,7 @@ export const processEvaluation = (evaluationObj, parameters) => {
     const cultura = calculatePillarScore('cultura', pCultura, answers, ratingScale);
     const tecnico = calculatePillarScore('tecnico', pTecnico, answers, ratingScale);
 
-    // Média dos pilares válidos
+    // Média dos pilares válidos (Ignora null)
     let sum = 0;
     let count = 0;
     if (triagem !== null) { sum += triagem; count++; }

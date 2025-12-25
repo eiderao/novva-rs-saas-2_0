@@ -12,57 +12,19 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Delete as DeleteIcon, ContentCopy as ContentCopyIcon } from '@mui/icons-material';
 import { processEvaluation } from '../utils/evaluationLogic';
 
-// --- MODAIS E COMPONENTES AUXILIARES ---
+// --- MODAL DE CÓPIA ---
 const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 500, bgcolor: 'background.paper', boxShadow: 24, p: 4 };
-
 const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState('');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (open) {
-      const fetchJobsList = async () => {
-        setLoading(true);
-        const { data } = await supabase.from('jobs').select('id, title').neq('id', currentJobId).eq('status', 'active');
-        setJobs(data || []);
-        setLoading(false);
-      };
-      fetchJobsList();
-    }
-  }, [open, currentJobId]);
-
-  const handleConfirmCopy = async () => {
-    if (!selectedJobId) return;
-    const { data } = await supabase.from('jobs').select('parameters').eq('id', selectedJobId).single();
-    if (data?.parameters) onCopy(data.parameters);
-    onClose();
-  };
-
-  return (
-    <Modal open={open} onClose={onClose}>
-      <Box sx={modalStyle}>
-        <Typography variant="h6">Copiar de Vaga</Typography>
-        {loading ? <CircularProgress /> : (
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Vaga</InputLabel>
-            <Select value={selectedJobId} onChange={(e) => setSelectedJobId(e.target.value)} label="Vaga">
-              {jobs.map(j => <MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}
-            </Select>
-          </FormControl>
-        )}
-        <Button onClick={handleConfirmCopy} variant="contained" fullWidth sx={{mt:2}} disabled={!selectedJobId}>Copiar</Button>
-      </Box>
-    </Modal>
-  );
+  useEffect(() => { if (open) { const f = async () => { const { data } = await supabase.from('jobs').select('id, title').neq('id', currentJobId).eq('status', 'active'); setJobs(data || []); }; f(); } }, [open, currentJobId]);
+  const handleConfirm = async () => { if (!selectedJobId) return; const { data } = await supabase.from('jobs').select('parameters').eq('id', selectedJobId).single(); if (data?.parameters) onCopy(data.parameters); onClose(); };
+  return ( <Modal open={open} onClose={onClose}><Box sx={modalStyle}><Typography variant="h6">Copiar Parâmetros</Typography><FormControl fullWidth margin="normal"><InputLabel>Vaga</InputLabel><Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga">{jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}</Select></FormControl><Button onClick={handleConfirm} variant="contained" fullWidth sx={{mt:2}} disabled={!selectedJobId}>Copiar</Button></Box></Modal> );
 };
 
+// --- SEÇÃO DE PARÂMETROS (BOTÃO "ADICIONAR" CORRIGIDO) ---
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
-  const handleChange = (i, f, v) => { 
-      const n = [...criteria]; 
-      n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; 
-      onCriteriaChange(n); 
-  };
+  const handleChange = (i, f, v) => { const n = [...criteria]; n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; onCriteriaChange(n); };
   const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
   return (
     <Box sx={{mt:2}}>
@@ -73,6 +35,7 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
                 <IconButton onClick={()=>onCriteriaChange(criteria.filter((_,idx)=>idx!==i))} color="error"><DeleteIcon/></IconButton>
             </Box>
         ))}
+        {/* CORREÇÃO: Botão renomeado para "Adicionar" */}
         <Button onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small">Adicionar</Button>
         <Typography color={total===100?'green':'red'} variant="caption" display="block" sx={{mt:1, fontWeight:'bold'}}>Total: {total}%</Typography>
     </Box>
@@ -80,7 +43,7 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
 };
 
 // --- PÁGINA PRINCIPAL ---
-const JobDetails = () => {
+export default function JobDetails() {
   const { jobId } = useParams();
   const [job, setJob] = useState(null);
   const [parameters, setParameters] = useState(null);
@@ -98,7 +61,8 @@ const JobDetails = () => {
       try {
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         setJob(jobData);
-        setParameters(jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] });
+        const params = jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] };
+        setParameters(params);
 
         const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', jobId);
         setApplicants(appsData || []);
@@ -113,60 +77,57 @@ const JobDetails = () => {
     fetchAllData();
   }, [jobId]);
 
-  // --- PROCESSAMENTO DOS DADOS PARA GRÁFICO E LISTAS ---
+  // --- PROCESSAMENTO (CORREÇÃO DE MATCH DE ID E CALCULADORA) ---
   const processedData = useMemo(() => {
     if (!parameters) return { chartData: [], evaluators: [] };
 
-    const evaluators = Array.from(new Set(allEvaluations.map(e => e.evaluator_id)))
-        .map(id => {
-            const ev = allEvaluations.find(e => e.evaluator_id === id);
-            return { id, name: ev.evaluator?.name || ev.evaluator_name || 'Desconhecido' };
-        });
+    const evaluators = Array.from(new Set(allEvaluations.map(e => e.evaluator_id))).map(id => {
+        const ev = allEvaluations.find(e => e.evaluator_id === id);
+        return { id, name: ev.evaluator?.name || ev.evaluator_name || 'Desconhecido' };
+    });
 
-    const data = applicants.map(app => {
-        // Filtra avaliações deste candidato
+    const chartData = applicants.map(app => {
+        // CORREÇÃO: Comparação de ID como String para evitar erro de tipo
         const appEvals = allEvaluations.filter(e => 
-            e.application_id === app.id && 
+            String(e.application_id) === String(app.id) && 
             (evaluatorFilter === 'all' || e.evaluator_id === evaluatorFilter)
         );
 
-        if (appEvals.length === 0) {
-            return { 
-                appId: app.id, name: app.candidate?.name || 'Sem Nome', 
-                triagem: 0, cultura: 0, tecnico: 0, total: 0, count: 0, hired: app.isHired 
-            };
-        }
-
-        // Calcula média das avaliações encontradas
+        // Recalcula médias usando a calculadora universal
         let sumT = 0, sumC = 0, sumTc = 0, count = 0;
-        
+        let sumTotal = 0;
+
         appEvals.forEach(ev => {
-            // RECALCULA SEMPRE PARA GARANTIR CONSISTÊNCIA
             const scores = processEvaluation(ev, parameters);
-            sumT += scores.triagem;
-            sumC += scores.cultura;
-            sumTc += scores.tecnico;
-            count++;
+            // Só conta se tiver nota válida
+            if (scores.total > 0 || scores.triagem > 0 || scores.cultura > 0 || scores.tecnico > 0) {
+                sumT += scores.triagem;
+                sumC += scores.cultura;
+                sumTc += scores.tecnico;
+                sumTotal += scores.total;
+                count++;
+            }
         });
 
+        // Médias (0-10)
         const avgT = count > 0 ? sumT / count : 0;
         const avgC = count > 0 ? sumC / count : 0;
         const avgTc = count > 0 ? sumTc / count : 0;
-        
-        // Média Geral dos 3 pilares
-        const general = (avgT + avgC + avgTc) / 3;
+        const avgGeneral = count > 0 ? sumTotal / count : 0;
 
         return {
             appId: app.id,
-            name: app.candidate?.name,
-            triagem: avgT, cultura: avgC, tecnico: avgTc, 
-            total: general,
+            name: app.candidate?.name || 'Sem Nome',
+            triagem: Number(avgT.toFixed(2)),
+            cultura: Number(avgC.toFixed(2)),
+            tecnico: Number(avgTc.toFixed(2)),
+            total: Number(avgGeneral.toFixed(2)), // Essa nota deve bater com a tela do candidato
             count: count,
             hired: app.isHired
         };
     }).sort((a, b) => b.total - a.total);
 
-    return { chartData: data, evaluators };
+    return { chartData, evaluators };
   }, [applicants, allEvaluations, evaluatorFilter, parameters]);
 
   const handleHireToggle = async (appId, currentStatus) => {
@@ -177,7 +138,7 @@ const JobDetails = () => {
 
   const handleSaveParameters = async () => {
       await supabase.from('jobs').update({ parameters }).eq('id', jobId);
-      setFeedback({ open: true, message: 'Parâmetros salvos!', severity: 'success' });
+      setFeedback({ open: true, message: 'Salvo!', severity: 'success' });
   };
 
   if (loading) return <Box p={5} display="flex" justifyContent="center"><CircularProgress /></Box>;
@@ -188,7 +149,6 @@ const JobDetails = () => {
         <Container maxWidth="xl" sx={{ mt: 4 }}>
             <Paper sx={{ mb: 2 }}><Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered><Tab label="Candidatos" /><Tab label="Classificação" /><Tab label="Configurações" /></Tabs></Paper>
             
-            {/* ABA CANDIDATOS */}
             {tabValue === 0 && (
                 <Paper sx={{ p: 2 }}>
                     <Table>
@@ -198,16 +158,13 @@ const JobDetails = () => {
                                 <TableCell>{d.name}</TableCell>
                                 <TableCell>{applicants.find(a => a.id === d.appId)?.candidate?.email}</TableCell>
                                 <TableCell align="center">{d.count}</TableCell>
-                                <TableCell align="center">
-                                    <Chip label={d.total.toFixed(1)} color={d.total >= 8 ? 'success' : d.total >= 5 ? 'warning' : 'default'} />
-                                </TableCell>
+                                <TableCell align="center"><Chip label={d.total.toFixed(1)} color={d.total >= 8 ? 'success' : d.total >= 5 ? 'warning' : 'default'} /></TableCell>
                             </TableRow>
                         ))}</TableBody>
                     </Table>
                 </Paper>
             )}
 
-            {/* ABA CLASSIFICAÇÃO */}
             {tabValue === 1 && (
                 <Grid container spacing={3} sx={{ mt: 1 }}>
                     <Grid item xs={12} md={8}>
@@ -222,21 +179,25 @@ const JobDetails = () => {
                                     </Select>
                                 </FormControl>
                             </Box>
-                            <Box sx={{ height: 400 }}>
-                                <ResponsiveContainer>
-                                    <BarChart data={processedData.chartData} layout="vertical" margin={{ left: 50 }}>
-                                        <CartesianGrid strokeDasharray="3 3" />
-                                        <XAxis type="number" domain={[0, 10]} />
-                                        <YAxis dataKey="name" type="category" width={100} style={{fontSize: '0.8rem'}} />
-                                        <Tooltip formatter={(val) => Number(val).toFixed(1)} />
-                                        <Legend />
-                                        <Bar dataKey="triagem" name="Triagem" fill="#90caf9" />
-                                        <Bar dataKey="cultura" name="Cultura" fill="#a5d6a7" />
-                                        <Bar dataKey="tecnico" name="Técnico" fill="#ffcc80" />
-                                        <ReferenceLine x={5} stroke="red" strokeDasharray="3 3" label="Média 5" />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </Box>
+                            {processedData.chartData.some(d => d.total > 0) ? (
+                                <Box sx={{ height: 400 }}>
+                                    <ResponsiveContainer>
+                                        <BarChart data={processedData.chartData} layout="vertical" margin={{ left: 50 }}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis type="number" domain={[0, 10]} />
+                                            <YAxis dataKey="name" type="category" width={100} style={{fontSize: '0.8rem'}} />
+                                            <Tooltip formatter={(val) => Number(val).toFixed(1)} />
+                                            <Legend />
+                                            <Bar dataKey="triagem" name="Triagem" fill="#90caf9" />
+                                            <Bar dataKey="cultura" name="Cultura" fill="#a5d6a7" />
+                                            <Bar dataKey="tecnico" name="Técnico" fill="#ffcc80" />
+                                            <ReferenceLine x={5} stroke="red" strokeDasharray="3 3" label="Média 5" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </Box>
+                            ) : (
+                                <Box height={300} display="flex" alignItems="center" justifyContent="center" color="text.secondary">Sem dados de avaliação.</Box>
+                            )}
                         </Paper>
                     </Grid>
                     <Grid item xs={12} md={4}>
@@ -260,16 +221,12 @@ const JobDetails = () => {
                 </Grid>
             )}
 
-            {/* ABA CONFIGURAÇÕES */}
             {tabValue === 2 && (
                 <Box p={3}>
-                    <Box display="flex" justifyContent="space-between" mb={2}>
-                        <Typography variant="h6">Parâmetros</Typography>
-                        <Button variant="outlined" startIcon={<ContentCopyIcon/>} onClick={() => setIsCopyModalOpen(true)}>Copiar</Button>
-                    </Box>
                     <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>Triagem</Typography><ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} /></Paper>
                     <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>Cultura</Typography><ParametersSection criteria={parameters?.cultura || []} onCriteriaChange={(c) => setParameters({...parameters, cultura: c})} /></Paper>
                     <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>Técnico</Typography><ParametersSection criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} /></Paper>
+                    <Paper variant="outlined" sx={{p:2}}><Typography>Notas</Typography><Grid container spacing={2} sx={{mt:1}}>{parameters?.notas?.map((n, i) => <Grid item xs={6} key={i}><TextField label={n.nome} value={n.valor} onChange={(e) => { const newN = [...parameters.notas]; newN[i].valor = e.target.value; setParameters({...parameters, notas: newN}) }} size="small" /></Grid>)}</Grid></Paper>
                     <Button variant="contained" sx={{mt:2}} onClick={handleSaveParameters}>Salvar Parâmetros</Button>
                 </Box>
             )}
@@ -278,6 +235,4 @@ const JobDetails = () => {
         <Snackbar open={feedback.open} autoHideDuration={4000} onClose={() => setFeedback({...feedback, open:false})}><Alert severity={feedback.severity}>{feedback.message}</Alert></Snackbar>
     </Box>
   );
-};
-
-export default JobDetails;
+}
