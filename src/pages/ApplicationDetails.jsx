@@ -5,7 +5,7 @@ import EvaluationForm from '../components/EvaluationForm';
 import { 
     ArrowLeft, Mail, MapPin, BookOpen, FileText, Calendar, Download, TrendingUp, Users 
 } from 'lucide-react';
-// CORREÇÃO DO ERRO DE BUILD: Imports explícitos do MUI
+// Imports do Material UI corrigidos e explícitos
 import { 
     Box, Container, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar, Chip
 } from '@mui/material';
@@ -82,6 +82,8 @@ export default function ApplicationDetails() {
     if (!edu || typeof edu !== 'object') return <Typography variant="caption" color="text.secondary">Não informado</Typography>;
     
     const nivelMap = { medio: 'Ensino Médio', tecnico: 'Técnico', superior: 'Superior', pos: 'Pós', mestrado: 'Mestrado' };
+    
+    // CORREÇÃO AQUI: Box fechando corretamente com Box
     return (
       <Box sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 1 }}>
         <Typography variant="caption" display="block" fontWeight="bold" sx={{fontSize: '0.75rem'}}>
@@ -95,7 +97,7 @@ export default function ApplicationDetails() {
              {edu.date || edu.period}
            </Typography>
         )}
-      </div>
+      </Box>
     );
   };
 
