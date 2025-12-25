@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase/client';
 import { Save, UserCheck, MessageSquare } from 'lucide-react';
-import { Box, Typography, Paper, Grid, Button, TextField, Divider, Avatar } from '@mui/material';
+import { Box, Typography, Paper, Grid, Button, TextField } from '@mui/material';
 import { processEvaluation } from '../utils/evaluationLogic';
 
 export default function EvaluationForm({ applicationId, jobParameters, initialData, allEvaluations, onSaved }) {
@@ -120,20 +120,20 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             <TextField multiline rows={2} fullWidth variant="outlined" size="small" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Comentários..." sx={{ bgcolor: '#fff' }} InputProps={{ style: { fontSize: '0.8rem' } }} />
           </Paper>
 
-          {/* HISTÓRICO DE ANOTAÇÕES */}
-          <Box sx={{ mt: 3 }}>
+          {/* HISTÓRICO DE TODAS AS ANOTAÇÕES */}
+          <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
               <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <MessageSquare size={14} /> Histórico Geral
+                  <MessageSquare size={14} /> Histórico de Observações ({allEvaluations?.length || 0})
               </Typography>
               {allEvaluations && allEvaluations.length > 0 ? allEvaluations.map((ev, i) => (
                   <Box key={i} sx={{ mb: 1, p: 1.5, bgcolor: '#f9fafb', borderRadius: 1, border: '1px solid #eee' }}>
                       <Box display="flex" justifyContent="space-between" mb={0.5}>
-                          <Typography variant="caption" fontWeight="bold" color="primary">{ev.evaluator?.name || ev.evaluator_name || 'Usuário'}</Typography>
+                          <Typography variant="caption" fontWeight="bold" color="primary">{ev.evaluator?.name || ev.evaluator_name || 'Avaliador'}</Typography>
                           <Typography variant="caption" color="text.secondary">Nota: {Number(ev.final_score).toFixed(1)}</Typography>
                       </Box>
                       <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#444' }}>{ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentários.'}</Typography>
                   </Box>
-              )) : <Typography variant="caption" color="text.secondary">Nenhuma avaliação anterior.</Typography>}
+              )) : <Typography variant="caption" color="text.secondary">Nenhuma avaliação registrada ainda.</Typography>}
           </Box>
       </Box>
 

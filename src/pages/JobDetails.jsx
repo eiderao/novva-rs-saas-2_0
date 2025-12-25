@@ -3,28 +3,33 @@ import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import { 
     Container, Typography, Box, AppBar, Toolbar, Button, CircularProgress, 
-    Alert, Paper, Tabs, Tab, TextField, IconButton, Snackbar,
+    Paper, Tabs, Tab, TextField, IconButton, Snackbar,
     List, ListItem, ListItemText, Divider, Grid,
     Table, TableHead, TableRow, TableCell, TableBody, Checkbox,
-    FormControl, InputLabel, Select, MenuItem, Chip, Modal
+    FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert
 } from '@mui/material';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Delete as DeleteIcon, ContentCopy as ContentCopyIcon } from '@mui/icons-material';
 import { processEvaluation } from '../utils/evaluationLogic';
 
-// --- MODAL DE CÓPIA ---
 const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 500, bgcolor: 'background.paper', boxShadow: 24, p: 4 };
+
+// Modal de Cópia
 const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState('');
   useEffect(() => { if (open) { const f = async () => { const { data } = await supabase.from('jobs').select('id, title').neq('id', currentJobId).eq('status', 'active'); setJobs(data || []); }; f(); } }, [open, currentJobId]);
   const handleConfirm = async () => { if (!selectedJobId) return; const { data } = await supabase.from('jobs').select('parameters').eq('id', selectedJobId).single(); if (data?.parameters) onCopy(data.parameters); onClose(); };
-  return ( <Modal open={open} onClose={onClose}><Box sx={modalStyle}><Typography variant="h6">Copiar Parâmetros</Typography><FormControl fullWidth margin="normal"><InputLabel>Vaga</InputLabel><Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga">{jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}</Select></FormControl><Button onClick={handleConfirm} variant="contained" fullWidth sx={{mt:2}} disabled={!selectedJobId}>Copiar</Button></Box></Modal> );
+  return ( <Modal open={open} onClose={onClose}><Box sx={modalStyle}><Typography variant="h6">Copiar de Vaga</Typography><FormControl fullWidth margin="normal"><InputLabel>Vaga</InputLabel><Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga">{jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}</Select></FormControl><Button onClick={handleConfirm} variant="contained" fullWidth sx={{mt:2}} disabled={!selectedJobId}>Copiar</Button></Box></Modal> );
 };
 
-// --- SEÇÃO DE PARÂMETROS (BOTÃO "ADICIONAR" CORRIGIDO) ---
+// Seção de Parâmetros (Botão Adicionar corrigido e Soma Numérica)
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
-  const handleChange = (i, f, v) => { const n = [...criteria]; n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; onCriteriaChange(n); };
+  const handleChange = (i, f, v) => { 
+      const n = [...criteria]; 
+      n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; 
+      onCriteriaChange(n); 
+  };
   const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
   return (
     <Box sx={{mt:2}}>
@@ -35,14 +40,13 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
                 <IconButton onClick={()=>onCriteriaChange(criteria.filter((_,idx)=>idx!==i))} color="error"><DeleteIcon/></IconButton>
             </Box>
         ))}
-        {/* CORREÇÃO: Botão renomeado para "Adicionar" */}
+        {/* CORREÇÃO: Texto do botão alterado para ADICIONAR */}
         <Button onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small">Adicionar</Button>
         <Typography color={total===100?'green':'red'} variant="caption" display="block" sx={{mt:1, fontWeight:'bold'}}>Total: {total}%</Typography>
     </Box>
   );
 };
 
-// --- PÁGINA PRINCIPAL ---
 export default function JobDetails() {
   const { jobId } = useParams();
   const [job, setJob] = useState(null);
@@ -61,6 +65,7 @@ export default function JobDetails() {
       try {
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         setJob(jobData);
+        // Garante objeto de parâmetros válido
         const params = jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] };
         setParameters(params);
 
@@ -69,6 +74,7 @@ export default function JobDetails() {
 
         const appIds = (appsData || []).map(a => a.id);
         if (appIds.length > 0) {
+            // Busca TODAS as avaliações para fazer o cruzamento no front
             const { data: evalsData } = await supabase.from('evaluations').select('*, evaluator:users(email, name)').in('application_id', appIds);
             setAllEvaluations(evalsData || []);
         }
@@ -77,29 +83,32 @@ export default function JobDetails() {
     fetchAllData();
   }, [jobId]);
 
-  // --- PROCESSAMENTO (CORREÇÃO DE MATCH DE ID E CALCULADORA) ---
+  // Lógica de Processamento Unificada
   const processedData = useMemo(() => {
     if (!parameters) return { chartData: [], evaluators: [] };
 
+    // Lista única de avaliadores
     const evaluators = Array.from(new Set(allEvaluations.map(e => e.evaluator_id))).map(id => {
         const ev = allEvaluations.find(e => e.evaluator_id === id);
         return { id, name: ev.evaluator?.name || ev.evaluator_name || 'Desconhecido' };
     });
 
     const chartData = applicants.map(app => {
-        // CORREÇÃO: Comparação de ID como String para evitar erro de tipo
+        // Filtra avaliações para este candidato E aplica o filtro de avaliador se selecionado
         const appEvals = allEvaluations.filter(e => 
+            // Comparação de string para segurança
             String(e.application_id) === String(app.id) && 
             (evaluatorFilter === 'all' || e.evaluator_id === evaluatorFilter)
         );
 
-        // Recalcula médias usando a calculadora universal
         let sumT = 0, sumC = 0, sumTc = 0, count = 0;
         let sumTotal = 0;
-
+        
         appEvals.forEach(ev => {
+            // Usa a calculadora universal para garantir notas corretas
             const scores = processEvaluation(ev, parameters);
-            // Só conta se tiver nota válida
+            
+            // Só conta se tiver alguma nota válida
             if (scores.total > 0 || scores.triagem > 0 || scores.cultura > 0 || scores.tecnico > 0) {
                 sumT += scores.triagem;
                 sumC += scores.cultura;
@@ -113,16 +122,15 @@ export default function JobDetails() {
         const avgT = count > 0 ? sumT / count : 0;
         const avgC = count > 0 ? sumC / count : 0;
         const avgTc = count > 0 ? sumTc / count : 0;
-        const avgGeneral = count > 0 ? sumTotal / count : 0;
+        // Média Geral dos avaliadores
+        const general = count > 0 ? sumTotal / count : 0;
 
         return {
             appId: app.id,
             name: app.candidate?.name || 'Sem Nome',
-            triagem: Number(avgT.toFixed(2)),
-            cultura: Number(avgC.toFixed(2)),
-            tecnico: Number(avgTc.toFixed(2)),
-            total: Number(avgGeneral.toFixed(2)), // Essa nota deve bater com a tela do candidato
-            count: count,
+            triagem: avgT, cultura: avgC, tecnico: avgTc, 
+            total: general,
+            count: count, // Número de avaliações
             hired: app.isHired
         };
     }).sort((a, b) => b.total - a.total);
@@ -226,7 +234,6 @@ export default function JobDetails() {
                     <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>Triagem</Typography><ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} /></Paper>
                     <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>Cultura</Typography><ParametersSection criteria={parameters?.cultura || []} onCriteriaChange={(c) => setParameters({...parameters, cultura: c})} /></Paper>
                     <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>Técnico</Typography><ParametersSection criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} /></Paper>
-                    <Paper variant="outlined" sx={{p:2}}><Typography>Notas</Typography><Grid container spacing={2} sx={{mt:1}}>{parameters?.notas?.map((n, i) => <Grid item xs={6} key={i}><TextField label={n.nome} value={n.valor} onChange={(e) => { const newN = [...parameters.notas]; newN[i].valor = e.target.value; setParameters({...parameters, notas: newN}) }} size="small" /></Grid>)}</Grid></Paper>
                     <Button variant="contained" sx={{mt:2}} onClick={handleSaveParameters}>Salvar Parâmetros</Button>
                 </Box>
             )}
