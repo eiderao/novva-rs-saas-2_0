@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import { format, parseISO } from 'date-fns';
-import { 
-    Container, Typography, Box, AppBar, Toolbar, Button, CircularProgress, 
+import { 
+    Container, Typography, Box, AppBar, Toolbar, Button, CircularProgress, 
     Alert, Paper, Tabs, Tab, TextField, IconButton, Snackbar, InputAdornment,
     List, ListItem, ListItemText, Divider, Grid,
     Table, TableHead, TableRow, TableCell, TableBody, Checkbox,
@@ -13,11 +13,11 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine 
 } from 'recharts';
 import { Delete as DeleteIcon, ContentCopy as ContentCopyIcon, FileCopy as FileCopyIcon } from '@mui/icons-material';
+// Importação corrigida (agora o arquivo existe)
 import { formatStatus } from '../utils/formatters';
 
 const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 500, bgcolor: 'background.paper', boxShadow: 24, p: 4 };
 
-// MODAL DE CÓPIA DE PARÂMETROS
 const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState('');
@@ -73,7 +73,6 @@ const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   );
 };
 
-// SEÇÃO DE EDIÇÃO DE PARÂMETROS
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
   const handleItemChange = (index, field, value) => { const newCriteria = [...criteria]; newCriteria[index] = { ...newCriteria[index], [field]: field === 'weight' ? Number(value) : value }; onCriteriaChange(newCriteria); };
   const addCriterion = () => { if (criteria.length < 10) onCriteriaChange([...criteria, { name: '', weight: 0 }]); };
@@ -131,7 +130,6 @@ const JobDetails = () => {
     fetchAllData();
   }, [jobId]);
 
-  // PROCESSAMENTO DO GRÁFICO (Notas 0-10)
   const processedClassificationData = useMemo(() => {
     const evaluatorsList = Array.from(new Set(allEvaluations.map(e => e.evaluator_id)))
         .map(id => {
@@ -158,12 +156,9 @@ const JobDetails = () => {
             count++;
         });
 
-        // Médias (0-10)
         const avgTriagem = count > 0 ? sumTriagem / count : 0;
         const avgCultura = count > 0 ? sumCultura / count : 0;
         const avgTecnico = count > 0 ? sumTecnico / count : 0;
-        
-        // Média Geral (0-10)
         const generalAvg = (avgTriagem + avgCultura + avgTecnico) / 3;
 
         return {
@@ -222,9 +217,8 @@ const JobDetails = () => {
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis type="number" domain={[0, 10]} />
                                 <YAxis dataKey="name" type="category" width={100} style={{fontSize: '0.8rem'}} />
-                                <Tooltip formatter={(val) => val.toFixed(2)} />
+                                <Tooltip formatter={(val) => Number(val).toFixed(2)} />
                                 <Legend />
-                                {/* Exibição lado a lado para comparar pilares */}
                                 <Bar dataKey="triagem" name="Triagem" fill="#90caf9" />
                                 <Bar dataKey="cultura" name="Cultura" fill="#a5d6a7" />
                                 <Bar dataKey="tecnico" name="Técnico" fill="#ffcc80" />

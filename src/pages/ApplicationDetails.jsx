@@ -5,9 +5,8 @@ import EvaluationForm from '../components/EvaluationForm';
 import { 
     ArrowLeft, Mail, MapPin, BookOpen, FileText, Calendar, Download, TrendingUp, Users 
 } from 'lucide-react';
-// Imports explícitos para evitar erro de build
 import { 
-    Box, Container, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar
+    Box, Container, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar 
 } from '@mui/material';
 
 export default function ApplicationDetails() {
@@ -57,7 +56,7 @@ export default function ApplicationDetails() {
               if (myEval) {
                   setCurrentUserEvaluation({
                       ...myEval.scores,
-                      anotacoes_gerais: myEval.notes || myEval.scores?.anotacoes_gerais,
+                      anotacoes_gerais: myEval.notes || myEval.scores.anotacoes_gerais,
                       final_score: myEval.final_score
                   });
               } else {
@@ -129,7 +128,6 @@ export default function ApplicationDetails() {
       </Button>
 
       <Grid container spacing={2}>
-        {/* LADO ESQUERDO: PERFIL DO CANDIDATO */}
         <Grid item xs={12} md={3}>
           <Paper sx={{ p: 2, height: '100%' }} elevation={0} variant="outlined">
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
@@ -142,7 +140,6 @@ export default function ApplicationDetails() {
               <Typography variant="caption" color="text.secondary">
                 {job?.title}
               </Typography>
-              
               <Box sx={{ width: '100%' }}>
                 {renderScoreBadges(appData.score_general, myScore, evaluatorsCount)}
               </Box>
@@ -180,7 +177,6 @@ export default function ApplicationDetails() {
           </Paper>
         </Grid>
 
-        {/* LADO DIREITO: FORMULÁRIO DE AVALIAÇÃO */}
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
              <EvaluationForm 
