@@ -25,13 +25,13 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     }
   }, [initialData]);
 
-  // Calcula visualmente em tempo real
+  // Calcula em tempo real usando a lógica centralizada
   const currentScores = processEvaluation({ scores: answers }, jobParameters);
 
   const handleSelection = (section, criteriaName, noteId) => {
       setAnswers(prev => {
           const newSection = { ...prev[section] };
-          // Toggle: se clicar no mesmo, desmarca
+          // Toggle: clicar de novo desmarca
           if (newSection[criteriaName] === noteId) delete newSection[criteriaName];
           else newSection[criteriaName] = noteId;
           return { ...prev, [section]: newSection };
@@ -39,6 +39,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
   };
 
   const updateCandidateGlobalScore = async () => {
+      // 1. Pega todas as notas finais já calculadas
       const { data: allEvaluations } = await supabase
           .from('evaluations')
           .select('final_score')
@@ -46,6 +47,8 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       if (!allEvaluations?.length) return;
 
+      // 2. Média Aritmética Simples dos Avaliadores
+      // Ex: (AvaliadorA[10] + AvaliadorB[8]) / 2 = 9.0
       const sum = allEvaluations.reduce((acc, curr) => acc + Number(curr.final_score), 0);
       const globalAverage = (sum / allEvaluations.length).toFixed(2);
 
@@ -58,6 +61,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não logado");
 
+      // Recalcula scores finais com a lógica correta antes de salvar
       const finalCalc = processEvaluation({ scores: answers }, jobParameters);
 
       const payload = {
@@ -65,7 +69,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
         cultura: answers.cultura,
         tecnico: answers.tecnico,
         anotacoes_gerais: notes,
-        pillar_scores: finalCalc, // Salva os parciais calculados
+        pillar_scores: finalCalc, // Salva os parciais
         evaluator_name: user.email,
         updated_at: new Date()
       };
@@ -77,7 +81,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             evaluator_id: user.id,
             scores: payload, 
             notes: notes,
-            final_score: finalCalc.total
+            final_score: finalCalc.total // Essa é a nota correta (ex: 10.0)
         }, { onConflict: 'application_id, evaluator_id' });
 
       if (evalError) throw evalError;
@@ -94,13 +98,13 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     }
   };
 
+  // Renderiza box do pilar
   const renderSectionCompact = (key, title, criteria) => {
     if (!criteria?.length) return null;
     const ratingScale = jobParameters.notas || [];
     
-    // Calcula nota deste pilar específico usando a lógica centralizada
-    const tempScores = processEvaluation({ scores: answers }, jobParameters);
-    const myScore = tempScores[key];
+    // Pega a nota parcial calculada
+    const myScore = currentScores[key]; // Pode ser null ou número
 
     return (
       <Paper variant="outlined" sx={{ p: 1.5, mb: 2, borderColor: '#e0e0e0', bgcolor: '#fff' }}>
@@ -108,8 +112,8 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#1976d2' }}>
                 {title}
             </Typography>
-            <Typography variant="caption" sx={{ fontWeight: 'bold', bgcolor: '#e3f2fd', px: 1, py: 0.5, borderRadius: 1 }}>
-                Nota: {myScore}
+            <Typography variant="caption" sx={{ fontWeight: 'bold', bgcolor: myScore !== null ? '#e3f2fd' : '#f5f5f5', px: 1, py: 0.5, borderRadius: 1 }}>
+                Nota: {myScore !== null ? myScore : '-'}
             </Typography>
         </Box>
 
@@ -168,12 +172,12 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
           <TextField
             label="Anotações Gerais" multiline rows={2} fullWidth variant="outlined" size="small"
             value={notes} onChange={e => setNotes(e.target.value)} placeholder="Comentários..."
-            sx={{ mt: 1, bgcolor: '#fff' }}
+            sx={{ mt: 1, bgcolor: '#fff' }} InputProps={{ style: { fontSize: '0.8rem' } }} InputLabelProps={{ style: { fontSize: '0.8rem' } }}
           />
       </Box>
 
       <Box sx={{ mt: 2, pt: 1, borderTop: '1px solid #eee' }}>
-        <Button onClick={handleSave} disabled={saving} variant="contained" fullWidth color="primary" startIcon={<Save size={16}/>}>
+        <Button onClick={handleSave} disabled={saving} variant="contained" fullWidth color="primary" startIcon={<Save size={16}/>} sx={{ textTransform: 'none', fontWeight: 'bold' }}>
             {saving ? "Salvando..." : "Salvar Minha Nota"}
         </Button>
       </Box>

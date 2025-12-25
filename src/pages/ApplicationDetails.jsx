@@ -2,12 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import EvaluationForm from '../components/EvaluationForm';
-import { 
-    ArrowLeft, Mail, MapPin, BookOpen, FileText, Calendar, Download, TrendingUp, Users 
-} from 'lucide-react';
-import { 
-    Box, Container, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar 
-} from '@mui/material';
+import { ArrowLeft, Mail, MapPin, BookOpen, FileText, Calendar, Download, TrendingUp, Users } from 'lucide-react';
+import { Box, Container, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar } from '@mui/material';
+import { processEvaluation } from '../utils/evaluationLogic';
+import { formatPhone, formatUrl } from '../utils/formatters';
 
 export default function ApplicationDetails() {
   const { appId } = useParams();
@@ -16,6 +14,7 @@ export default function ApplicationDetails() {
   const [appData, setAppData] = useState(null);
   const [job, setJob] = useState(null);
   const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null);
+  const [globalScore, setGlobalScore] = useState(0);
   const [evaluatorsCount, setEvaluatorsCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
@@ -28,6 +27,7 @@ export default function ApplicationDetails() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
+      // 1. Busca Aplicação
       const { data: application, error: appError } = await supabase
         .from('applications')
         .select('*, candidates(*)')
@@ -39,25 +39,49 @@ export default function ApplicationDetails() {
       const candidateObj = Array.isArray(application.candidates) ? application.candidates[0] : application.candidates;
       setAppData({ ...application, candidate: candidateObj });
 
+      // 2. Busca Parâmetros
+      let jobParams = {};
       if (application.jobId) {
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', application.jobId).single();
         setJob(jobData);
+        jobParams = jobData.parameters || {};
       }
 
+      // 3. Busca Avaliações
       const { data: allEvals, error: evalsError } = await supabase
         .from('evaluations')
-        .select('evaluator_id, scores, notes, final_score')
+        .select('*')
         .eq('application_id', appId);
 
       if (!evalsError && allEvals) {
           setEvaluatorsCount(allEvals.length);
+          
+          // Calcula média GLOBAL (Média das notas finais dos avaliadores)
+          let sumTotal = 0;
+          let validEvaluations = 0;
+
+          allEvals.forEach(ev => {
+              // Recalcula para garantir consistência (caso o banco tenha valor antigo)
+              const scores = processEvaluation(ev, jobParams);
+              // Só soma se a nota for > 0 (evita avaliadores que só abriram e salvaram vazio)
+              if (scores.total > 0) {
+                  sumTotal += scores.total;
+                  validEvaluations++;
+              }
+          });
+          
+          const finalGlobal = validEvaluations > 0 ? (sumTotal / validEvaluations) : 0;
+          setGlobalScore(finalGlobal);
+
           if (user) {
               const myEval = allEvals.find(e => e.evaluator_id === user.id);
               if (myEval) {
+                  // Prepara dados para o form e para a badge "Minha Nota"
+                  const myScores = processEvaluation(myEval, jobParams);
                   setCurrentUserEvaluation({
                       ...myEval.scores,
-                      anotacoes_gerais: myEval.notes || myEval.scores.anotacoes_gerais,
-                      final_score: myEval.final_score
+                      anotacoes_gerais: myEval.notes || myEval.scores?.anotacoes_gerais,
+                      final_score: myScores.total
                   });
               } else {
                   setCurrentUserEvaluation(null);
@@ -87,18 +111,18 @@ export default function ApplicationDetails() {
     );
   };
 
-  const renderScoreBadges = (globalScore, myScore, count) => {
+  const renderScoreBadges = (gScore, myScore, count) => {
     const getBgColor = (s) => s >= 8 ? '#e8f5e9' : s >= 5 ? '#fff3e0' : '#ffebee';
     const getTextColor = (s) => s >= 8 ? '#2e7d32' : s >= 5 ? '#ef6c00' : '#c62828';
 
     return (
         <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-            <Box sx={{ flex: 1, bgcolor: getBgColor(globalScore), p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
+            <Box sx={{ flex: 1, bgcolor: getBgColor(gScore), p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
                 <Typography variant="caption" display="block" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.65rem' }}>
                     Nota Global ({count})
                 </Typography>
-                <Typography variant="h5" sx={{ fontWeight: 900, color: getTextColor(globalScore), lineHeight: 1 }}>
-                    {Number(globalScore || 0).toFixed(1)}
+                <Typography variant="h5" sx={{ fontWeight: 900, color: getTextColor(gScore), lineHeight: 1 }}>
+                    {Number(gScore || 0).toFixed(1)}
                 </Typography>
             </Box>
             
@@ -119,6 +143,7 @@ export default function ApplicationDetails() {
 
   const params = job?.parameters || {};
   const formData = appData.formData || {};
+  // Usa a nota calculada na hora (myScores.total) se disponível, ou 0
   const myScore = currentUserEvaluation?.final_score;
 
   return (
@@ -140,8 +165,9 @@ export default function ApplicationDetails() {
               <Typography variant="caption" color="text.secondary">
                 {job?.title}
               </Typography>
+              
               <Box sx={{ width: '100%' }}>
-                {renderScoreBadges(appData.score_general, myScore, evaluatorsCount)}
+                {renderScoreBadges(globalScore, myScore, evaluatorsCount)}
               </Box>
             </Box>
             
