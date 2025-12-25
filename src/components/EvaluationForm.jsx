@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase/client';
-import { Save, UserCheck, AlertCircle } from 'lucide-react';
+import { Save, UserCheck } from 'lucide-react';
+import { 
+  Box, Typography, Paper, Grid, Button, TextField, 
+  Tooltip, Divider 
+} from '@mui/material';
 
 export default function EvaluationForm({ applicationId, jobParameters, initialData, onSaved }) {
-  // Estrutura para armazenar as respostas deste avaliador específico
   const [answers, setAnswers] = useState({
     triagem: initialData?.triagem || {},
     cultura: initialData?.cultura || {},
@@ -13,7 +16,6 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
   const [notes, setNotes] = useState(initialData?.anotacoes_gerais || '');
   const [saving, setSaving] = useState(false);
 
-  // Carrega dados iniciais se existirem (edição)
   useEffect(() => {
     if (initialData) {
         setAnswers({
@@ -25,9 +27,9 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     }
   }, [initialData]);
 
-  // --- LÓGICA DE CÁLCULO INDIVIDUAL (COM NORMALIZAÇÃO) ---
+  // --- CÁLCULO DO PILAR (0 a 10) ---
   const calculatePillarScore = (sectionName, criteriaList) => {
-    if (!criteriaList || criteriaList.length === 0) return null; // Retorna null se não houver critérios
+    if (!criteriaList || criteriaList.length === 0) return null;
     
     const ratingParams = jobParameters.notas || [];
     let totalScore = 0;
@@ -36,86 +38,70 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
     criteriaList.forEach(criterion => {
         const noteId = answers[sectionName]?.[criterion.name];
-        
-        // Só calcula se o usuário tiver selecionado uma nota (Ignora "Não Avaliado")
         if (noteId) {
             const noteObj = ratingParams.find(n => n.id === noteId);
             if (noteObj) {
                 hasAnswers = true;
                 const weight = Number(criterion.weight) || 0;
-                
-                // Soma ponderada bruta: Nota * Peso
                 totalScore += (Number(noteObj.valor) * weight);
-                
-                // Acumula o peso total do que foi respondido
                 totalWeightAnswered += weight;
             }
         }
     });
 
-    if (!hasAnswers || totalWeightAnswered === 0) return null; // Pilar não avaliado por este usuário
+    if (!hasAnswers || totalWeightAnswered === 0) return null;
 
-    // NORMALIZAÇÃO: Regra de três para projetar a nota para 100% do pilar
-    // Ex: Se respondi itens que somam 50% de peso e tirei nota máxima neles, 
-    // minha nota deve ser máxima no pilar, e não metade.
-    // Fórmula: (Pontos Obtidos / Peso Respondido)
-    // Se a escala de notas é 0-10, o resultado aqui será 0-10.
+    // Normaliza para 100% do peso se o usuário não respondeu tudo
+    // Resultado: 0 a 10
     return (totalScore / totalWeightAnswered).toFixed(2);
+  };
+
+  // --- CÁLCULO TOTAL DO AVALIADOR (Média dos 3 Pilares) ---
+  const calculateMyTotalScore = () => {
+      const s1 = parseFloat(calculatePillarScore('triagem', jobParameters.triagem) || 0);
+      const s2 = parseFloat(calculatePillarScore('cultura', jobParameters.cultura) || 0);
+      const s3 = parseFloat(calculatePillarScore('tecnico', jobParameters.tecnico || jobParameters['tÃ©cnico'] || jobParameters['técnico']) || 0);
+
+      // Regra 2.2.2: Média entre os 3 pilares
+      // Se um pilar for 0 (não avaliado), ele puxa a média para baixo (conceito de penalidade por omissão de pilar inteiro), 
+      // ou dividimos apenas pelos pilares avaliados? 
+      // Pelo seu requisito "Média entre os 3 pilares", assumo divisão por 3 fixa.
+      const avg = (s1 + s2 + s3) / 3;
+      return avg.toFixed(2);
   };
 
   const handleSelection = (section, criteriaName, noteId) => {
       setAnswers(prev => {
           const newSection = { ...prev[section] };
-          
-          // Se clicar na mesma nota, desmarca (permite deixar "Não Avaliado")
           if (newSection[criteriaName] === noteId) {
               delete newSection[criteriaName];
           } else {
               newSection[criteriaName] = noteId;
           }
-
           return { ...prev, [section]: newSection };
       });
   };
 
-  // Função auxiliar para recalcular a média global de TODOS os avaliadores no banco
+  // Atualiza a média global do candidato (Regra 2.2.3: Média de todos os avaliadores)
   const updateCandidateGlobalScore = async () => {
-      // 1. Busca TODAS as avaliações deste candidato
+      // 1. Busca todas as avaliações
       const { data: allEvaluations, error: fetchError } = await supabase
           .from('evaluations')
-          .select('scores')
+          .select('final_score')
           .eq('application_id', applicationId);
 
       if (fetchError) throw fetchError;
 
-      // 2. Calcula a média por pilar separadamente
-      let sumTriagem = 0, countTriagem = 0;
-      let sumCultura = 0, countCultura = 0;
-      let sumTecnico = 0, countTecnico = 0;
+      if (allEvaluations.length === 0) return;
 
-      allEvaluations.forEach(ev => {
-          // Recalcula o score de cada avaliação salva (reutilizando a lógica local seria ideal, mas vamos simplificar aqui)
-          // Nota: Aqui assumimos que o 'score_calculated' salvo no JSON é o score final do usuário para aquele pilar.
-          // Para ser mais preciso, vamos ler os scores parciais salvos no payload.
-          if (ev.scores.pillar_scores) {
-              const p = ev.scores.pillar_scores;
-              if (p.triagem != null) { sumTriagem += Number(p.triagem); countTriagem++; }
-              if (p.cultura != null) { sumCultura += Number(p.cultura); countCultura++; }
-              if (p.tecnico != null) { sumTecnico += Number(p.tecnico); countTecnico++; }
-          }
-      });
+      // 2. Calcula média aritmética das notas finais dos avaliadores
+      const sum = allEvaluations.reduce((acc, curr) => acc + Number(curr.final_score), 0);
+      const globalAverage = (sum / allEvaluations.length).toFixed(2);
 
-      // 3. Consolida a Nota 360° (Soma das médias dos pilares)
-      const avgTriagem = countTriagem > 0 ? sumTriagem / countTriagem : 0;
-      const avgCultura = countCultura > 0 ? sumCultura / countCultura : 0;
-      const avgTecnico = countTecnico > 0 ? sumTecnico / countTecnico : 0;
-
-      const finalGlobalScore = (avgTriagem + avgCultura + avgTecnico).toFixed(2);
-
-      // 4. Salva na tabela principal
+      // 3. Salva na application
       await supabase
           .from('applications')
-          .update({ score_general: finalGlobalScore })
+          .update({ score_general: globalAverage })
           .eq('id', applicationId);
   };
 
@@ -125,39 +111,40 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não logado");
 
-      // Calcula as notas DESTE usuário
       const scoreTriagem = calculatePillarScore('triagem', jobParameters.triagem);
       const scoreCultura = calculatePillarScore('cultura', jobParameters.cultura);
       const scoreTecnico = calculatePillarScore('tecnico', jobParameters.tecnico || jobParameters['tÃ©cnico'] || jobParameters['técnico']);
+      
+      const myFinalScore = calculateMyTotalScore();
 
-      // Prepara o payload com metadados dos cálculos para facilitar a média global depois
       const payload = {
         triagem: answers.triagem,
         cultura: answers.cultura,
         tecnico: answers.tecnico,
         anotacoes_gerais: notes,
-        pillar_scores: { // Salva o resultado calculado para agilizar a média
+        pillar_scores: {
             triagem: scoreTriagem,
             cultura: scoreCultura,
             tecnico: scoreTecnico
         },
-        evaluator_name: user.email, // Útil para log
+        evaluator_name: user.email,
         updated_at: new Date()
       };
 
-      // 1. Salva a avaliação individual
+      // Salva na tabela de avaliações individuais
       const { error: evalError } = await supabase
         .from('evaluations')
         .upsert({
             application_id: applicationId,
             evaluator_id: user.id,
             scores: payload, 
-            notes: notes
+            notes: notes,
+            final_score: myFinalScore // Salva a nota DESTE avaliador (0-10)
         }, { onConflict: 'application_id, evaluator_id' });
 
       if (evalError) throw evalError;
 
-      // 2. Dispara o recálculo da média global (360)
+      // Atualiza a média global
       await updateCandidateGlobalScore();
 
       alert("Avaliação salva com sucesso!");
@@ -171,100 +158,120 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     }
   };
 
-  const renderSection = (key, title, criteria) => {
+  // Renderização compacta dos critérios (Lado direito da tela)
+  const renderSectionCompact = (key, title, criteria) => {
     if (!criteria || criteria.length === 0) return null;
-    
     const ratingScale = jobParameters.notas || [];
-    const myScore = calculatePillarScore(key, criteria); // Pode ser null
+    const myScore = calculatePillarScore(key, criteria);
 
     return (
-      <div className="mb-6 bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-        <div className="flex justify-between items-center mb-4 border-b pb-2">
-            <h3 className="font-bold text-gray-800 uppercase text-sm tracking-wide">{title}</h3>
-            {myScore !== null ? (
-                <span className="bg-blue-50 text-blue-700 text-xs font-bold px-2 py-1 rounded border border-blue-100">
-                    Minha Nota: {myScore}
-                </span>
-            ) : (
-                <span className="bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded border">
-                    Não avaliado por mim
-                </span>
-            )}
-        </div>
+      <Paper variant="outlined" sx={{ p: 1.5, mb: 2, borderColor: '#e0e0e0' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#1976d2' }}>
+                {title}
+            </Typography>
+            <Typography variant="caption" sx={{ fontWeight: 'bold', bgcolor: myScore ? '#e3f2fd' : '#f5f5f5', px: 1, py: 0.5, borderRadius: 1 }}>
+                Nota: {myScore || '-'}
+            </Typography>
+        </Box>
 
-        <div className="space-y-4">
-            {criteria.map((crit, idx) => (
-                <div key={idx} className="relative group">
-                    <div className="flex justify-between items-end mb-2">
-                        <span className="text-sm font-medium text-gray-700 w-3/4">{crit.name}</span>
-                        <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                            Peso: {crit.weight}%
-                        </span>
-                    </div>
-                    
-                    <div className="flex flex-wrap gap-2">
-                        {ratingScale.map(option => {
-                            const isSelected = answers[key]?.[crit.name] === option.id;
-                            
-                            return (
-                                <button
-                                    key={option.id}
-                                    onClick={() => handleSelection(key, crit.name, option.id)}
-                                    className={`
-                                        px-3 py-1 text-xs rounded border transition-all
-                                        ${isSelected 
-                                            ? 'bg-blue-600 text-white border-blue-600 font-bold shadow-md' 
-                                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
-                                        }
-                                    `}
-                                >
-                                    {option.nome} ({option.valor})
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-            ))}
-        </div>
-      </div>
+        {criteria.map((crit, idx) => (
+            <Box key={idx} sx={{ mb: 1.5, borderBottom: '1px dashed #eee', pb: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 500, width: '80%', lineHeight: 1.2 }}>
+                        {crit.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                        {crit.weight}%
+                    </Typography>
+                </Box>
+                
+                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                    {ratingScale.map(option => {
+                        const isSelected = answers[key]?.[crit.name] === option.id;
+                        return (
+                            <Button
+                                key={option.id}
+                                size="small"
+                                onClick={() => handleSelection(key, crit.name, option.id)}
+                                sx={{
+                                    minWidth: '30px',
+                                    height: '24px',
+                                    fontSize: '0.65rem',
+                                    p: '0 8px',
+                                    textTransform: 'none',
+                                    bgcolor: isSelected ? '#1976d2' : '#f5f5f5',
+                                    color: isSelected ? '#fff' : '#666',
+                                    '&:hover': { bgcolor: isSelected ? '#1565c0' : '#eeeeee' }
+                                }}
+                            >
+                                {option.nome}
+                            </Button>
+                        );
+                    })}
+                </Box>
+            </Box>
+        ))}
+      </Paper>
     );
   };
 
-  if (!jobParameters) return <div className="p-10 text-center">Carregando parâmetros...</div>;
+  if (!jobParameters) return <Typography variant="caption">Carregando...</Typography>;
 
   return (
-    <div className="bg-gray-50 p-4 h-full flex flex-col">
-      <div className="flex items-center gap-2 mb-4 text-sm text-gray-600 bg-yellow-50 p-3 rounded border border-yellow-100">
-        <UserCheck size={16} />
-        <p>Você está avaliando como: <strong>Usuário Logado</strong>. Sua nota será computada na média geral.</p>
-      </div>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#fff', p: 1.5, borderRadius: 1, border: '1px solid #e0e0e0' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <UserCheck size={16} color="#666" />
+            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>Minha Avaliação</Typography>
+        </Box>
+        <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#1976d2' }}>
+            {calculateMyTotalScore()} <Typography component="span" variant="caption" color="text.secondary">/10</Typography>
+        </Typography>
+      </Box>
 
-      <div className="flex-1 overflow-y-auto pr-2 space-y-2">
-          {renderSection("triagem", "1. Triagem", jobParameters.triagem)}
-          {renderSection("cultura", "2. Fit Cultural", jobParameters.cultura)}
-          {renderSection("tecnico", "3. Teste Técnico", jobParameters.tecnico || jobParameters['tÃ©cnico'] || jobParameters['técnico'])}
+      <Box sx={{ flex: 1, overflowY: 'auto', pr: 1 }}>
+          <Grid container spacing={1}>
+              <Grid item xs={12} md={4}>
+                  {renderSectionCompact("triagem", "Triagem", jobParameters.triagem)}
+              </Grid>
+              <Grid item xs={12} md={4}>
+                  {renderSectionCompact("cultura", "Fit Cultural", jobParameters.cultura)}
+              </Grid>
+              <Grid item xs={12} md={4}>
+                  {renderSectionCompact("tecnico", "Técnico", jobParameters.tecnico || jobParameters['tÃ©cnico'] || jobParameters['técnico'])}
+              </Grid>
+          </Grid>
 
-          <div className="mt-4 bg-white p-4 rounded border">
-            <label className="font-bold text-gray-700 text-xs uppercase mb-2 block">Feedback / Anotações</label>
-            <textarea
-                className="w-full p-3 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50"
-                rows="3"
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                placeholder="Detalhes sobre a avaliação..."
-            />
-          </div>
-      </div>
+          <TextField
+            label="Anotações Gerais"
+            multiline
+            rows={2}
+            fullWidth
+            variant="outlined"
+            size="small"
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="Comentários sobre o candidato..."
+            sx={{ mt: 1, bgcolor: '#fff' }}
+            InputProps={{ style: { fontSize: '0.8rem' } }}
+            InputLabelProps={{ style: { fontSize: '0.8rem' } }}
+          />
+      </Box>
 
-      <div className="mt-4 pt-4 border-t">
-        <button 
+      <Box sx={{ mt: 2, pt: 1, borderTop: '1px solid #eee' }}>
+        <Button 
             onClick={handleSave} 
             disabled={saving}
-            className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg shadow font-bold flex justify-center items-center gap-2 transition disabled:opacity-50"
+            variant="contained"
+            fullWidth
+            color="primary"
+            startIcon={<Save size={16}/>}
+            sx={{ textTransform: 'none', fontWeight: 'bold' }}
         >
-            {saving ? "Salvando..." : <><Save size={18}/> Salvar Minha Avaliação</>}
-        </button>
-      </div>
-    </div>
+            {saving ? "Salvando..." : "Salvar Minha Nota"}
+        </Button>
+      </Box>
+    </Box>
   );
 }
