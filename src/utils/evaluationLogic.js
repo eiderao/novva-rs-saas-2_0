@@ -1,5 +1,11 @@
+// src/utils/evaluationLogic.js
+
+/**
+ * Calcula a nota de um pilar específico (Triagem, Cultura, Técnico)
+ * Regra: Soma (Nota * Peso) / Soma dos Pesos Respondidos
+ * Retorna: 0 a 10 (ou null se não houve avaliação)
+ */
 export const calculatePillarScore = (sectionName, criteriaList, answers, ratingScale) => {
-    // Se não houver critérios configurados, não há nota (retorna null para não afetar média)
     if (!criteriaList || !Array.isArray(criteriaList) || criteriaList.length === 0) return null;
     
     let totalScore = 0;
@@ -7,48 +13,53 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
     let hasAnswers = false;
 
     criteriaList.forEach(criterion => {
-        // Tenta buscar a resposta de todas as formas possíveis (aninhada ou plana)
+        // Busca resposta suportando estrutura aninhada (v2) ou plana (v1)
         const noteId = answers?.[sectionName]?.[criterion.name] || answers?.[criterion.name];
         
-        // Verifica se tem nota e se não é 'NA'
+        // Ignora 'NA' ou não respondidos
         if (noteId && noteId !== 'NA') {
             const noteObj = ratingScale.find(n => n.id === noteId);
             if (noteObj) {
                 hasAnswers = true;
-                const weight = Number(criterion.weight) || 1;
+                const weight = Number(criterion.weight) || 0; // Se peso for 0, não soma
+                
+                // Ex: Nota 10 * Peso 20 = 200
                 totalScore += (Number(noteObj.valor) * weight);
                 totalWeightAnswered += weight;
             }
         }
     });
 
-    // Se não respondeu nada, retorna null
     if (!hasAnswers || totalWeightAnswered === 0) return null;
 
-    // Retorna nota normalizada (0 a 10)
+    // Normalização: (200 / 20) = 10. Mantém a escala 0-10.
     return (totalScore / totalWeightAnswered);
 };
 
+/**
+ * Processa a avaliação completa de um usuário
+ * Regra: Média Aritmética dos 3 Pilares (se avaliados)
+ */
 export const processEvaluation = (evaluationObj, parameters) => {
-    // Retorna zerado se faltar dados críticos
+    // Proteção contra dados vazios
     if (!evaluationObj || !parameters) {
         return { triagem: 0, cultura: 0, tecnico: 0, total: 0 };
     }
 
-    // Suporta tanto o objeto salvo em 'scores' quanto o objeto raiz direto
     const answers = evaluationObj.scores || evaluationObj; 
     const ratingScale = parameters.notas || [];
     
+    // Normalização dos nomes dos parâmetros (para evitar erro de acentuação)
     const pTriagem = parameters.triagem || [];
     const pCultura = parameters.cultura || [];
-    // Tratamento para variações de escrita no banco
     const pTecnico = parameters.tecnico || parameters['técnico'] || parameters['tÃ©cnico'] || [];
 
     const triagem = calculatePillarScore('triagem', pTriagem, answers, ratingScale);
     const cultura = calculatePillarScore('cultura', pCultura, answers, ratingScale);
     const tecnico = calculatePillarScore('tecnico', pTecnico, answers, ratingScale);
 
-    // Média Aritmética dos pilares que foram avaliados (Ignora null)
+    // Média dos pilares (Regra 2.2.2: Média entre os 3 pilares)
+    // Se um pilar for null (não avaliado), não entra na conta da média
     let sum = 0;
     let count = 0;
 
@@ -56,7 +67,7 @@ export const processEvaluation = (evaluationObj, parameters) => {
     if (cultura !== null) { sum += cultura; count++; }
     if (tecnico !== null) { sum += tecnico; count++; }
 
-    // Se count for 0, nota é 0. Senão, é a média.
+    // Se count for 0, nota é 0.
     const total = count > 0 ? (sum / count) : 0;
 
     return {

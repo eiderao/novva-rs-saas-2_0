@@ -6,15 +6,15 @@ import {
     Paper, Tabs, Tab, TextField, IconButton, Snackbar,
     List, ListItem, ListItemText, Divider, Grid,
     Table, TableHead, TableRow, TableCell, TableBody, Checkbox,
-    FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert
+    FormControl, InputLabel, Select, MenuItem, Chip, Modal
 } from '@mui/material';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Delete as DeleteIcon, ContentCopy as ContentCopyIcon } from '@mui/icons-material';
 import { processEvaluation } from '../utils/evaluationLogic';
 
+// --- COMPONENTES AUXILIARES ---
 const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 500, bgcolor: 'background.paper', boxShadow: 24, p: 4 };
 
-// Modal de Cópia
 const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState('');
@@ -23,14 +23,16 @@ const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   return ( <Modal open={open} onClose={onClose}><Box sx={modalStyle}><Typography variant="h6">Copiar de Vaga</Typography><FormControl fullWidth margin="normal"><InputLabel>Vaga</InputLabel><Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga">{jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}</Select></FormControl><Button onClick={handleConfirm} variant="contained" fullWidth sx={{mt:2}} disabled={!selectedJobId}>Copiar</Button></Box></Modal> );
 };
 
-// Seção de Parâmetros (Botão Adicionar corrigido e Soma Numérica)
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
   const handleChange = (i, f, v) => { 
       const n = [...criteria]; 
-      n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; 
+      // Força conversão para número para evitar concatenação de string
+      n[i] = { ...n[i], [f]: f==='weight' ? Number(v) : v }; 
       onCriteriaChange(n); 
   };
+  // Soma numérica garantida
   const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
+  
   return (
     <Box sx={{mt:2}}>
         {criteria.map((c, i) => (
@@ -40,13 +42,14 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
                 <IconButton onClick={()=>onCriteriaChange(criteria.filter((_,idx)=>idx!==i))} color="error"><DeleteIcon/></IconButton>
             </Box>
         ))}
-        {/* CORREÇÃO: Texto do botão alterado para ADICIONAR */}
+        {/* Botão corrigido para "Adicionar" */}
         <Button onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small">Adicionar</Button>
         <Typography color={total===100?'green':'red'} variant="caption" display="block" sx={{mt:1, fontWeight:'bold'}}>Total: {total}%</Typography>
     </Box>
   );
 };
 
+// --- PÁGINA PRINCIPAL ---
 export default function JobDetails() {
   const { jobId } = useParams();
   const [job, setJob] = useState(null);
@@ -65,7 +68,7 @@ export default function JobDetails() {
       try {
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         setJob(jobData);
-        // Garante objeto de parâmetros válido
+        // Garante que parameters não seja nulo
         const params = jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] };
         setParameters(params);
 
@@ -74,7 +77,7 @@ export default function JobDetails() {
 
         const appIds = (appsData || []).map(a => a.id);
         if (appIds.length > 0) {
-            // Busca TODAS as avaliações para fazer o cruzamento no front
+            // Busca TODAS as avaliações para cálculo local
             const { data: evalsData } = await supabase.from('evaluations').select('*, evaluator:users(email, name)').in('application_id', appIds);
             setAllEvaluations(evalsData || []);
         }
@@ -83,32 +86,31 @@ export default function JobDetails() {
     fetchAllData();
   }, [jobId]);
 
-  // Lógica de Processamento Unificada
+  // --- PROCESSAMENTO CENTRALIZADO ---
+  // Aqui geramos os dados para a Tabela de Candidatos e para o Gráfico de Classificação
   const processedData = useMemo(() => {
     if (!parameters) return { chartData: [], evaluators: [] };
 
-    // Lista única de avaliadores
     const evaluators = Array.from(new Set(allEvaluations.map(e => e.evaluator_id))).map(id => {
         const ev = allEvaluations.find(e => e.evaluator_id === id);
         return { id, name: ev.evaluator?.name || ev.evaluator_name || 'Desconhecido' };
     });
 
     const chartData = applicants.map(app => {
-        // Filtra avaliações para este candidato E aplica o filtro de avaliador se selecionado
+        // Filtra avaliações deste candidato (e do avaliador se filtrado)
         const appEvals = allEvaluations.filter(e => 
-            // Comparação de string para segurança
             String(e.application_id) === String(app.id) && 
             (evaluatorFilter === 'all' || e.evaluator_id === evaluatorFilter)
         );
 
         let sumT = 0, sumC = 0, sumTc = 0, count = 0;
         let sumTotal = 0;
-        
+
         appEvals.forEach(ev => {
-            // Usa a calculadora universal para garantir notas corretas
+            // RECALCULA usando a lógica universal para garantir consistência
             const scores = processEvaluation(ev, parameters);
             
-            // Só conta se tiver alguma nota válida
+            // Só conta se tiver alguma nota
             if (scores.total > 0 || scores.triagem > 0 || scores.cultura > 0 || scores.tecnico > 0) {
                 sumT += scores.triagem;
                 sumC += scores.cultura;
@@ -122,18 +124,20 @@ export default function JobDetails() {
         const avgT = count > 0 ? sumT / count : 0;
         const avgC = count > 0 ? sumC / count : 0;
         const avgTc = count > 0 ? sumTc / count : 0;
-        // Média Geral dos avaliadores
-        const general = count > 0 ? sumTotal / count : 0;
+        const avgGeneral = count > 0 ? sumTotal / count : 0;
 
         return {
             appId: app.id,
             name: app.candidate?.name || 'Sem Nome',
-            triagem: avgT, cultura: avgC, tecnico: avgTc, 
-            total: general,
-            count: count, // Número de avaliações
+            email: app.candidate?.email,
+            triagem: Number(avgT.toFixed(1)),
+            cultura: Number(avgC.toFixed(1)),
+            tecnico: Number(avgTc.toFixed(1)),
+            total: Number(avgGeneral.toFixed(1)),
+            count: count,
             hired: app.isHired
         };
-    }).sort((a, b) => b.total - a.total);
+    }).sort((a, b) => b.total - a.total); // Ordena pela maior nota
 
     return { chartData, evaluators };
   }, [applicants, allEvaluations, evaluatorFilter, parameters]);
@@ -157,6 +161,7 @@ export default function JobDetails() {
         <Container maxWidth="xl" sx={{ mt: 4 }}>
             <Paper sx={{ mb: 2 }}><Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered><Tab label="Candidatos" /><Tab label="Classificação" /><Tab label="Configurações" /></Tabs></Paper>
             
+            {/* ABA CANDIDATOS - Agora usa processedData para mostrar notas reais */}
             {tabValue === 0 && (
                 <Paper sx={{ p: 2 }}>
                     <Table>
@@ -164,15 +169,18 @@ export default function JobDetails() {
                         <TableBody>{processedData.chartData.map(d => (
                             <TableRow key={d.appId} hover component={RouterLink} to={`/applications/${d.appId}`} style={{textDecoration:'none', cursor:'pointer'}}>
                                 <TableCell>{d.name}</TableCell>
-                                <TableCell>{applicants.find(a => a.id === d.appId)?.candidate?.email}</TableCell>
+                                <TableCell>{d.email}</TableCell>
                                 <TableCell align="center">{d.count}</TableCell>
-                                <TableCell align="center"><Chip label={d.total.toFixed(1)} color={d.total >= 8 ? 'success' : d.total >= 5 ? 'warning' : 'default'} /></TableCell>
+                                <TableCell align="center">
+                                    <Chip label={d.total.toFixed(1)} color={d.total >= 8 ? 'success' : d.total >= 5 ? 'warning' : 'default'} />
+                                </TableCell>
                             </TableRow>
                         ))}</TableBody>
                     </Table>
                 </Paper>
             )}
 
+            {/* ABA CLASSIFICAÇÃO */}
             {tabValue === 1 && (
                 <Grid container spacing={3} sx={{ mt: 1 }}>
                     <Grid item xs={12} md={8}>
@@ -217,7 +225,7 @@ export default function JobDetails() {
                                         <ListItem secondaryAction={<Checkbox checked={d.hired || false} onChange={() => handleHireToggle(d.appId, d.hired)} color="success" />}>
                                             <ListItemText 
                                                 primary={<Typography variant="body2" fontWeight="bold">{d.name}</Typography>}
-                                                secondary={<Typography variant="caption">Geral: {d.total.toFixed(1)}</Typography>}
+                                                secondary={<Typography variant="caption">Geral: {d.total.toFixed(1)} (T:{d.triagem} C:{d.cultura} Tc:{d.tecnico})</Typography>}
                                             />
                                         </ListItem>
                                         <Divider />
@@ -229,6 +237,7 @@ export default function JobDetails() {
                 </Grid>
             )}
 
+            {/* ABA CONFIGURAÇÕES */}
             {tabValue === 2 && (
                 <Box p={3}>
                     <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>Triagem</Typography><ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} /></Paper>

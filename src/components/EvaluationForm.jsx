@@ -20,6 +20,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     }
   }, [initialData]);
 
+  // Calcula para mostrar no header
   const currentScores = processEvaluation({ scores: answers }, jobParameters);
 
   const handleSelection = (section, criteriaName, noteId) => {
@@ -120,7 +121,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             <TextField multiline rows={2} fullWidth variant="outlined" size="small" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Comentários..." sx={{ bgcolor: '#fff' }} InputProps={{ style: { fontSize: '0.8rem' } }} />
           </Paper>
 
-          {/* HISTÓRICO DE TODAS AS ANOTAÇÕES */}
+          {/* HISTÓRICO DE OBSERVAÇÕES */}
           <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
               <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <MessageSquare size={14} /> Histórico de Observações ({allEvaluations?.length || 0})
@@ -133,7 +134,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                       </Box>
                       <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#444' }}>{ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentários.'}</Typography>
                   </Box>
-              )) : <Typography variant="caption" color="text.secondary">Nenhuma avaliação registrada ainda.</Typography>}
+              )) : <Typography variant="caption" color="text.secondary">Nenhuma avaliação registrada.</Typography>}
           </Box>
       </Box>
 

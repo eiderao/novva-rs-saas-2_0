@@ -59,7 +59,6 @@ export default function ApplicationDetails() {
           if (user) {
               const myEval = allEvals.find(e => e.evaluator_id === user.id);
               if (myEval) {
-                  // Passa dados completos para o form
                   const myScores = processEvaluation(myEval, jobParams);
                   setCurrentUserEvaluation({
                       ...myEval.scores,
@@ -89,14 +88,15 @@ export default function ApplicationDetails() {
     );
   };
 
+  // BADGES CORRIGIDOS
   const renderScoreBadges = (gScore, myScore, count) => {
     const getBgColor = (s) => s >= 8 ? '#e8f5e9' : s >= 5 ? '#fff3e0' : '#ffebee';
     const getTextColor = (s) => s >= 8 ? '#2e7d32' : s >= 5 ? '#ef6c00' : '#c62828';
 
     return (
         <Box sx={{ display: 'flex', gap: 1, mt: 2, height: '80px' }}>
-            <Paper elevation={0} sx={{ flex: 1, bgcolor: getBgColor(gScore), p: 1, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <Typography variant="caption" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.65rem', whiteSpace: 'nowrap' }}>
+            <Paper elevation={0} sx={{ flex: 1, bgcolor: getBgColor(gScore), p: 1, borderRadius: 2, border: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <Typography variant="caption" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.65rem' }}>
                     Nota Global
                 </Typography>
                 <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'text.secondary', mb: 0.5 }}>
@@ -107,8 +107,8 @@ export default function ApplicationDetails() {
                 </Typography>
             </Paper>
             
-            <Paper elevation={0} sx={{ flex: 1, bgcolor: '#f3f4f6', p: 1, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <Typography variant="caption" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.65rem', mb: 1, whiteSpace: 'nowrap' }}>
+            <Paper elevation={0} sx={{ flex: 1, bgcolor: '#f3f4f6', p: 1, borderRadius: 2, border: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <Typography variant="caption" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.65rem', mb: 1 }}>
                     Minha Nota
                 </Typography>
                 <Typography variant="h4" sx={{ fontWeight: 800, color: '#374151', lineHeight: 1 }}>
@@ -124,7 +124,7 @@ export default function ApplicationDetails() {
 
   const params = job?.parameters || {};
   const formData = appData.formData || {};
-  
+
   return (
     <Box sx={{ bgcolor: '#f8f9fa', minHeight: '100vh', p: 2 }}>
       <Button onClick={() => navigate(-1)} startIcon={<ArrowLeft size={16}/>} sx={{ mb: 2, color: 'text.secondary' }}>Voltar</Button>
@@ -149,7 +149,7 @@ export default function ApplicationDetails() {
         </Grid>
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
-             {/* Passa allEvaluations para o histórico */}
+             {/* Passa todas as avaliações para o histórico */}
              <EvaluationForm applicationId={appData.id} jobParameters={params} initialData={currentUserEvaluation} allEvaluations={allEvaluations} onSaved={fetchData} />
           </Paper>
         </Grid>
