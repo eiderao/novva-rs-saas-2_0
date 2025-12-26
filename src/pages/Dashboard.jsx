@@ -36,7 +36,7 @@ export default function Dashboard() {
       // 2. Se tiver Tenant, busca vagas
       if (userProfile?.tenantId) {
         const [jobsResult, deptsResult] = await Promise.all([
-          // Busca vagas e já conta os candidatos na query
+          // Busca vagas e já conta os candidatos na query (count)
           supabase.from('jobs').select('*, applications(count)').eq('tenantId', userProfile.tenantId),
           supabase.from('company_departments').select('*').eq('tenantId', userProfile.tenantId)
         ]);
@@ -50,9 +50,9 @@ export default function Dashboard() {
         const processed = rawJobs.map(j => ({
           ...j,
           deptName: j.company_department_id ? (deptMap[j.company_department_id] || 'Geral') : 'Geral',
-          // Garante que candidateCount seja número
+          // Métrica 1: Quantidade de Inscritos
           candidateCount: j.applications?.[0]?.count || 0,
-          // Calcula dias desde a criação
+          // Métrica 2: Dias em Aberto
           daysOpen: differenceInDays(new Date(), parseISO(j.created_at))
         }));
 
@@ -67,7 +67,7 @@ export default function Dashboard() {
     }
   };
 
-  // Função para corrigir contas sem tenant (Mantida do original)
+  // Função para corrigir contas sem tenant (Mantida do original para segurança)
   const fixAccount = async () => {
     setFixing(true);
     try {
@@ -195,6 +195,7 @@ export default function Dashboard() {
                 <tr>
                   <th className="p-4 font-medium">Área / Depto</th>
                   <th className="p-4 font-medium">Título</th>
+                  {/* NOVAS COLUNAS */}
                   <th className="p-4 font-medium text-center">Inscritos</th>
                   <th className="p-4 font-medium text-center">Tempo</th>
                   <th className="p-4 font-medium">Status</th>
@@ -213,12 +214,15 @@ export default function Dashboard() {
                     >
                       <td className="p-4 text-gray-600">{job.deptName}</td>
                       <td className="p-4 font-bold text-gray-800 group-hover:text-blue-600">{job.title}</td>
+                      
+                      {/* DADOS ADICIONADOS */}
                       <td className="p-4 text-center">
-                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-bold">{job.candidateCount}</span>
+                          <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold text-xs">{job.candidateCount}</span>
                       </td>
                       <td className="p-4 text-center text-gray-500 flex items-center justify-center gap-1">
                           <Clock size={14}/> {job.daysOpen} dias
                       </td>
+
                       <td className="p-4">
                         <span className={`px-2 py-1 rounded text-xs font-semibold ${job.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
                           {job.status === 'active' ? 'Ativa' : 'Inativa'}
