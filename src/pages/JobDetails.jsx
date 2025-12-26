@@ -13,14 +13,16 @@ import { Delete as DeleteIcon, ContentCopy as ContentCopyIcon } from '@mui/icons
 import { processEvaluation } from '../utils/evaluationLogic';
 
 // --- COMPONENTES AUXILIARES ---
-const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 500, bgcolor: 'background.paper', boxShadow: 24, p: 4 };
+const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 500, bgcolor: 'background.paper', boxShadow: 24, p: 4, borderRadius: 2 };
+
 const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState('');
   useEffect(() => { if (open) { const f = async () => { const { data } = await supabase.from('jobs').select('id, title').neq('id', currentJobId).eq('status', 'active'); setJobs(data || []); }; f(); } }, [open, currentJobId]);
   const handleConfirm = async () => { if (!selectedJobId) return; const { data } = await supabase.from('jobs').select('parameters').eq('id', selectedJobId).single(); if (data?.parameters) onCopy(data.parameters); onClose(); };
-  return ( <Modal open={open} onClose={onClose}><Box sx={modalStyle}><Typography variant="h6">Copiar de Vaga</Typography><FormControl fullWidth margin="normal"><InputLabel>Vaga</InputLabel><Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga">{jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}</Select></FormControl><Button onClick={handleConfirm} variant="contained" fullWidth sx={{mt:2}} disabled={!selectedJobId}>Copiar</Button></Box></Modal> );
+  return ( <Modal open={open} onClose={onClose}><Box sx={modalStyle}><Typography variant="h6">Copiar de Vaga</Typography><FormControl fullWidth margin="normal"><InputLabel>Vaga</InputLabel><Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga">{jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}</Select></FormControl><Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}><Button onClick={onClose}>Cancelar</Button><Button onClick={handleConfirm} variant="contained" disabled={!selectedJobId}>Copiar</Button></Box></Box></Modal> );
 };
+
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
   const handleChange = (i, f, v) => { const n = [...criteria]; n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; onCriteriaChange(n); };
   const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
@@ -85,7 +87,6 @@ export default function JobDetails() {
         let sumT = 0, sumC = 0, sumTc = 0, count = 0, sumTotal = 0;
         appEvals.forEach(ev => {
             const scores = processEvaluation(ev, parameters);
-            // Conta se houver qualquer nota > 0 (evita contar avaliações vazias)
             if (scores.total > 0 || scores.triagem > 0 || scores.cultura > 0 || scores.tecnico > 0) {
                 sumT += scores.triagem; sumC += scores.cultura; sumTc += scores.tecnico; sumTotal += scores.total; count++;
             }
@@ -126,14 +127,14 @@ export default function JobDetails() {
 
   return (
     <Box>
-        <AppBar position="static"><Toolbar><Typography variant="h6" sx={{flexGrow:1}}>{job?.title}</Typography><Button color="inherit" component={RouterLink} to="/">Voltar</Button></Toolbar></AppBar>
-        <Container maxWidth="xl" sx={{ mt: 4 }}>
-            <Paper sx={{ mb: 2 }}><Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered><Tab label="Candidatos" /><Tab label="Classificação" /><Tab label="Configurações" /></Tabs></Paper>
+        <AppBar position="static" color="default" elevation={1}><Toolbar><Typography variant="h6" sx={{flexGrow:1}}>{job?.title}</Typography><Button color="inherit" component={RouterLink} to="/">Voltar</Button></Toolbar></AppBar>
+        <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+            <Paper sx={{ mb: 3 }}><Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered><Tab label="Candidatos" /><Tab label="Classificação" /><Tab label="Configurações da Vaga" /></Tabs></Paper>
             
             {tabValue === 0 && (
-                <Paper sx={{ p: 2 }}>
+                <Paper sx={{ p: 0 }}>
                     <Table>
-                        <TableHead><TableRow><TableCell>Nome</TableCell><TableCell>Email</TableCell><TableCell align="center">Avaliações</TableCell><TableCell align="center">Nota Geral</TableCell></TableRow></TableHead>
+                        <TableHead sx={{ bgcolor: '#f5f5f5' }}><TableRow><TableCell><strong>Nome</strong></TableCell><TableCell><strong>Email</strong></TableCell><TableCell align="center"><strong>Avaliações</strong></TableCell><TableCell align="center"><strong>Nota Geral</strong></TableCell></TableRow></TableHead>
                         <TableBody>{processedData.chartData.map(d => (
                             <TableRow key={d.appId} hover component={RouterLink} to={`/applications/${d.appId}`} style={{textDecoration:'none', cursor:'pointer'}}>
                                 <TableCell>{d.name}</TableCell>
@@ -147,49 +148,85 @@ export default function JobDetails() {
             )}
 
             {tabValue === 1 && (
-                <Grid container spacing={3} sx={{ mt: 1 }}>
+                <Grid container spacing={3}>
                     <Grid item xs={12} md={8}>
-                        <Paper sx={{ p: 3 }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                                <Typography variant="h6">Comparativo</Typography>
-                                <FormControl size="small" sx={{ width: 200 }}>
-                                    <InputLabel>Visão</InputLabel>
-                                    <Select value={evaluatorFilter} label="Visão" onChange={(e) => setEvaluatorFilter(e.target.value)}>
-                                        <MenuItem value="all">Média da Equipe</MenuItem>
+                        <Paper sx={{ p: 3, height: '600px', display: 'flex', flexDirection: 'column' }} elevation={3}>
+                            {/* CABEÇALHO DO GRÁFICO MELHORADO */}
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, pb: 2, borderBottom: '1px solid #f0f0f0' }}>
+                                <Typography variant="h6" color="text.primary" fontWeight="bold">Comparativo de Desempenho</Typography>
+                                <FormControl size="small" sx={{ minWidth: 220 }}>
+                                    <InputLabel>Filtrar por Avaliador</InputLabel>
+                                    <Select value={evaluatorFilter} label="Filtrar por Avaliador" onChange={(e) => setEvaluatorFilter(e.target.value)}>
+                                        <MenuItem value="all">Visão Geral (Média da Equipe)</MenuItem>
                                         {processedData.evaluators.map(ev => <MenuItem key={ev.id} value={ev.id}>{ev.name}</MenuItem>)}
                                     </Select>
                                 </FormControl>
                             </Box>
+                            
                             {processedData.chartData.some(d => d.total > 0) ? (
-                                <Box sx={{ height: 400 }}>
-                                    <ResponsiveContainer>
-                                        <BarChart data={processedData.chartData} layout="vertical" margin={{ left: 50, right: 30 }} barGap={2}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis type="number" domain={[0, 10]} ticks={[0, 2, 4, 6, 8, 10]} />
-                                            <YAxis dataKey="name" type="category" width={100} style={{fontSize: '0.8rem'}} />
-                                            <Tooltip formatter={(val, name) => [val, name]} cursor={{fill: 'transparent'}} />
-                                            <Legend verticalAlign="top" height={36}/>
-                                            <Bar dataKey="triagem" name="Triagem" fill="#90caf9" barSize={15}><LabelList dataKey="triagem" position="right" style={{fontSize:'0.65rem'}} formatter={(v)=>v>0?v:''}/></Bar>
-                                            <Bar dataKey="cultura" name="Fit Cultural" fill="#a5d6a7" barSize={15}><LabelList dataKey="cultura" position="right" style={{fontSize:'0.65rem'}} formatter={(v)=>v>0?v:''}/></Bar>
-                                            <Bar dataKey="tecnico" name="Técnico" fill="#ffcc80" barSize={15}><LabelList dataKey="tecnico" position="right" style={{fontSize:'0.65rem'}} formatter={(v)=>v>0?v:''}/></Bar>
-                                            <Bar dataKey="total" name="Média Geral" fill="#4caf50" barSize={15} radius={[0, 4, 4, 0]}><LabelList dataKey="total" position="right" style={{fontSize:'0.75rem', fontWeight:'bold'}} /></Bar>
+                                <Box sx={{ flex: 1, width: '100%', minHeight: 0 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart 
+                                            data={processedData.chartData} 
+                                            layout="vertical" 
+                                            margin={{ top: 10, right: 30, left: 10, bottom: 5 }} 
+                                            barGap={4}
+                                        >
+                                            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={true} stroke="#eee" />
+                                            <XAxis type="number" domain={[0, 10]} ticks={[0, 2, 4, 6, 8, 10]} stroke="#999" />
+                                            <YAxis 
+                                                dataKey="name" 
+                                                type="category" 
+                                                width={150} // AUMENTADO PARA NÃO CORTAR NOMES
+                                                style={{fontSize: '0.8rem', fontWeight: 500, fill: '#444'}} 
+                                            />
+                                            <Tooltip 
+                                                cursor={{fill: '#f5f5f5'}}
+                                                contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                                formatter={(val, name) => [val, name]} 
+                                            />
+                                            <Legend verticalAlign="top" height={40} iconType="circle" />
+                                            
+                                            <Bar dataKey="triagem" name="Triagem" fill="#90caf9" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="triagem" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
+                                            </Bar>
+                                            <Bar dataKey="cultura" name="Fit Cultural" fill="#a5d6a7" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="cultura" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
+                                            </Bar>
+                                            <Bar dataKey="tecnico" name="Técnico" fill="#ffcc80" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="tecnico" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
+                                            </Bar>
+                                            
+                                            {/* BARRA DE MÉDIA GERAL DESTACADA */}
+                                            <Bar dataKey="total" name="Média Geral" fill="#4caf50" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="total" position="right" style={{fontSize:'0.8rem', fontWeight:'bold', fill:'#2e7d32'}} />
+                                            </Bar>
+                                            
                                             <ReferenceLine x={5} stroke="red" strokeDasharray="3 3" />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </Box>
-                            ) : <Box height={300} display="flex" alignItems="center" justifyContent="center" color="text.secondary">Sem dados.</Box>}
+                            ) : (
+                                <Box sx={{ flex: 1, display: 'flex', flexDirection:'column', alignItems: 'center', justifyContent: 'center', color: 'text.secondary', bgcolor:'#fafafa', borderRadius:2 }}>
+                                    <Typography variant="body1">Ainda não há dados suficientes.</Typography>
+                                    <Typography variant="caption">Realize avaliações para visualizar o gráfico.</Typography>
+                                </Box>
+                            )}
                         </Paper>
                     </Grid>
                     <Grid item xs={12} md={4}>
-                        <Paper sx={{ height: '100%', overflow: 'hidden' }}>
-                            <Box sx={{ p: 2, bgcolor: '#f5f5f5' }}><Typography variant="subtitle1">Ranking</Typography></Box>
-                            <List sx={{ overflowY: 'auto', maxHeight: '80vh' }}>
-                                {processedData.chartData.map((d) => (
+                        <Paper sx={{ height: '600px', display: 'flex', flexDirection: 'column' }} elevation={3}>
+                            <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderBottom: '1px solid #e0e0e0' }}><Typography variant="subtitle1" fontWeight="bold">Ranking Final</Typography></Box>
+                            <List sx={{ overflowY: 'auto', flex: 1 }}>
+                                {processedData.chartData.map((d, index) => (
                                     <React.Fragment key={d.appId}>
                                         <ListItem secondaryAction={<Checkbox checked={d.hired || false} onChange={() => handleHireToggle(d.appId, d.hired)} color="success" />}>
-                                            <ListItemText primary={<Typography variant="body2" fontWeight="bold">{d.name}</Typography>} secondary={<Typography variant="caption">Média: {d.total.toFixed(1)}</Typography>} />
+                                            <ListItemText 
+                                                primary={<Typography variant="body2" fontWeight="bold">#{index + 1} {d.name}</Typography>} 
+                                                secondary={<Typography variant="caption" color="text.secondary">Média: <strong style={{color:'#2e7d32', fontSize:'0.9rem'}}>{d.total.toFixed(1)}</strong></Typography>} 
+                                            />
                                         </ListItem>
-                                        <Divider />
+                                        <Divider component="li" />
                                     </React.Fragment>
                                 ))}
                             </List>
@@ -199,16 +236,16 @@ export default function JobDetails() {
             )}
 
             {tabValue === 2 && (
-                <Box p={3}>
-                    <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>Triagem</Typography><ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} /></Paper>
-                    <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>Cultura</Typography><ParametersSection criteria={parameters?.cultura || []} onCriteriaChange={(c) => setParameters({...parameters, cultura: c})} /></Paper>
-                    <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>Técnico</Typography><ParametersSection criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} /></Paper>
-                    <Button variant="contained" sx={{mt:2}} onClick={handleSaveParameters}>Salvar Parâmetros</Button>
+                <Box p={3} sx={{ bgcolor: 'white', borderRadius: 1, boxShadow: 1 }}>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>1. Triagem</Typography><ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} /></Paper>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>2. Fit Cultural</Typography><ParametersSection criteria={parameters?.cultura || []} onCriteriaChange={(c) => setParameters({...parameters, cultura: c})} /></Paper>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>3. Teste Técnico</Typography><ParametersSection criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} /></Paper>
+                    <Box display="flex" justifyContent="flex-end"><Button variant="contained" color="primary" onClick={handleSaveParameters}>Salvar Configurações</Button></Box>
                 </Box>
             )}
         </Container>
         <CopyParametersModal open={isCopyModalOpen} onClose={() => setIsCopyModalOpen(false)} currentJobId={jobId} onCopy={(p) => { setParameters(p); setFeedback({open:true, message:'Copiado!', severity:'info'}); }} />
-        <Snackbar open={feedback.open} autoHideDuration={4000} onClose={() => setFeedback({...feedback, open:false})}><Alert severity={feedback.severity}>{feedback.message}</Alert></Snackbar>
+        <Snackbar open={feedback.open} autoHideDuration={4000} onClose={() => setFeedback({...feedback, open:false})}><Alert severity={feedback.severity} variant="filled">{feedback.message}</Alert></Snackbar>
     </Box>
   );
 }
