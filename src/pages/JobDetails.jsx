@@ -162,7 +162,7 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
         onClick={addCriterion} 
         disabled={criteria.length >= 10} 
         variant="outlined" 
-        startIcon={<DeleteIcon style={{ transform: 'rotate(45deg)' }} />} // Using delete icon rotated as plus or just text
+        startIcon={<DeleteIcon style={{ transform: 'rotate(45deg)' }} />} 
       >
         Adicionar Critério
       </Button>
@@ -188,6 +188,7 @@ export default function JobDetails() {
   const [tabValue, setTabValue] = useState(0);
   const [applicants, setApplicants] = useState([]);
   const [allEvaluations, setAllEvaluations] = useState([]);
+  const [usersMap, setUsersMap] = useState({}); // Mapa para nomes dos avaliadores
   const [evaluatorFilter, setEvaluatorFilter] = useState('all');
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [feedback, setFeedback] = useState({ open: false, message: '', severity: 'success' });
@@ -202,7 +203,6 @@ export default function JobDetails() {
         // 1. Busca Vaga
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         setJob(jobData);
-        // Garante que parameters não seja nulo para evitar crash
         const params = jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] };
         setParameters(params);
 
@@ -213,15 +213,28 @@ export default function JobDetails() {
             .eq('jobId', jobId);
         setApplicants(appsData || []);
 
-        // 3. Busca Avaliações (Sem Join complexo para evitar erro 400)
+        // 3. Busca Avaliações
         const appIds = (appsData || []).map(a => a.id);
         if (appIds.length > 0) {
             const { data: evalsData } = await supabase
                 .from('evaluations')
-                .select('*') // Busca dados puros
+                .select('*')
                 .in('application_id', appIds);
             
             setAllEvaluations(evalsData || []);
+
+            // 4. Busca Nomes dos Avaliadores (Correção do "Avaliador Desconhecido")
+            const userIds = [...new Set((evalsData || []).map(e => e.evaluator_id))];
+            if (userIds.length > 0) {
+                const { data: usersData } = await supabase
+                    .from('users')
+                    .select('id, name, email')
+                    .in('id', userIds);
+                
+                const map = {};
+                usersData?.forEach(u => map[u.id] = u.name || u.email);
+                setUsersMap(map);
+            }
         }
       } catch (err) { 
           console.error(err); 
@@ -236,10 +249,11 @@ export default function JobDetails() {
   const processedData = useMemo(() => {
     if (!parameters) return { chartData: [], evaluators: [] };
 
-    // Lista de avaliadores (usando ID pois removemos o join de usuários para segurança)
-    const evaluators = Array.from(new Set(allEvaluations.map(e => e.evaluator_id))).map(id => {
-        return { id, name: 'Avaliador' }; 
-    });
+    // Lista de avaliadores usando o mapa de nomes real
+    const evaluatorsList = Object.keys(usersMap).map(id => ({
+        id, 
+        name: usersMap[id] || 'Desconhecido'
+    }));
 
     const chartData = applicants.map(app => {
         // Filtra avaliações deste candidato
@@ -252,10 +266,7 @@ export default function JobDetails() {
         let sumTotal = 0;
 
         appEvals.forEach(ev => {
-            // Usa a calculadora universal para garantir consistência
             const scores = processEvaluation(ev, parameters);
-            
-            // Só conta se tiver nota válida (>0) em algum pilar
             if (scores.total > 0 || scores.triagem > 0 || scores.cultura > 0 || scores.tecnico > 0) {
                 sumT += scores.triagem;
                 sumC += scores.cultura;
@@ -283,10 +294,10 @@ export default function JobDetails() {
             count: count,
             hired: app.isHired
         };
-    }).sort((a, b) => b.total - a.total); // Ordena pela maior nota geral
+    }).sort((a, b) => b.total - a.total); 
 
-    return { chartData, evaluators };
-  }, [applicants, allEvaluations, evaluatorFilter, parameters]);
+    return { chartData, evaluators: evaluatorsList };
+  }, [applicants, allEvaluations, evaluatorFilter, parameters, usersMap]);
 
   const handleHireToggle = async (appId, currentStatus) => {
       const newStatus = !currentStatus;
@@ -320,7 +331,7 @@ export default function JobDetails() {
                     centered
                 >
                     <Tab label="Candidatos" />
-                    <Tab label="Classificação & Gráfico" />
+                    <Tab label="Classificação" /> {/* CORREÇÃO: Título alterado */}
                     <Tab label="Configurações da Vaga" />
                 </Tabs>
             </Paper>
@@ -377,6 +388,7 @@ export default function JobDetails() {
                                     <InputLabel>Visão</InputLabel>
                                     <Select value={evaluatorFilter} label="Visão" onChange={(e) => setEvaluatorFilter(e.target.value)}>
                                         <MenuItem value="all">Média da Equipe</MenuItem>
+                                        {/* CORREÇÃO: Exibe os nomes reais dos avaliadores */}
                                         {processedData.evaluators.map(ev => <MenuItem key={ev.id} value={ev.id}>{ev.name}</MenuItem>)}
                                     </Select>
                                 </FormControl>
@@ -389,15 +401,15 @@ export default function JobDetails() {
                                             data={processedData.chartData} 
                                             layout="vertical" 
                                             margin={{ top: 20, right: 30, left: 40, bottom: 5 }}
-                                            barGap={2} // Espaço entre as barras do mesmo grupo
+                                            barGap={2}
                                         >
                                             <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                                             <XAxis type="number" domain={[0, 10]} ticks={[0, 2, 4, 6, 8, 10]} />
                                             <YAxis dataKey="name" type="category" width={120} style={{fontSize: '0.75rem', fontWeight: 500}} />
-                                            <Tooltip formatter={(val) => Number(val).toFixed(1)} cursor={{fill: 'transparent'}} />
+                                            <Tooltip formatter={(val, name) => [val, name]} cursor={{fill: 'transparent'}} />
                                             <Legend verticalAlign="top" height={36}/>
                                             
-                                            {/* BARRAS LADO A LADO (Sem stackId) */}
+                                            {/* BARRAS LADO A LADO */}
                                             <Bar dataKey="triagem" name="Triagem" fill="#90caf9" barSize={15}>
                                                 <LabelList dataKey="triagem" position="right" style={{fontSize:'0.65rem', fill:'#666'}} formatter={(v) => v > 0 ? v : ''} />
                                             </Bar>
@@ -408,7 +420,7 @@ export default function JobDetails() {
                                                 <LabelList dataKey="tecnico" position="right" style={{fontSize:'0.65rem', fill:'#666'}} formatter={(v) => v > 0 ? v : ''} />
                                             </Bar>
                                             
-                                            {/* NOVA BARRA: MÉDIA GERAL */}
+                                            {/* BARRA DE MÉDIA GERAL */}
                                             <Bar dataKey="total" name="Média Geral" fill="#4caf50" barSize={15} radius={[0, 4, 4, 0]}>
                                                 <LabelList dataKey="total" position="right" style={{fontSize:'0.75rem', fontWeight:'bold', fill:'#000'}} />
                                             </Bar>
@@ -425,7 +437,7 @@ export default function JobDetails() {
                         </Paper>
                     </Grid>
                     
-                    {/* Coluna Direita: Ranking / Contratação */}
+                    {/* Coluna Direita: Ranking */}
                     <Grid item xs={12} md={4}>
                         <Paper sx={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
                             <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderBottom: '1px solid #e0e0e0' }}>
@@ -495,7 +507,7 @@ export default function JobDetails() {
                             color="primary" 
                             size="large"
                             onClick={handleSaveParameters}
-                            startIcon={<ContentCopyIcon />} // Usando ícone genérico de salvar se Save não estiver importado
+                            startIcon={<ContentCopyIcon />} 
                         >
                             Salvar Configurações da Vaga
                         </Button>
