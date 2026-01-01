@@ -1,0 +1,101 @@
+table_name,column_name,data_type,is_nullable,key_type
+applications,id,bigint,NO,PRIMARY KEY
+applications,created_at,timestamp with time zone,YES,null
+applications,jobId,bigint,YES,FOREIGN KEY
+applications,name,text,YES,null
+applications,email,text,YES,null
+applications,phone,text,YES,null
+applications,linkedin,text,YES,null
+applications,status,text,YES,null
+applications,tenantId,uuid,YES,FOREIGN KEY
+applications,form_data,jsonb,YES,null
+applications,resume_url,text,YES,null
+applications,evaluation,jsonb,YES,null
+applications,score_general,numeric,YES,null
+applications,is_hired,boolean,YES,null
+applications,hired_at,timestamp with time zone,YES,null
+applications,candidateId,uuid,YES,FOREIGN KEY
+applications,formData,jsonb,YES,null
+applications,resumeUrl,text,YES,null
+applications,isHired,boolean,YES,null
+applications,hiredAt,timestamp with time zone,YES,null
+candidates,id,uuid,NO,PRIMARY KEY
+candidates,name,text,NO,null
+candidates,email,text,NO,UNIQUE
+candidates,phone,text,YES,null
+candidates,city,text,YES,null
+candidates,state,text,YES,null
+candidates,linkedin_profile,text,YES,null
+candidates,github_profile,text,YES,null
+candidates,resume_url,text,YES,null
+candidates,created_at,timestamp with time zone,YES,null
+candidates,updated_at,timestamp with time zone,YES,null
+company_departments,id,bigint,NO,PRIMARY KEY
+company_departments,created_at,timestamp with time zone,NO,null
+company_departments,name,text,NO,null
+company_departments,tenantId,uuid,YES,FOREIGN KEY
+evaluation_assignments_v2,id,uuid,NO,PRIMARY KEY
+evaluation_assignments_v2,application_id,bigint,NO,FOREIGN KEY
+evaluation_assignments_v2,application_id,bigint,NO,UNIQUE
+evaluation_assignments_v2,evaluator_id,uuid,NO,FOREIGN KEY
+evaluation_assignments_v2,evaluator_id,uuid,NO,UNIQUE
+evaluation_assignments_v2,status,text,YES,null
+evaluation_assignments_v2,created_at,timestamp with time zone,YES,null
+evaluations,id,uuid,NO,PRIMARY KEY
+evaluations,application_id,bigint,NO,UNIQUE
+evaluations,evaluator_id,uuid,NO,UNIQUE
+evaluations,scores,jsonb,YES,null
+evaluations,notes,text,YES,null
+evaluations,final_score,numeric,YES,null
+evaluations,created_at,timestamp with time zone,NO,null
+jobs,id,bigint,NO,PRIMARY KEY
+jobs,created_at,timestamp with time zone,YES,null
+jobs,title,text,NO,null
+jobs,status,text,YES,null
+jobs,tenantId,uuid,NO,FOREIGN KEY
+jobs,parameters,jsonb,YES,null
+jobs,createdBy,uuid,YES,FOREIGN KEY
+jobs,description,text,YES,null
+jobs,requirements,text,YES,null
+jobs,type,text,YES,null
+jobs,location_type,text,YES,null
+jobs,company_department_id,bigint,YES,null
+plans,id,text,NO,PRIMARY KEY
+plans,name,text,NO,null
+plans,price,numeric,YES,null
+plans,user_limit,integer,YES,null
+plans,job_limit,integer,YES,null
+plans,candidate_limit,integer,YES,null
+tenants,id,uuid,NO,PRIMARY KEY
+tenants,companyName,text,NO,null
+tenants,cnpj,text,YES,null
+tenants,planId,text,YES,FOREIGN KEY
+tenants,created_at,timestamp with time zone,YES,null
+user_profiles,id,uuid,NO,PRIMARY KEY
+user_profiles,id,uuid,NO,FOREIGN KEY
+user_profiles,tenantId,uuid,YES,FOREIGN KEY
+user_profiles,name,text,YES,null
+user_profiles,email,text,YES,null
+user_profiles,role,text,YES,null
+user_profiles,is_admin_system,boolean,YES,null
+user_profiles,created_at,timestamp with time zone,YES,null
+user_profiles,active,boolean,YES,null
+users,id,uuid,NO,PRIMARY KEY
+users,id,uuid,NO,PRIMARY KEY
+users,id,uuid,NO,PRIMARY KEY
+users,id,uuid,NO,PRIMARY KEY
+users,instance_id,uuid,YES,null
+users,id,uuid,NO,FOREIGN KEY
+users,id,uuid,NO,PRIMARY KEY
+users,id,uuid,NO,PRIMARY KEY
+users,email,text,YES,null
+users,id,uuid,NO,PRIMARY KEY
+users,id,uuid,NO,FOREIGN KEY
+users,id,uuid,NO,PRIMARY KEY
+users,aud,character varying,YES,null
+users,tenantId,uuid,NO,FOREIGN KEY
+users,isAdmin,boolean,YES,null
+users,role,character varying,YES,null
+users,email,character varying,YES,null
+users,role,text,YES,null
+users,status,text,YES,null

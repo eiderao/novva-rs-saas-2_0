@@ -1609,19 +1609,13 @@ ARQUIVO: src\components\EvaluationForm.jsx
 ==================================================
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase/client';
-import { Save, UserCheck } from 'lucide-react';
-import { 
-  Box, Typography, Paper, Grid, Button, TextField
-} from '@mui/material';
+import { Save, UserCheck, MessageSquare } from 'lucide-react';
+import { Box, Typography, Paper, Grid, Button, TextField, Alert } from '@mui/material';
+import { processEvaluation } from '../utils/evaluationLogic';
 
-export default function EvaluationForm({ applicationId, jobParameters, initialData, onSaved }) {
-  const [answers, setAnswers] = useState({
-    triagem: initialData?.triagem || {},
-    cultura: initialData?.cultura || {},
-    tecnico: initialData?.tecnico || {}
-  });
-  
-  const [notes, setNotes] = useState(initialData?.anotacoes_gerais || '');
+export default function EvaluationForm({ applicationId, jobParameters, initialData, allEvaluations, onSaved }) {
+  const [answers, setAnswers] = useState({ triagem: {}, cultura: {}, tecnico: {} });
+  const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -1635,80 +1629,15 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     }
   }, [initialData]);
 
-  // --- CÃLCULO 1: Nota do Pilar (0 a 10) ---
-  const calculatePillarScore = (sectionName, criteriaList) => {
-    if (!criteriaList || criteriaList.length === 0) return null;
-    
-    const ratingParams = jobParameters.notas || [];
-    let totalScore = 0;
-    let totalWeightAnswered = 0;
-    let hasAnswers = false;
-
-    criteriaList.forEach(criterion => {
-        const noteId = answers[sectionName]?.[criterion.name];
-        if (noteId) {
-            const noteObj = ratingParams.find(n => n.id === noteId);
-            if (noteObj) {
-                hasAnswers = true;
-                const weight = Number(criterion.weight) || 0;
-                // Soma ponderada: Nota * Peso
-                totalScore += (Number(noteObj.valor) * weight);
-                totalWeightAnswered += weight;
-            }
-        }
-    });
-
-    if (!hasAnswers || totalWeightAnswered === 0) return null;
-
-    // NormalizaÃ§Ã£o: (Pontos Obtidos / Peso Respondido)
-    // Isso garante que a nota fique na escala 0-10
-    return (totalScore / totalWeightAnswered).toFixed(2);
-  };
-
-  // --- CÃLCULO 2: Minha Nota Final (MÃ©dia dos 3 Pilares) ---
-  const calculateMyTotalScore = () => {
-      // Se um pilar nÃ£o for avaliado (null), consideramos 0 para a mÃ©dia
-      const s1 = parseFloat(calculatePillarScore('triagem', jobParameters.triagem) || 0);
-      const s2 = parseFloat(calculatePillarScore('cultura', jobParameters.cultura) || 0);
-      // Fallback para tÃ©cnico (vÃ¡rios nomes possÃ­veis no banco)
-      const tecnicoParams = jobParameters.tecnico || jobParameters['tÃƒÂ©cnico'] || jobParameters['tÃ©cnico'];
-      const s3 = parseFloat(calculatePillarScore('tecnico', tecnicoParams) || 0);
-
-      // MÃ©dia aritmÃ©tica simples entre os 3 pilares
-      const avg = (s1 + s2 + s3) / 3;
-      return avg.toFixed(2);
-  };
+  const currentScores = processEvaluation({ scores: answers }, jobParameters);
 
   const handleSelection = (section, criteriaName, noteId) => {
       setAnswers(prev => {
           const newSection = { ...prev[section] };
-          if (newSection[criteriaName] === noteId) {
-              delete newSection[criteriaName];
-          } else {
-              newSection[criteriaName] = noteId;
-          }
+          if (newSection[criteriaName] === noteId) delete newSection[criteriaName];
+          else newSection[criteriaName] = noteId;
           return { ...prev, [section]: newSection };
       });
-  };
-
-  // --- CÃLCULO 3: MÃ©dia Global (Todos os avaliadores) ---
-  const updateCandidateGlobalScore = async () => {
-      const { data: allEvaluations, error: fetchError } = await supabase
-          .from('evaluations')
-          .select('final_score')
-          .eq('application_id', applicationId);
-
-      if (fetchError) throw fetchError;
-      if (!allEvaluations || allEvaluations.length === 0) return;
-
-      // Soma todas as notas finais e divide pelo nÃºmero de avaliadores
-      const sum = allEvaluations.reduce((acc, curr) => acc + Number(curr.final_score), 0);
-      const globalAverage = (sum / allEvaluations.length).toFixed(2);
-
-      await supabase
-          .from('applications')
-          .update({ score_general: globalAverage })
-          .eq('id', applicationId);
   };
 
   const handleSave = async () => {
@@ -1717,102 +1646,56 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("UsuÃ¡rio nÃ£o logado");
 
-      const scoreTriagem = calculatePillarScore('triagem', jobParameters.triagem);
-      const scoreCultura = calculatePillarScore('cultura', jobParameters.cultura);
-      const tecnicoParams = jobParameters.tecnico || jobParameters['tÃƒÂ©cnico'] || jobParameters['tÃ©cnico'];
-      const scoreTecnico = calculatePillarScore('tecnico', tecnicoParams);
-      
-      const myFinalScore = calculateMyTotalScore();
+      const finalCalc = processEvaluation({ scores: answers }, jobParameters);
 
       const payload = {
         triagem: answers.triagem,
         cultura: answers.cultura,
         tecnico: answers.tecnico,
         anotacoes_gerais: notes,
-        pillar_scores: {
-            triagem: scoreTriagem || 0,
-            cultura: scoreCultura || 0,
-            tecnico: scoreTecnico || 0
-        },
+        pillar_scores: finalCalc,
         evaluator_name: user.email,
         updated_at: new Date()
       };
 
-      const { error: evalError } = await supabase
-        .from('evaluations')
-        .upsert({
+      const { error: evalError } = await supabase.from('evaluations').upsert({
             application_id: applicationId,
             evaluator_id: user.id,
             scores: payload, 
             notes: notes,
-            final_score: myFinalScore
+            final_score: finalCalc.total
         }, { onConflict: 'application_id, evaluator_id' });
 
       if (evalError) throw evalError;
-
-      await updateCandidateGlobalScore();
-
-      alert("AvaliaÃ§Ã£o salva com sucesso!");
+      alert("Salvo!");
       if (onSaved) onSaved();
-
-    } catch (error) {
-      console.error(error);
-      alert("Erro ao salvar: " + error.message);
-    } finally {
-      setSaving(false);
-    }
+    } catch (error) { alert("Erro: " + error.message); } finally { setSaving(false); }
   };
 
   const renderSectionCompact = (key, title, criteria) => {
-    if (!criteria || criteria.length === 0) return null;
+    if (!criteria?.length) return null;
     const ratingScale = jobParameters.notas || [];
-    const myScore = calculatePillarScore(key, criteria);
-
+    const tempScores = processEvaluation({ scores: answers }, jobParameters);
+    
     return (
       <Paper variant="outlined" sx={{ p: 1.5, mb: 2, borderColor: '#e0e0e0', bgcolor: '#fff' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#1976d2' }}>
-                {title}
-            </Typography>
-            <Typography variant="caption" sx={{ fontWeight: 'bold', bgcolor: myScore ? '#e3f2fd' : '#f5f5f5', px: 1, py: 0.5, borderRadius: 1 }}>
-                Nota: {myScore || '-'}
-            </Typography>
+            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#1976d2' }}>{title}</Typography>
+            <Typography variant="caption" sx={{ fontWeight: 'bold', bgcolor: '#e3f2fd', px: 1, py: 0.5, borderRadius: 1 }}>Nota: {tempScores[key].toFixed(1)}</Typography>
         </Box>
-
         {criteria.map((crit, idx) => (
             <Box key={idx} sx={{ mb: 1.5, borderBottom: '1px dashed #eee', pb: 1 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                    <Typography variant="caption" sx={{ fontWeight: 500, width: '80%', lineHeight: 1.2 }}>
-                        {crit.name}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                        {crit.weight}%
-                    </Typography>
+                    <Typography variant="caption" sx={{ fontWeight: 500, width: '80%', lineHeight: 1.2 }}>{crit.name}</Typography>
+                    <Typography variant="caption" color="text.secondary">{crit.weight}%</Typography>
                 </Box>
-                
                 <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                    {ratingScale.map(option => {
-                        const isSelected = answers[key]?.[crit.name] === option.id;
-                        return (
-                            <Button
-                                key={option.id}
-                                size="small"
-                                onClick={() => handleSelection(key, crit.name, option.id)}
-                                sx={{
-                                    minWidth: '30px',
-                                    height: '24px',
-                                    fontSize: '0.65rem',
-                                    p: '0 8px',
-                                    textTransform: 'none',
-                                    bgcolor: isSelected ? '#1976d2' : '#f5f5f5',
-                                    color: isSelected ? '#fff' : '#666',
-                                    '&:hover': { bgcolor: isSelected ? '#1565c0' : '#eeeeee' }
-                                }}
-                            >
-                                {option.nome}
-                            </Button>
-                        );
-                    })}
+                    {ratingScale.map(option => (
+                        <Button key={option.id} size="small" onClick={() => handleSelection(key, crit.name, option.id)}
+                                sx={{ minWidth: '30px', height: '24px', fontSize: '0.65rem', p: '0 8px', textTransform: 'none', bgcolor: answers[key]?.[crit.name] === option.id ? '#1976d2' : '#f5f5f5', color: answers[key]?.[crit.name] === option.id ? '#fff' : '#666', '&:hover': { bgcolor: answers[key]?.[crit.name] === option.id ? '#1565c0' : '#eeeeee' } }}>
+                            {option.nome}
+                        </Button>
+                    ))}
                 </Box>
             </Box>
         ))}
@@ -1830,51 +1713,42 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             <Typography variant="body2" sx={{ fontWeight: 'bold' }}>Minha AvaliaÃ§Ã£o</Typography>
         </Box>
         <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#1976d2' }}>
-            {calculateMyTotalScore()} <Typography component="span" variant="caption" color="text.secondary">/10</Typography>
+            {currentScores.total.toFixed(1)} <Typography component="span" variant="caption" color="text.secondary">/10</Typography>
         </Typography>
       </Box>
 
       <Box sx={{ flex: 1, overflowY: 'auto', pr: 1 }}>
           <Grid container spacing={1}>
-              <Grid item xs={12} md={4}>
-                  {renderSectionCompact("triagem", "Triagem", jobParameters.triagem)}
-              </Grid>
-              <Grid item xs={12} md={4}>
-                  {renderSectionCompact("cultura", "Fit Cultural", jobParameters.cultura)}
-              </Grid>
-              <Grid item xs={12} md={4}>
-                  {renderSectionCompact("tecnico", "TÃ©cnico", jobParameters.tecnico || jobParameters['tÃƒÂ©cnico'] || jobParameters['tÃ©cnico'])}
-              </Grid>
+              <Grid item xs={12} md={4}>{renderSectionCompact("triagem", "Triagem", jobParameters.triagem)}</Grid>
+              <Grid item xs={12} md={4}>{renderSectionCompact("cultura", "Fit Cultural", jobParameters.cultura)}</Grid>
+              <Grid item xs={12} md={4}>{renderSectionCompact("tecnico", "TÃ©cnico", jobParameters.tecnico || jobParameters['tÃ©cnico'])}</Grid>
           </Grid>
+          
+          <Paper variant="outlined" sx={{ p: 2, mt: 1 }}>
+            <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'block' }}>Minhas AnotaÃ§Ãµes</Typography>
+            <TextField multiline rows={2} fullWidth variant="outlined" size="small" value={notes} onChange={e => setNotes(e.target.value)} placeholder="ComentÃ¡rios..." sx={{ bgcolor: '#fff' }} InputProps={{ style: { fontSize: '0.8rem' } }} />
+          </Paper>
 
-          <TextField
-            label="AnotaÃ§Ãµes Gerais"
-            multiline
-            rows={2}
-            fullWidth
-            variant="outlined"
-            size="small"
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            placeholder="ComentÃ¡rios sobre o candidato..."
-            sx={{ mt: 1, bgcolor: '#fff' }}
-            InputProps={{ style: { fontSize: '0.8rem' } }}
-            InputLabelProps={{ style: { fontSize: '0.8rem' } }}
-          />
+          {/* HISTÃ“RICO DE TODAS AS ANOTAÃ‡Ã•ES */}
+          <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
+              <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <MessageSquare size={14} /> HistÃ³rico de ObservaÃ§Ãµes ({allEvaluations?.length || 0})
+              </Typography>
+              {allEvaluations && allEvaluations.length > 0 ? allEvaluations.map((ev, i) => (
+                  <Box key={i} sx={{ mb: 1, p: 1.5, bgcolor: '#f9fafb', borderRadius: 1, border: '1px solid #eee' }}>
+                      <Box display="flex" justifyContent="space-between" mb={0.5}>
+                          {/* Usa o nome mapeado ou fallback */}
+                          <Typography variant="caption" fontWeight="bold" color="primary">{ev.evaluator_name || 'UsuÃ¡rio'}</Typography>
+                          <Typography variant="caption" color="text.secondary">Nota: {Number(ev.final_score).toFixed(1)}</Typography>
+                      </Box>
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#444' }}>{ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentÃ¡rios.'}</Typography>
+                  </Box>
+              )) : <Typography variant="caption" color="text.secondary">Nenhuma avaliaÃ§Ã£o registrada ainda.</Typography>}
+          </Box>
       </Box>
 
       <Box sx={{ mt: 2, pt: 1, borderTop: '1px solid #eee' }}>
-        <Button 
-            onClick={handleSave} 
-            disabled={saving}
-            variant="contained"
-            fullWidth
-            color="primary"
-            startIcon={<Save size={16}/>}
-            sx={{ textTransform: 'none', fontWeight: 'bold' }}
-        >
-            {saving ? "Salvando..." : "Salvar Minha Nota"}
-        </Button>
+        <Button onClick={handleSave} disabled={saving} variant="contained" fullWidth color="primary" startIcon={<Save size={16}/>} sx={{ textTransform: 'none', fontWeight: 'bold' }}>{saving ? "Salvando..." : "Salvar Minha Nota"}</Button>
       </Box>
     </Box>
   );
@@ -2354,12 +2228,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import EvaluationForm from '../components/EvaluationForm';
-import { 
-    ArrowLeft, Mail, MapPin, BookOpen, FileText, Calendar, Download, TrendingUp, Users 
-} from 'lucide-react';
-import { 
-    Box, Container, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar 
-} from '@mui/material';
+import { ArrowLeft, Mail, MapPin, BookOpen, FileText, Download, Linkedin, Github, Phone, Calendar } from 'lucide-react';
+import { Box, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar } from '@mui/material';
+import { processEvaluation } from '../utils/evaluationLogic';
+import { formatPhone, formatUrl } from '../utils/formatters';
 
 export default function ApplicationDetails() {
   const { appId } = useParams();
@@ -2368,7 +2240,9 @@ export default function ApplicationDetails() {
   const [appData, setAppData] = useState(null);
   const [job, setJob] = useState(null);
   const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null);
+  const [globalScore, setGlobalScore] = useState(0);
   const [evaluatorsCount, setEvaluatorsCount] = useState(0);
+  const [allEvaluations, setAllEvaluations] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -2379,89 +2253,108 @@ export default function ApplicationDetails() {
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-
-      const { data: application, error: appError } = await supabase
-        .from('applications')
-        .select('*, candidates(*)')
-        .eq('id', appId)
-        .single();
-      
-      if (appError) throw appError;
-
+      const { data: application } = await supabase.from('applications').select('*, candidates(*)').eq('id', appId).single();
       const candidateObj = Array.isArray(application.candidates) ? application.candidates[0] : application.candidates;
-      setAppData({ ...application, candidate: candidateObj });
+      
+      // Parse Seguro do formData
+      let safeFormData = application.formData;
+      if (typeof safeFormData === 'string') {
+          try { safeFormData = JSON.parse(safeFormData); } catch(e) { console.log('Erro parse formData', e); }
+      }
+      
+      setAppData({ ...application, formData: safeFormData, candidate: candidateObj });
 
+      let jobParams = {};
       if (application.jobId) {
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', application.jobId).single();
         setJob(jobData);
+        jobParams = jobData.parameters || {};
       }
 
-      const { data: allEvals, error: evalsError } = await supabase
-        .from('evaluations')
-        .select('evaluator_id, scores, notes, final_score')
-        .eq('application_id', appId);
+      const { data: allEvals } = await supabase.from('evaluations').select('*').eq('application_id', appId);
+      if (allEvals) {
+          const userIds = [...new Set(allEvals.map(e => e.evaluator_id))];
+          let usersMap = {};
+          if (userIds.length > 0) {
+              const { data: users } = await supabase.from('users').select('id, name, email').in('id', userIds);
+              users?.forEach(u => usersMap[u.id] = u.name || u.email);
+          }
+          const evalsWithNames = allEvals.map(e => ({ ...e, evaluator_name: usersMap[e.evaluator_id] || 'Avaliador' }));
+          setAllEvaluations(evalsWithNames);
+          setEvaluatorsCount(evalsWithNames.length);
+          
+          let sumTotal = 0, validCount = 0;
+          evalsWithNames.forEach(ev => {
+              const scores = processEvaluation(ev, jobParams);
+              if (scores.total > 0) { sumTotal += scores.total; validCount++; }
+          });
+          setGlobalScore(validCount > 0 ? (sumTotal / validCount) : 0);
 
-      if (!evalsError && allEvals) {
-          setEvaluatorsCount(allEvals.length);
           if (user) {
               const myEval = allEvals.find(e => e.evaluator_id === user.id);
               if (myEval) {
-                  setCurrentUserEvaluation({
-                      ...myEval.scores,
-                      anotacoes_gerais: myEval.notes || myEval.scores.anotacoes_gerais,
-                      final_score: myEval.final_score
-                  });
-              } else {
-                  setCurrentUserEvaluation(null);
-              }
+                  const myScores = processEvaluation(myEval, jobParams);
+                  setCurrentUserEvaluation({ ...myEval.scores, anotacoes_gerais: myEval.notes || myEval.scores?.anotacoes_gerais, final_score: myScores.total });
+              } else { setCurrentUserEvaluation(null); }
           }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  const renderEducation = (edu) => {
-    if (!edu || typeof edu !== 'object') return <Typography variant="caption" color="text.secondary">NÃ£o informado</Typography>;
-    const nivelMap = { medio: 'Ensino MÃ©dio', tecnico: 'TÃ©cnico', superior: 'Superior', pos: 'PÃ³s', mestrado: 'Mestrado' };
+  const renderInfo = (data) => {
+    if (!data) return null;
     
+    // Suporte para estrutura plana (novo JSON) ou aninhada (antigo)
+    const course = data.course || data.education?.course;
+    const institution = data.institution || data.education?.institution;
+    const year = data.completionYear || data.education?.date;
+    const birth = data.birthDate;
+    const eng = data.englishLevel;
+
     return (
-      <Box sx={{ bgcolor: '#f9fafb', p: 1, borderRadius: 1, border: '1px solid #eee', mt: 0.5 }}>
-        <Typography variant="caption" display="block" fontWeight="bold">
-            {nivelMap[edu.level] || edu.level} {edu.status && `â€¢ ${edu.status}`}
-        </Typography>
-        <Typography variant="caption" display="block" color="text.secondary">
-            {edu.course} {edu.institution ? `| ${edu.institution}` : ''}
-        </Typography>
-      </Box>
+        <>
+            {/* Bloco FormaÃ§Ã£o */}
+            <Box sx={{ mt: 3 }}>
+                <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}>
+                    <BookOpen size={14}/> FormaÃ§Ã£o
+                </Typography>
+                <Box sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 0.5 }}>
+                    <Typography variant="caption" display="block" fontWeight="bold">{course || 'Curso nÃ£o informado'}</Typography>
+                    <Typography variant="caption" display="block" color="text.secondary">{institution || 'InstituiÃ§Ã£o nÃ£o informada'}</Typography>
+                    {year && <Typography variant="caption" display="block" color="text.secondary">ConclusÃ£o: {year}</Typography>}
+                </Box>
+            </Box>
+
+            {/* Bloco Extras (InglÃªs, Nasc) */}
+            {(birth || eng) && (
+                <Box sx={{ mt: 2 }}>
+                    <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}>
+                        <Calendar size={14}/> Detalhes
+                    </Typography>
+                    <Box sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 0.5 }}>
+                        {birth && <Typography variant="caption" display="block">Nascimento: {birth}</Typography>}
+                        {eng && <Typography variant="caption" display="block">InglÃªs: {eng}</Typography>}
+                    </Box>
+                </Box>
+            )}
+        </>
     );
   };
 
-  const renderScoreBadges = (globalScore, myScore, count) => {
+  const renderScoreBadges = (gScore, myScore, count) => {
     const getBgColor = (s) => s >= 8 ? '#e8f5e9' : s >= 5 ? '#fff3e0' : '#ffebee';
     const getTextColor = (s) => s >= 8 ? '#2e7d32' : s >= 5 ? '#ef6c00' : '#c62828';
-
     return (
-        <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-            <Box sx={{ flex: 1, bgcolor: getBgColor(globalScore), p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
-                <Typography variant="caption" display="block" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.65rem' }}>
-                    Nota Global ({count})
-                </Typography>
-                <Typography variant="h5" sx={{ fontWeight: 900, color: getTextColor(globalScore), lineHeight: 1 }}>
-                    {Number(globalScore || 0).toFixed(1)}
-                </Typography>
-            </Box>
-            
-            <Box sx={{ flex: 1, bgcolor: '#f3f4f6', p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
-                <Typography variant="caption" display="block" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.65rem' }}>
-                    Minha Nota
-                </Typography>
-                <Typography variant="h5" sx={{ fontWeight: 900, color: '#374151', lineHeight: 1 }}>
-                    {Number(myScore || 0).toFixed(1)}
-                </Typography>
-            </Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 3, width: '100%' }}>
+            <Paper elevation={0} sx={{ bgcolor: getBgColor(gScore), p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
+                <Typography variant="subtitle2" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.75rem' }}>Nota Global</Typography>
+                <Typography variant="caption" sx={{ display:'block', fontSize: '0.7rem', color: 'text.secondary', mb: 0.5 }}>({count} {count === 1 ? 'avaliaÃ§Ã£o' : 'avaliaÃ§Ãµes'})</Typography>
+                <Typography variant="h3" sx={{ fontWeight: 800, color: getTextColor(gScore), lineHeight: 1 }}>{Number(gScore || 0).toFixed(1)}</Typography>
+            </Paper>
+            <Paper elevation={0} sx={{ bgcolor: '#f3f4f6', p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
+                <Typography variant="subtitle2" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.75rem', mb: 1 }}>Minha Nota</Typography>
+                <Typography variant="h3" sx={{ fontWeight: 800, color: '#374151', lineHeight: 1 }}>{Number(myScore || 0).toFixed(1)}</Typography>
+            </Paper>
         </Box>
     );
   };
@@ -2471,72 +2364,52 @@ export default function ApplicationDetails() {
 
   const params = job?.parameters || {};
   const formData = appData.formData || {};
-  const myScore = currentUserEvaluation?.final_score;
+  const candidate = appData.candidate || {};
+  
+  // Mescla dados do formData com a tabela candidate
+  const displayPhone = candidate.phone || formData.phone;
+  const displayCity = candidate.city || formData.city;
+  const displayState = candidate.state || formData.state;
+  const linkedIn = candidate.linkedin_profile || formData.linkedinProfile || formData.linkedin_profile;
+  const gitHub = candidate.github_profile || formData.githubProfile;
 
   return (
     <Box sx={{ bgcolor: '#f8f9fa', minHeight: '100vh', p: 2 }}>
-      <Button onClick={() => navigate(-1)} startIcon={<ArrowLeft size={16}/>} sx={{ mb: 2, color: 'text.secondary' }}>
-        Voltar
-      </Button>
-
-      <Grid container spacing={2}>
+      <Button onClick={() => navigate(-1)} startIcon={<ArrowLeft size={16}/>} sx={{ mb: 2, color: 'text.secondary' }}>Voltar</Button>
+      <Grid container spacing={3}>
         <Grid item xs={12} md={3}>
-          <Paper sx={{ p: 2, height: '100%' }} elevation={0} variant="outlined">
+          <Paper sx={{ p: 3, height: '100%' }} elevation={0} variant="outlined">
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-              <Avatar sx={{ width: 64, height: 64, bgcolor: '#1976d2', fontSize: '1.5rem', mb: 1 }}>
-                {appData.candidate?.name?.[0]}
-              </Avatar>
-              <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 'bold', lineHeight: 1.2 }}>
-                {appData.candidate?.name}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {job?.title}
-              </Typography>
-              <Box sx={{ width: '100%' }}>
-                {renderScoreBadges(appData.score_general, myScore, evaluatorsCount)}
-              </Box>
+              <Avatar sx={{ width: 80, height: 80, bgcolor: '#1976d2', fontSize: '2rem', mb: 2, fontWeight: 'bold' }}>{candidate.name?.[0]}</Avatar>
+              <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 'bold', lineHeight: 1.2 }}>{candidate.name}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 2 }}>{job?.title}</Typography>
+              {renderScoreBadges(globalScore, currentUserEvaluation?.final_score, evaluatorsCount)}
             </Box>
-            
-            <Divider sx={{ my: 2 }} />
-            
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <Box display="flex" alignItems="center" gap={1}>
-                    <Mail size={14} color="#666"/>
-                    <Typography variant="caption" sx={{wordBreak: 'break-all'}}>{appData.candidate?.email}</Typography>
-                </Box>
-                <Box display="flex" alignItems="center" gap={1}>
-                    <MapPin size={14} color="#666"/>
-                    <Typography variant="caption">{appData.candidate?.city || 'NÃ£o informado'}</Typography>
-                </Box>
-                {appData.candidate?.resume_url && (
-                    <Button variant="outlined" size="small" href={appData.candidate.resume_url} target="_blank" startIcon={<Download size={14}/>} sx={{ mt: 1, fontSize: '0.7rem' }}>
-                        Ver CurrÃ­culo
-                    </Button>
-                )}
+            <Divider sx={{ my: 3 }} />
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                <Box display="flex" alignItems="center" gap={1.5}><Mail size={16} className="text-gray-400"/><Typography variant="body2" sx={{wordBreak: 'break-all'}}>{candidate.email || formData.email}</Typography></Box>
+                <Box display="flex" alignItems="center" gap={1.5}><Phone size={16} className="text-gray-400"/><Typography variant="body2">{formatPhone(displayPhone)}</Typography></Box>
+                <Box display="flex" alignItems="center" gap={1.5}><MapPin size={16} className="text-gray-400"/><Typography variant="body2">{displayCity} - {displayState}</Typography></Box>
             </Box>
+            <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {candidate.resume_url && (<Button variant="contained" color="primary" fullWidth href={candidate.resume_url} target="_blank" startIcon={<Download size={18}/>} sx={{ mb: 1, textTransform: 'none', fontWeight: 'bold' }}>Ver CurrÃ­culo</Button>)}
+                {linkedIn && (<Button variant="outlined" fullWidth href={formatUrl(linkedIn)} target="_blank" startIcon={<Linkedin size={16}/>} sx={{ textTransform: 'none', color: '#0077b5', borderColor: '#0077b5' }}>LinkedIn</Button>)}
+                {gitHub && (<Button variant="outlined" fullWidth href={formatUrl(gitHub)} target="_blank" startIcon={<Github size={16}/>} sx={{ textTransform: 'none', color: '#333', borderColor: '#333' }}>GitHub</Button>)}
+            </Box>
+            <Divider sx={{ my: 3 }} />
+            
+            {renderInfo(formData)}
 
             <Box sx={{ mt: 3 }}>
-               <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary'}}>FormaÃ§Ã£o</Typography>
-               {formData.education ? renderEducation(formData.education) : <Typography variant="caption" display="block">Sem dados</Typography>}
+               <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}><FileText size={14}/> MotivaÃ§Ã£o</Typography>
+               <Typography variant="body2" paragraph sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 1, whiteSpace: 'pre-line', fontSize: '0.85rem' }}>{formData.motivation || 'NÃ£o informada'}</Typography>
             </Box>
-
-            <Box sx={{ mt: 2 }}>
-               <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary'}}>MotivaÃ§Ã£o</Typography>
-               <Typography variant="caption" paragraph sx={{ bgcolor: '#f9fafb', p: 1, borderRadius: 1, border: '1px solid #eee', mt: 0.5, whiteSpace: 'pre-line' }}>
-                  {formData.motivation || 'NÃ£o informada'}
-               </Typography>
-            </Box>
+            <Box sx={{ mt: 2 }}><Typography variant="caption" color="text.secondary">Candidatou-se em: {new Date(appData.created_at).toLocaleDateString('pt-BR')}</Typography></Box>
           </Paper>
         </Grid>
-
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
-             <EvaluationForm 
-                applicationId={appData.id}
-                jobParameters={params}
-                initialData={currentUserEvaluation} 
-                onSaved={fetchData} 
-             />
+             <EvaluationForm applicationId={appData.id} jobParameters={params} initialData={currentUserEvaluation} allEvaluations={allEvaluations} onSaved={fetchData} />
           </Paper>
         </Grid>
       </Grid>
@@ -2985,7 +2858,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabase/client';
 import { useNavigate } from 'react-router-dom';
 import CreateJobModal from '../components/jobs/CreateJobModal';
-import { Briefcase, Users, Plus, Settings as SettingsIcon } from 'lucide-react';
+import { Briefcase, Users, Plus, Settings as SettingsIcon, Clock } from 'lucide-react';
+import { differenceInDays, parseISO } from 'date-fns';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -3018,7 +2892,8 @@ export default function Dashboard() {
       // 2. Se tiver Tenant, busca vagas
       if (userProfile?.tenantId) {
         const [jobsResult, deptsResult] = await Promise.all([
-          supabase.from('jobs').select('*').eq('tenantId', userProfile.tenantId),
+          // Busca vagas e jÃ¡ conta os candidatos na query (count)
+          supabase.from('jobs').select('*, applications(count)').eq('tenantId', userProfile.tenantId),
           supabase.from('company_departments').select('*').eq('tenantId', userProfile.tenantId)
         ]);
 
@@ -3030,9 +2905,14 @@ export default function Dashboard() {
 
         const processed = rawJobs.map(j => ({
           ...j,
-          deptName: j.company_department_id ? (deptMap[j.company_department_id] || 'Geral') : 'Geral'
+          deptName: j.company_department_id ? (deptMap[j.company_department_id] || 'Geral') : 'Geral',
+          // MÃ©trica 1: Quantidade de Inscritos
+          candidateCount: j.applications?.[0]?.count || 0,
+          // MÃ©trica 2: Dias em Aberto
+          daysOpen: differenceInDays(new Date(), parseISO(j.created_at))
         }));
 
+        // Ordena por data (mais recente primeiro)
         processed.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         setJobs(processed);
       }
@@ -3043,6 +2923,7 @@ export default function Dashboard() {
     }
   };
 
+  // FunÃ§Ã£o para corrigir contas sem tenant (Mantida do original para seguranÃ§a)
   const fixAccount = async () => {
     setFixing(true);
     try {
@@ -3130,6 +3011,7 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
+          {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             <div className="bg-white p-6 rounded shadow border border-gray-100 flex items-center gap-4">
               <div className="p-3 bg-blue-100 text-blue-600 rounded-full"><Briefcase size={24}/></div>
@@ -3141,12 +3023,13 @@ export default function Dashboard() {
             <div className="bg-white p-6 rounded shadow border border-gray-100 flex items-center gap-4">
               <div className="p-3 bg-green-100 text-green-600 rounded-full"><Users size={24}/></div>
               <div>
-                <p className="text-sm text-gray-500">Total Vagas</p>
-                <p className="text-2xl font-bold">{jobs.length}</p>
+                <p className="text-sm text-gray-500">Total Candidatos</p>
+                <p className="text-2xl font-bold">{jobs.reduce((acc, j) => acc + j.candidateCount, 0)}</p>
               </div>
             </div>
           </div>
 
+          {/* Tabela de Vagas */}
           <div className="bg-white rounded shadow border overflow-hidden">
             <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
               <h2 className="font-semibold text-gray-700">Listagem de Vagas</h2>
@@ -3168,14 +3051,16 @@ export default function Dashboard() {
                 <tr>
                   <th className="p-4 font-medium">Ãrea / Depto</th>
                   <th className="p-4 font-medium">TÃ­tulo</th>
-                  <th className="p-4 font-medium">Modelo</th>
+                  {/* NOVAS COLUNAS */}
+                  <th className="p-4 font-medium text-center">Inscritos</th>
+                  <th className="p-4 font-medium text-center">Tempo</th>
                   <th className="p-4 font-medium">Status</th>
                   <th className="p-4 font-medium text-right">AÃ§Ã£o</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredJobs.length === 0 ? (
-                  <tr><td colSpan="5" className="p-8 text-center text-gray-500">Nenhuma vaga encontrada.</td></tr>
+                  <tr><td colSpan="6" className="p-8 text-center text-gray-500">Nenhuma vaga encontrada.</td></tr>
                 ) : (
                   filteredJobs.map(job => (
                     <tr 
@@ -3185,7 +3070,15 @@ export default function Dashboard() {
                     >
                       <td className="p-4 text-gray-600">{job.deptName}</td>
                       <td className="p-4 font-bold text-gray-800 group-hover:text-blue-600">{job.title}</td>
-                      <td className="p-4 text-gray-600">{job.location_type}</td>
+                      
+                      {/* DADOS ADICIONADOS */}
+                      <td className="p-4 text-center">
+                          <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold text-xs">{job.candidateCount}</span>
+                      </td>
+                      <td className="p-4 text-center text-gray-500 flex items-center justify-center gap-1">
+                          <Clock size={14}/> {job.daysOpen} dias
+                      </td>
+
                       <td className="p-4">
                         <span className={`px-2 py-1 rounded text-xs font-semibold ${job.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
                           {job.status === 'active' ? 'Ativa' : 'Inativa'}
@@ -3218,107 +3111,45 @@ ARQUIVO: src\pages\JobDetails.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-import { format, parseISO } from 'date-fns';
 import { 
     Container, Typography, Box, AppBar, Toolbar, Button, CircularProgress, 
-    Alert, Paper, Tabs, Tab, TextField, IconButton, Snackbar, InputAdornment,
+    Paper, Tabs, Tab, TextField, IconButton, Snackbar,
     List, ListItem, ListItemText, Divider, Grid,
     Table, TableHead, TableRow, TableCell, TableBody, Checkbox,
-    FormControl, InputLabel, Select, MenuItem, Avatar, Chip, Modal
+    FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert
 } from '@mui/material';
-import { 
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine 
-} from 'recharts';
-import { Delete as DeleteIcon, ContentCopy as ContentCopyIcon, FileCopy as FileCopyIcon } from '@mui/icons-material';
-// ImportaÃ§Ã£o corrigida (agora o arquivo existe)
-import { formatStatus } from '../utils/formatters';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList } from 'recharts';
+import { Delete as DeleteIcon, ContentCopy as ContentCopyIcon } from '@mui/icons-material';
+import { processEvaluation } from '../utils/evaluationLogic';
 
-const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 500, bgcolor: 'background.paper', boxShadow: 24, p: 4 };
+// --- COMPONENTES AUXILIARES ---
+const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 500, bgcolor: 'background.paper', boxShadow: 24, p: 4, borderRadius: 2 };
 
 const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [isCopying, setIsCopying] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      const fetchJobsList = async () => {
-        setLoading(true);
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const response = await fetch('/api/jobs', { headers: { 'Authorization': `Bearer ${session.access_token}` } });
-          const data = await response.json();
-          const copyableJobs = (data.jobs || []).filter(j => j.id.toString() !== currentJobId && j.status === 'active');
-          setJobs(copyableJobs);
-        } catch (err) { console.error(err); } finally { setLoading(false); }
-      };
-      fetchJobsList();
-    }
-  }, [open, currentJobId]);
-
-  const handleConfirmCopy = async () => {
-    if (!selectedJobId) return;
-    setIsCopying(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch(`/api/jobs?id=${selectedJobId}`, { headers: { 'Authorization': `Bearer ${session.access_token}` } });
-      const data = await response.json();
-      if (data.job && data.job.parameters) onCopy(data.job.parameters);
-      onClose();
-    } catch (err) { console.error(err); } finally { setIsCopying(false); }
-  };
-
-  return (
-    <Modal open={open} onClose={onClose}>
-      <Box sx={modalStyle}>
-        <Typography variant="h6" gutterBottom>Copiar ParÃ¢metros</Typography>
-        {loading ? <CircularProgress /> : (
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Selecionar Vaga</InputLabel>
-            <Select value={selectedJobId} onChange={(e) => setSelectedJobId(e.target.value)} label="Selecionar Vaga">
-              {jobs.map(job => <MenuItem key={job.id} value={job.id}>{job.title}</MenuItem>)}
-            </Select>
-          </FormControl>
-        )}
-        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-          <Button onClick={onClose}>Cancelar</Button>
-          <Button variant="contained" onClick={handleConfirmCopy} disabled={isCopying || !selectedJobId}>Copiar</Button>
-        </Box>
-      </Box>
-    </Modal>
-  );
+  useEffect(() => { if (open) { const f = async () => { const { data } = await supabase.from('jobs').select('id, title').neq('id', currentJobId).eq('status', 'active'); setJobs(data || []); }; f(); } }, [open, currentJobId]);
+  const handleConfirm = async () => { if (!selectedJobId) return; const { data } = await supabase.from('jobs').select('parameters').eq('id', selectedJobId).single(); if (data?.parameters) onCopy(data.parameters); onClose(); };
+  return ( <Modal open={open} onClose={onClose}><Box sx={modalStyle}><Typography variant="h6">Copiar de Vaga</Typography><FormControl fullWidth margin="normal"><InputLabel>Vaga</InputLabel><Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga">{jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}</Select></FormControl><Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}><Button onClick={onClose}>Cancelar</Button><Button onClick={handleConfirm} variant="contained" disabled={!selectedJobId}>Copiar</Button></Box></Box></Modal> );
 };
 
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
-  const handleItemChange = (index, field, value) => { const newCriteria = [...criteria]; newCriteria[index] = { ...newCriteria[index], [field]: field === 'weight' ? Number(value) : value }; onCriteriaChange(newCriteria); };
-  const addCriterion = () => { if (criteria.length < 10) onCriteriaChange([...criteria, { name: '', weight: 0 }]); };
-  const removeCriterion = (index) => { onCriteriaChange(criteria.filter((_, i) => i !== index)); };
-  const totalWeight = criteria.reduce((sum, item) => sum + (item.weight || 0), 0);
+  const handleChange = (i, f, v) => { const n = [...criteria]; n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; onCriteriaChange(n); };
+  const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
   return (
-    <Box sx={{ mt: 2 }}>
-      {criteria.map((item, index) => (
-        <Box key={index} sx={{ display: 'flex', gap: 2, mb: 2 }}>
-          <TextField label={`CritÃ©rio ${index + 1}`} value={item.name} onChange={(e) => handleItemChange(index, 'name', e.target.value)} fullWidth variant="standard" />
-          <TextField label="Peso (%)" type="number" value={item.weight} onChange={(e) => handleItemChange(index, 'weight', e.target.value)} sx={{ width: '100px' }} variant="standard" />
-          <IconButton onClick={() => removeCriterion(index)} color="error"><DeleteIcon /></IconButton>
-        </Box>
-      ))}
-      <Button onClick={addCriterion} disabled={criteria.length >= 10}>Adicionar CritÃ©rio</Button>
-      <Typography variant="caption" sx={{ display:'block', mt: 1, color: totalWeight === 100 ? 'green' : 'red' }}>Total Pesos: {totalWeight}%</Typography>
-    </Box>
+    <Box sx={{mt:2}}>{criteria.map((c, i) => <Box key={i} display="flex" gap={2} mb={1}><TextField value={c.name} onChange={e=>handleChange(i,'name',e.target.value)} fullWidth size="small" label="CritÃ©rio" /><TextField type="number" value={c.weight} onChange={e=>handleChange(i,'weight',e.target.value)} sx={{width:100}} size="small" label="Peso %" /><IconButton onClick={()=>onCriteriaChange(criteria.filter((_,idx)=>idx!==i))} color="error"><DeleteIcon/></IconButton></Box>)}<Button onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small">Adicionar</Button><Typography color={total===100?'green':'red'} variant="caption" display="block" sx={{mt:1, fontWeight:'bold'}}>Total: {total}%</Typography></Box>
   );
 };
 
-const JobDetails = () => {
+export default function JobDetails() {
   const { jobId } = useParams();
-  const navigate = useNavigate();
   const [job, setJob] = useState(null);
   const [parameters, setParameters] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const [applicants, setApplicants] = useState([]);
   const [allEvaluations, setAllEvaluations] = useState([]);
+  const [usersMap, setUsersMap] = useState({});
   const [evaluatorFilter, setEvaluatorFilter] = useState('all');
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [feedback, setFeedback] = useState({ open: false, message: '', severity: 'success' });
@@ -3327,218 +3158,207 @@ const JobDetails = () => {
     const fetchAllData = async () => {
       setLoading(true);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) throw new Error("NÃ£o autenticado");
-
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         setJob(jobData);
-        setParameters(jobData.parameters || {});
+        setParameters(jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] });
 
         const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', jobId);
         setApplicants(appsData || []);
 
         const appIds = (appsData || []).map(a => a.id);
         if (appIds.length > 0) {
-            const { data: evalsData } = await supabase.from('evaluations').select('*, evaluator:users(email, name)').in('application_id', appIds);
+            const { data: evalsData } = await supabase.from('evaluations').select('*').in('application_id', appIds);
             setAllEvaluations(evalsData || []);
+
+            const userIds = [...new Set((evalsData || []).map(e => e.evaluator_id))];
+            if (userIds.length > 0) {
+                const { data: usersData } = await supabase.from('users').select('id, name, email').in('id', userIds);
+                const map = {};
+                usersData?.forEach(u => map[u.id] = u.name || u.email);
+                setUsersMap(map);
+            }
         }
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
     fetchAllData();
   }, [jobId]);
 
-  const processedClassificationData = useMemo(() => {
-    const evaluatorsList = Array.from(new Set(allEvaluations.map(e => e.evaluator_id)))
-        .map(id => {
-            const ev = allEvaluations.find(e => e.evaluator_id === id);
-            return { id, name: ev.evaluator?.name || ev.evaluator_name || 'Desconhecido' };
-        });
+  const processedData = useMemo(() => {
+    if (!parameters) return { chartData: [], evaluators: [] };
+
+    const evaluators = Object.keys(usersMap).map(id => ({ id, name: usersMap[id] || 'Desconhecido' }));
 
     const chartData = applicants.map(app => {
-        const appEvaluations = allEvaluations.filter(e => 
-            e.application_id === app.id && 
+        const appEvals = allEvaluations.filter(e => 
+            String(e.application_id) === String(app.id) && 
             (evaluatorFilter === 'all' || e.evaluator_id === evaluatorFilter)
         );
 
-        if (appEvaluations.length === 0) {
-            return { name: app.candidate.name, triagem: 0, cultura: 0, tecnico: 0, total: 0, count: 0, appId: app.id };
-        }
-
-        let sumTriagem = 0, sumCultura = 0, sumTecnico = 0, count = 0;
-        appEvaluations.forEach(ev => {
-            const p = ev.scores.pillar_scores || {};
-            sumTriagem += Number(p.triagem || 0);
-            sumCultura += Number(p.cultura || 0);
-            sumTecnico += Number(p.tecnico || 0);
-            count++;
+        let sumT = 0, sumC = 0, sumTc = 0, count = 0, sumTotal = 0;
+        appEvals.forEach(ev => {
+            const scores = processEvaluation(ev, parameters);
+            if (scores.total > 0 || scores.triagem > 0 || scores.cultura > 0 || scores.tecnico > 0) {
+                sumT += scores.triagem; sumC += scores.cultura; sumTc += scores.tecnico; sumTotal += scores.total; count++;
+            }
         });
 
-        const avgTriagem = count > 0 ? sumTriagem / count : 0;
-        const avgCultura = count > 0 ? sumCultura / count : 0;
-        const avgTecnico = count > 0 ? sumTecnico / count : 0;
-        const generalAvg = (avgTriagem + avgCultura + avgTecnico) / 3;
+        const avgT = count > 0 ? sumT / count : 0;
+        const avgC = count > 0 ? sumC / count : 0;
+        const avgTc = count > 0 ? sumTc / count : 0;
+        const general = count > 0 ? sumTotal / count : 0;
 
         return {
             appId: app.id,
-            name: app.candidate.name,
-            triagem: avgTriagem, 
-            cultura: avgCultura,
-            tecnico: avgTecnico,
-            total: generalAvg,
+            name: app.candidate?.name || 'Sem Nome',
+            email: app.candidate?.email,
+            triagem: Number(avgT.toFixed(1)),
+            cultura: Number(avgC.toFixed(1)),
+            tecnico: Number(avgTc.toFixed(1)),
+            total: Number(general.toFixed(1)),
             count: count,
-            hired: app.isHired,
-            created_at: app.created_at
+            hired: app.isHired
         };
     }).sort((a, b) => b.total - a.total);
 
-    return { chartData, evaluatorsList };
-  }, [applicants, allEvaluations, evaluatorFilter]);
+    return { chartData, evaluators };
+  }, [applicants, allEvaluations, evaluatorFilter, parameters, usersMap]);
 
   const handleHireToggle = async (appId, currentStatus) => {
       const newStatus = !currentStatus;
       setApplicants(prev => prev.map(a => a.id === appId ? {...a, isHired: newStatus} : a));
-      await supabase.from('applications').update({ isHired: newStatus, hiredAt: newStatus ? new Date() : null }).eq('id', appId);
+      await supabase.from('applications').update({ isHired: newStatus }).eq('id', appId);
   };
-
   const handleSaveParameters = async () => {
-      try {
-          const { data: { session } } = await supabase.auth.getSession();
-          await fetch('/api/updateJobParameters', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-              body: JSON.stringify({ jobId, parameters })
-          });
-          setFeedback({ open: true, message: 'ParÃ¢metros salvos!', severity: 'success' });
-      } catch (e) { setFeedback({ open: true, message: 'Erro ao salvar', severity: 'error' }); }
-  };
-
-  const renderClassificationTab = () => {
-      const { chartData, evaluatorsList } = processedClassificationData;
-      return (
-        <Grid container spacing={3} sx={{ mt: 1 }}>
-            <Grid item xs={12} md={8}>
-                <Paper sx={{ p: 3 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                        <Typography variant="h6">Comparativo (MÃ©dia 0-10)</Typography>
-                        <FormControl size="small" sx={{ width: 200 }}>
-                            <InputLabel>VisÃ£o</InputLabel>
-                            <Select value={evaluatorFilter} label="VisÃ£o" onChange={(e) => setEvaluatorFilter(e.target.value)}>
-                                <MenuItem value="all">Geral (MÃ©dia Equipe)</MenuItem>
-                                {evaluatorsList.map(ev => <MenuItem key={ev.id} value={ev.id}>{ev.name}</MenuItem>)}
-                            </Select>
-                        </FormControl>
-                    </Box>
-                    <Box sx={{ height: 400 }}>
-                        <ResponsiveContainer>
-                            <BarChart data={chartData} layout="vertical" margin={{ left: 50 }}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis type="number" domain={[0, 10]} />
-                                <YAxis dataKey="name" type="category" width={100} style={{fontSize: '0.8rem'}} />
-                                <Tooltip formatter={(val) => Number(val).toFixed(2)} />
-                                <Legend />
-                                <Bar dataKey="triagem" name="Triagem" fill="#90caf9" />
-                                <Bar dataKey="cultura" name="Cultura" fill="#a5d6a7" />
-                                <Bar dataKey="tecnico" name="TÃ©cnico" fill="#ffcc80" />
-                                <ReferenceLine x={5} stroke="red" strokeDasharray="3 3" label="MÃ©dia 5" />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </Box>
-                </Paper>
-                <Paper sx={{ mt: 3, p: 3 }}>
-                    <Typography variant="h6">HistÃ³rico de AvaliaÃ§Ãµes</Typography>
-                    <List sx={{ maxHeight: 300, overflow: 'auto' }}>
-                        {allEvaluations.map((ev, idx) => {
-                            const app = applicants.find(a => a.id === ev.application_id);
-                            return (
-                                <ListItem key={idx} divider>
-                                    <ListItemText 
-                                        primary={`Candidato: ${app?.candidate?.name} - Nota: ${Number(ev.final_score).toFixed(2)}`}
-                                        secondary={`Avaliador: ${ev.evaluator_name || '...'} | ${ev.notes || ''}`}
-                                    />
-                                </ListItem>
-                            );
-                        })}
-                    </List>
-                </Paper>
-            </Grid>
-            <Grid item xs={12} md={4}>
-                <Paper sx={{ height: '100%', overflow: 'hidden' }}>
-                    <Box sx={{ p: 2, bgcolor: '#f5f5f5' }}><Typography variant="subtitle1">Ranking</Typography></Box>
-                    <List sx={{ overflowY: 'auto', maxHeight: '80vh' }}>
-                        {chartData.map((data) => (
-                            <React.Fragment key={data.appId}>
-                                <ListItem secondaryAction={<Checkbox checked={data.hired || false} onChange={() => handleHireToggle(data.appId, data.hired)} color="success" />}>
-                                    <ListItemText 
-                                        primary={<Typography variant="body2" component={RouterLink} to={`/vaga/${jobId}/candidato/${data.appId}`} sx={{textDecoration:'none', color:'inherit', fontWeight:'bold'}}>{data.name}</Typography>}
-                                        secondary={
-                                            <>
-                                                <Typography variant="caption" display="block">Geral: {data.total.toFixed(2)}</Typography>
-                                                <Box sx={{display:'flex', gap:0.5}}><Chip label={`T:${data.triagem.toFixed(1)}`} size="small" sx={{height:20, fontSize:'0.6rem'}}/><Chip label={`C:${data.cultura.toFixed(1)}`} size="small" sx={{height:20, fontSize:'0.6rem'}}/><Chip label={`Tc:${data.tecnico.toFixed(1)}`} size="small" sx={{height:20, fontSize:'0.6rem'}}/></Box>
-                                            </>
-                                        }
-                                    />
-                                </ListItem>
-                                <Divider />
-                            </React.Fragment>
-                        ))}
-                    </List>
-                </Paper>
-            </Grid>
-        </Grid>
-      );
+      await supabase.from('jobs').update({ parameters }).eq('id', jobId);
+      setFeedback({ open: true, message: 'Salvo!', severity: 'success' });
   };
 
   if (loading) return <Box p={5} display="flex" justifyContent="center"><CircularProgress /></Box>;
 
   return (
     <Box>
-        <AppBar position="static"><Toolbar><Typography variant="h6" sx={{flexGrow:1}}>{job?.title}</Typography><Button color="inherit" component={RouterLink} to="/">Voltar</Button></Toolbar></AppBar>
-        <Container maxWidth="xl" sx={{ mt: 4 }}>
-            <Paper sx={{ mb: 2 }}><Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered><Tab label="Candidatos" /><Tab label="ClassificaÃ§Ã£o" /><Tab label="ConfiguraÃ§Ãµes" /></Tabs></Paper>
+        <AppBar position="static" color="default" elevation={1}><Toolbar><Typography variant="h6" sx={{flexGrow:1}}>{job?.title}</Typography><Button color="inherit" component={RouterLink} to="/">Voltar</Button></Toolbar></AppBar>
+        <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+            <Paper sx={{ mb: 3 }}><Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered><Tab label="Candidatos" /><Tab label="ClassificaÃ§Ã£o" /><Tab label="ConfiguraÃ§Ãµes da Vaga" /></Tabs></Paper>
             
             {tabValue === 0 && (
-                <Paper sx={{ p: 2 }}>
-                    <Typography variant="h6">Inscritos</Typography>
+                <Paper sx={{ p: 0 }}>
                     <Table>
-                        <TableHead><TableRow><TableCell>Nome</TableCell><TableCell>Email</TableCell><TableCell align="center">AvaliaÃ§Ãµes</TableCell><TableCell align="center">Nota Geral</TableCell></TableRow></TableHead>
-                        <TableBody>{applicants.map(app => {
-                            const count = allEvaluations.filter(e => e.application_id === app.id).length;
-                            return (
-                                <TableRow key={app.id} hover component={RouterLink} to={`/vaga/${jobId}/candidato/${app.id}`} style={{textDecoration:'none'}}>
-                                    <TableCell>{app.candidate.name}</TableCell>
-                                    <TableCell>{app.candidate.email}</TableCell>
-                                    <TableCell align="center">{count}</TableCell>
-                                    <TableCell align="center"><Chip label={app.score_general ? Number(app.score_general).toFixed(2) : '-'} color={app.score_general >= 8 ? 'success' : 'default'} /></TableCell>
-                                </TableRow>
-                            );
-                        })}</TableBody>
+                        <TableHead sx={{ bgcolor: '#f5f5f5' }}><TableRow><TableCell><strong>Nome</strong></TableCell><TableCell><strong>Email</strong></TableCell><TableCell align="center"><strong>AvaliaÃ§Ãµes</strong></TableCell><TableCell align="center"><strong>Nota Geral</strong></TableCell></TableRow></TableHead>
+                        <TableBody>{processedData.chartData.map(d => (
+                            <TableRow key={d.appId} hover component={RouterLink} to={`/applications/${d.appId}`} style={{textDecoration:'none', cursor:'pointer'}}>
+                                <TableCell>{d.name}</TableCell>
+                                <TableCell>{d.email}</TableCell>
+                                <TableCell align="center"><Chip label={d.count} size="small" /></TableCell>
+                                <TableCell align="center"><Chip label={d.total.toFixed(1)} color={d.total >= 8 ? 'success' : d.total >= 5 ? 'warning' : 'default'} variant={d.count > 0 ? 'filled' : 'outlined'}/></TableCell>
+                            </TableRow>
+                        ))}</TableBody>
                     </Table>
                 </Paper>
             )}
 
-            {tabValue === 1 && renderClassificationTab()}
+            {tabValue === 1 && (
+                <Grid container spacing={3}>
+                    <Grid item xs={12} md={8}>
+                        <Paper sx={{ p: 3, height: '600px', display: 'flex', flexDirection: 'column' }} elevation={3}>
+                            {/* CABEÃ‡ALHO DO GRÃFICO MELHORADO */}
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, pb: 2, borderBottom: '1px solid #f0f0f0' }}>
+                                <Typography variant="h6" color="text.primary" fontWeight="bold">Comparativo de Desempenho</Typography>
+                                <FormControl size="small" sx={{ minWidth: 220 }}>
+                                    <InputLabel>Filtrar por Avaliador</InputLabel>
+                                    <Select value={evaluatorFilter} label="Filtrar por Avaliador" onChange={(e) => setEvaluatorFilter(e.target.value)}>
+                                        <MenuItem value="all">VisÃ£o Geral (MÃ©dia da Equipe)</MenuItem>
+                                        {processedData.evaluators.map(ev => <MenuItem key={ev.id} value={ev.id}>{ev.name}</MenuItem>)}
+                                    </Select>
+                                </FormControl>
+                            </Box>
+                            
+                            {processedData.chartData.some(d => d.total > 0) ? (
+                                <Box sx={{ flex: 1, width: '100%', minHeight: 0 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart 
+                                            data={processedData.chartData} 
+                                            layout="vertical" 
+                                            margin={{ top: 10, right: 30, left: 10, bottom: 5 }} 
+                                            barGap={4}
+                                        >
+                                            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={true} stroke="#eee" />
+                                            <XAxis type="number" domain={[0, 10]} ticks={[0, 2, 4, 6, 8, 10]} stroke="#999" />
+                                            <YAxis 
+                                                dataKey="name" 
+                                                type="category" 
+                                                width={150} // AUMENTADO PARA NÃƒO CORTAR NOMES
+                                                style={{fontSize: '0.8rem', fontWeight: 500, fill: '#444'}} 
+                                            />
+                                            <Tooltip 
+                                                cursor={{fill: '#f5f5f5'}}
+                                                contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                                formatter={(val, name) => [val, name]} 
+                                            />
+                                            <Legend verticalAlign="top" height={40} iconType="circle" />
+                                            
+                                            <Bar dataKey="triagem" name="Triagem" fill="#90caf9" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="triagem" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
+                                            </Bar>
+                                            <Bar dataKey="cultura" name="Fit Cultural" fill="#a5d6a7" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="cultura" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
+                                            </Bar>
+                                            <Bar dataKey="tecnico" name="TÃ©cnico" fill="#ffcc80" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="tecnico" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
+                                            </Bar>
+                                            
+                                            {/* BARRA DE MÃ‰DIA GERAL DESTACADA */}
+                                            <Bar dataKey="total" name="MÃ©dia Geral" fill="#4caf50" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="total" position="right" style={{fontSize:'0.8rem', fontWeight:'bold', fill:'#2e7d32'}} />
+                                            </Bar>
+                                            
+                                            <ReferenceLine x={5} stroke="red" strokeDasharray="3 3" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </Box>
+                            ) : (
+                                <Box sx={{ flex: 1, display: 'flex', flexDirection:'column', alignItems: 'center', justifyContent: 'center', color: 'text.secondary', bgcolor:'#fafafa', borderRadius:2 }}>
+                                    <Typography variant="body1">Ainda nÃ£o hÃ¡ dados suficientes.</Typography>
+                                    <Typography variant="caption">Realize avaliaÃ§Ãµes para visualizar o grÃ¡fico.</Typography>
+                                </Box>
+                            )}
+                        </Paper>
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                        <Paper sx={{ height: '600px', display: 'flex', flexDirection: 'column' }} elevation={3}>
+                            <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderBottom: '1px solid #e0e0e0' }}><Typography variant="subtitle1" fontWeight="bold">Ranking Final</Typography></Box>
+                            <List sx={{ overflowY: 'auto', flex: 1 }}>
+                                {processedData.chartData.map((d, index) => (
+                                    <React.Fragment key={d.appId}>
+                                        <ListItem secondaryAction={<Checkbox checked={d.hired || false} onChange={() => handleHireToggle(d.appId, d.hired)} color="success" />}>
+                                            <ListItemText 
+                                                primary={<Typography variant="body2" fontWeight="bold">#{index + 1} {d.name}</Typography>} 
+                                                secondary={<Typography variant="caption" color="text.secondary">MÃ©dia: <strong style={{color:'#2e7d32', fontSize:'0.9rem'}}>{d.total.toFixed(1)}</strong></Typography>} 
+                                            />
+                                        </ListItem>
+                                        <Divider component="li" />
+                                    </React.Fragment>
+                                ))}
+                            </List>
+                        </Paper>
+                    </Grid>
+                </Grid>
+            )}
 
             {tabValue === 2 && (
-                <Box p={3}>
-                    <Box display="flex" justifyContent="space-between" mb={2}>
-                        <Typography variant="h6">ParÃ¢metros</Typography>
-                        <Button variant="outlined" startIcon={<ContentCopyIcon/>} onClick={() => setIsCopyModalOpen(true)}>Copiar</Button>
-                    </Box>
-                    <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>Triagem</Typography><ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} /></Paper>
-                    <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>Cultura</Typography><ParametersSection criteria={parameters?.cultura || []} onCriteriaChange={(c) => setParameters({...parameters, cultura: c})} /></Paper>
-                    <Paper variant="outlined" sx={{p:2, mb:2}}><Typography>TÃ©cnico</Typography><ParametersSection criteria={parameters?.tecnico || parameters?.['tÃƒÂ©cnico'] || parameters?.['tÃ©cnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} /></Paper>
-                    <Paper variant="outlined" sx={{p:2}}><Typography>Notas</Typography><Grid container spacing={2} sx={{mt:1}}>{parameters?.notas?.map((n, i) => <Grid item xs={6} key={i}><TextField label={n.nome} value={n.valor} onChange={(e) => { const newN = [...parameters.notas]; newN[i].valor = e.target.value; setParameters({...parameters, notas: newN}) }} size="small" /></Grid>)}</Grid></Paper>
-                    <Button variant="contained" sx={{mt:2}} onClick={handleSaveParameters}>Salvar ParÃ¢metros</Button>
+                <Box p={3} sx={{ bgcolor: 'white', borderRadius: 1, boxShadow: 1 }}>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>1. Triagem</Typography><ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} /></Paper>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>2. Fit Cultural</Typography><ParametersSection criteria={parameters?.cultura || []} onCriteriaChange={(c) => setParameters({...parameters, cultura: c})} /></Paper>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>3. Teste TÃ©cnico</Typography><ParametersSection criteria={parameters?.tecnico || parameters?.['tÃ©cnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} /></Paper>
+                    <Box display="flex" justifyContent="flex-end"><Button variant="contained" color="primary" onClick={handleSaveParameters}>Salvar ConfiguraÃ§Ãµes</Button></Box>
                 </Box>
             )}
         </Container>
         <CopyParametersModal open={isCopyModalOpen} onClose={() => setIsCopyModalOpen(false)} currentJobId={jobId} onCopy={(p) => { setParameters(p); setFeedback({open:true, message:'Copiado!', severity:'info'}); }} />
-        <Snackbar open={feedback.open} autoHideDuration={4000} onClose={() => setFeedback({...feedback, open:false})}><Alert severity={feedback.severity}>{feedback.message}</Alert></Snackbar>
+        <Snackbar open={feedback.open} autoHideDuration={4000} onClose={() => setFeedback({...feedback, open:false})}><Alert severity={feedback.severity} variant="filled">{feedback.message}</Alert></Snackbar>
     </Box>
   );
-};
-
-export default JobDetails;
+}
 
 ==================================================
 ARQUIVO: src\pages\Login.jsx
@@ -3742,23 +3562,14 @@ ARQUIVO: src\pages\Settings.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-import { Building, Users, Save, Shield, CheckCircle, XCircle, Trash2, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Building, Users, Save, Shield, CheckCircle, XCircle, Trash2, ArrowLeft } from 'lucide-react';
 
 export default function Settings() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('company');
   const [loading, setLoading] = useState(true);
-  
   const [currentUser, setCurrentUser] = useState(null);
-  
-  // Estado da Empresa e Plano
-  const [tenant, setTenant] = useState({ 
-    name: '', 
-    planId: '', 
-    planName: 'Carregando...', 
-    userLimit: 1 
-  });
-  
+  const [tenant, setTenant] = useState({ name: '', planId: '', planName: 'Carregando...', userLimit: 1 });
   const [team, setTeam] = useState([]);
 
   useEffect(() => {
@@ -3768,243 +3579,78 @@ export default function Settings() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. Pega usuÃ¡rio logado
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setLoading(false);
-        return;
+      if (!user) { setLoading(false); return; }
+
+      // Tenta buscar usuÃ¡rio
+      const { data: userData } = await supabase.from('users').select('*').eq('id', user.id).maybeSingle();
+      
+      if (!userData) {
+          // Se nÃ£o achar o usuÃ¡rio, nÃ£o trava a tela, apenas avisa no console
+          console.warn("UsuÃ¡rio nÃ£o encontrado na tabela 'public.users'. Verifique o SQL.");
+          setLoading(false);
+          return;
       }
 
-      // 2. Busca dados do usuÃ¡rio
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-      if (userError) throw userError;
       setCurrentUser(userData);
 
-      if (userData?.tenantId) {
-        // 3. Busca Empresa e o ID do Plano
-        const { data: tenantData } = await supabase
-          .from('tenants')
-          .select('companyName, planId') 
-          .eq('id', userData.tenantId)
-          .single();
+      if (userData.tenantId) {
+        const { data: tenantData } = await supabase.from('tenants').select('companyName, planId').eq('id', userData.tenantId).maybeSingle();
         
-        let currentPlanName = 'Plano Desconhecido';
-        let currentLimit = 1; 
-
         if (tenantData) {
-          // 4. Busca Detalhes do Plano na tabela 'plans'
-          if (tenantData.planId) {
-             const { data: planData } = await supabase
-               .from('plans')
-               .select('name, user_limit')
-               .eq('id', tenantData.planId)
-               .single();
-             
-             if (planData) {
-               currentPlanName = planData.name;
-               currentLimit = planData.user_limit;
-             }
-          }
-
-          setTenant({
-            name: tenantData.companyName || '',
-            planId: tenantData.planId,
-            planName: currentPlanName,
-            userLimit: currentLimit
-          });
+            let planInfo = { name: 'Desconhecido', limit: 1 };
+            if (tenantData.planId) {
+                const { data: plan } = await supabase.from('plans').select('name, user_limit').eq('id', tenantData.planId).maybeSingle();
+                if(plan) planInfo = { name: plan.name, limit: plan.user_limit };
+            }
+            setTenant({ name: tenantData.companyName, planId: tenantData.planId, planName: planInfo.name, userLimit: planInfo.limit });
         }
 
-        // 5. Busca Equipe (Apenas se for Admin)
-        if (userData.isAdmin === true) {
-          const { data: teamData } = await supabase
-            .from('users')
-            .select('*')
-            .eq('tenantId', userData.tenantId)
-            .order('email', { ascending: true });
-          
-          setTeam(teamData || []);
+        if (userData.isAdmin) {
+            const { data: teamData } = await supabase.from('users').select('*').eq('tenantId', userData.tenantId).order('email');
+            setTeam(teamData || []);
         }
       }
     } catch (error) {
-      console.error("Erro:", error);
-      alert("Erro ao carregar dados. Verifique o console.");
+      console.error("Erro silencioso:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  // --- AÃ‡Ã•ES ---
-
-  const handleSaveCompany = async (e) => {
-    e.preventDefault();
-    if (!currentUser?.tenantId) return;
-
-    const { error } = await supabase
-        .from('tenants')
-        .update({ companyName: tenant.name })
-        .eq('id', currentUser.tenantId);
-
-    if (error) alert("Erro ao salvar: " + error.message);
-    else alert("Empresa atualizada!");
-  };
-
-  const handleToggleAdmin = async (userId, currentStatus) => {
-    if (userId === currentUser.id && currentStatus === true) {
-        if (!window.confirm("VocÃª vai remover seu prÃ³prio acesso de Admin. Tem certeza?")) return;
-    }
-
-    const newStatus = !currentStatus;
-    const { error } = await supabase.from('users').update({ isAdmin: newStatus }).eq('id', userId);
-
-    if (error) alert("Erro: " + error.message);
-    else setTeam(team.map(u => u.id === userId ? { ...u, isAdmin: newStatus } : u));
-  };
-
-  const handleToggleActive = async (userId, currentStatus) => {
-    const safeStatus = currentStatus || 'inactive';
-    const newStatus = safeStatus === 'active' ? 'inactive' : 'active';
-    
-    // CORREÃ‡ÃƒO: ValidaÃ§Ã£o de limite respeitando -1 (Ilimitado)
-    if (newStatus === 'active') {
-        // Se for diferente de -1, aplica a restriÃ§Ã£o numÃ©rica
-        if (tenant.userLimit !== -1) {
-            const activeCount = team.filter(u => u.status === 'active').length;
-            if (activeCount >= tenant.userLimit) {
-                return alert(`Limite do plano atingido (${tenant.userLimit} usuÃ¡rios). FaÃ§a upgrade do plano ${tenant.planName}.`);
-            }
-        }
-    }
-
-    if (userId === currentUser.id && newStatus === 'inactive') return alert("NÃ£o desative a si mesmo.");
-
-    const { error } = await supabase.from('users').update({ status: newStatus }).eq('id', userId);
-    
-    if (error) alert("Erro: " + error.message);
-    else setTeam(team.map(u => u.id === userId ? { ...u, status: newStatus } : u));
-  };
-
-  const handleDeleteUser = async (userId) => {
-    if (!window.confirm("Excluir usuÃ¡rio permanentemente?")) return;
-    if (userId === currentUser.id) return alert("NÃ£o se exclua.");
-
-    const { error } = await supabase.from('users').delete().eq('id', userId);
-    if (error) alert("Erro: " + error.message);
-    else setTeam(team.filter(u => u.id !== userId));
-  };
-
-  // Helper para exibir texto amigÃ¡vel
-  const renderLimit = (limit) => limit === -1 ? "Ilimitado" : limit;
-
-  // VerificaÃ§Ã£o visual para cor do badge (considera -1 como sempre verde)
-  const isLimitReached = () => {
-      if (tenant.userLimit === -1) return false;
-      return team.filter(u => u.status === 'active').length >= tenant.userLimit;
-  };
-
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
+  if (loading) return <div className="p-10 text-center">Carregando...</div>;
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
-      <button onClick={() => navigate('/')} className="flex items-center text-gray-500 hover:text-gray-900 mb-6">
-        <ArrowLeft className="w-4 h-4 mr-2"/> Voltar para Dashboard
-      </button>
-
-      <h1 className="text-3xl font-bold text-gray-900 mb-6">ConfiguraÃ§Ãµes</h1>
-
+      <button onClick={() => navigate('/')} className="flex items-center text-gray-500 mb-6"><ArrowLeft className="mr-2"/> Voltar</button>
+      <h1 className="text-3xl font-bold mb-6">ConfiguraÃ§Ãµes</h1>
       <div className="flex gap-6 border-b mb-6">
-        <button onClick={() => setActiveTab('company')} className={`pb-3 px-1 border-b-2 transition ${activeTab === 'company' ? 'border-blue-600 text-blue-600 font-bold' : 'border-transparent text-gray-500'}`}>
-          <Building size={18} className="inline mr-2"/> Minha Empresa
-        </button>
-        <button onClick={() => setActiveTab('team')} className={`pb-3 px-1 border-b-2 transition ${activeTab === 'team' ? 'border-blue-600 text-blue-600 font-bold' : 'border-transparent text-gray-500'}`}>
-          <Users size={18} className="inline mr-2"/> GestÃ£o de Equipe
-        </button>
+        <button onClick={() => setActiveTab('company')} className={`pb-3 px-1 border-b-2 ${activeTab === 'company' ? 'border-blue-600 text-blue-600' : 'border-transparent'}`}><Building className="inline mr-2"/> Minha Empresa</button>
+        <button onClick={() => setActiveTab('team')} className={`pb-3 px-1 border-b-2 ${activeTab === 'team' ? 'border-blue-600 text-blue-600' : 'border-transparent'}`}><Users className="inline mr-2"/> Equipe</button>
       </div>
-
+      
       {activeTab === 'company' && (
         <div className="bg-white p-6 rounded shadow border max-w-2xl">
-            <form onSubmit={handleSaveCompany}>
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Empresa</label>
-                    <input 
-                        className="w-full border p-2 rounded" 
-                        value={tenant.name} 
-                        onChange={e => setTenant({...tenant, name: e.target.value})}
-                        disabled={!currentUser?.isAdmin}
-                    />
-                </div>
-                
-                <div className="bg-blue-50 p-4 rounded border border-blue-100 mb-4">
-                    <p className="text-sm text-blue-900">
-                        <strong>Plano Atual:</strong> <span className="font-bold text-lg uppercase ml-2">{tenant.planName}</span>
-                    </p>
-                    <p className="text-xs text-blue-700 mt-1">
-                        Limite de usuÃ¡rios ativos: <strong>{renderLimit(tenant.userLimit)}</strong>
-                    </p>
-                </div>
-
-                {currentUser?.isAdmin && (
-                    <button className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Save size={16}/> Salvar</button>
-                )}
-            </form>
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Empresa</label>
+                <input className="w-full border p-2 rounded" value={tenant.name} disabled />
+            </div>
+            <div className="bg-blue-50 p-4 rounded border border-blue-100">
+                <p className="text-sm text-blue-900"><strong>Plano:</strong> {tenant.planName}</p>
+            </div>
         </div>
       )}
 
       {activeTab === 'team' && (
-        <div className="space-y-6">
-            {!currentUser?.isAdmin ? (
-                <div className="bg-yellow-100 p-4 rounded text-yellow-800 border border-yellow-200">
-                    <AlertTriangle className="inline mr-2" size={18}/> Acesso restrito a Administradores.
-                </div>
-            ) : (
-                <div className="bg-white rounded shadow border overflow-hidden">
-                    <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-                        <h2 className="font-bold text-gray-700">Equipe ({team.length})</h2>
-                        
-                        <span className={`text-xs px-2 py-1 rounded border ${isLimitReached() ? 'bg-red-50 text-red-600 border-red-200' : 'bg-green-50 text-green-600 border-green-200'}`}>
-                            {team.filter(u => u.status === 'active').length} / {renderLimit(tenant.userLimit)} licenÃ§as em uso
-                        </span>
-                    </div>
+        <div>
+            {!currentUser?.isAdmin ? <p className="text-red-500">Acesso restrito.</p> : (
+                <div className="bg-white rounded shadow border">
                     <table className="w-full text-left">
-                        <thead>
-                            <tr className="border-b bg-gray-50 text-xs text-gray-500 uppercase">
-                                <th className="p-4">UsuÃ¡rio</th>
-                                <th className="p-4">PermissÃ£o</th>
-                                <th className="p-4">Status</th>
-                                <th className="p-4"></th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y">
-                            {team.map(u => (
-                                <tr key={u.id} className="hover:bg-gray-50">
-                                    <td className="p-4">
-                                        <div className="font-medium text-gray-900">{u.name || 'Sem Nome'}</div>
-                                        <div className="text-sm text-gray-500">{u.email}</div>
-                                    </td>
-                                    <td className="p-4">
-                                        <button onClick={() => handleToggleAdmin(u.id, u.isAdmin)} className={`text-xs px-2 py-1 rounded border font-bold uppercase flex items-center gap-1 ${u.isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-gray-100 text-gray-600'}`}>
-                                            <Shield size={12}/> {u.isAdmin ? 'Admin' : 'Recrutador'}
-                                        </button>
-                                    </td>
-                                    <td className="p-4">
-                                        <button onClick={() => handleToggleActive(u.id, u.status)} className={`text-xs px-2 py-1 rounded border font-bold uppercase flex items-center gap-1 ${u.status === 'active' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
-                                            {u.status === 'active' ? <><CheckCircle size={12}/> Ativo</> : <><XCircle size={12}/> Inativo</>}
-                                        </button>
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        {u.id !== currentUser.id && (
-                                            <button onClick={() => handleDeleteUser(u.id)} className="text-gray-400 hover:text-red-600"><Trash2 size={16}/></button>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
+                        <thead><tr className="border-b bg-gray-50"><th className="p-4">Nome</th><th className="p-4">Email</th></tr></thead>
+                        <tbody>
+                            {team.map(u => <tr key={u.id} className="border-b"><td className="p-4">{u.name}</td><td className="p-4">{u.email}</td></tr>)}
                         </tbody>
                     </table>
-                    {team.length === 0 && <div className="p-8 text-center text-gray-500">Nenhum membro encontrado.</div>}
                 </div>
             )}
         </div>
@@ -4026,6 +3672,82 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+==================================================
+ARQUIVO: src\utils\evaluationLogic.js
+==================================================
+// src/utils/evaluationLogic.js
+
+export const calculatePillarScore = (sectionName, criteriaList, answers, ratingScale) => {
+    // Se nÃ£o houver critÃ©rios ou respostas, retorna null (neutro)
+    if (!criteriaList || !Array.isArray(criteriaList) || criteriaList.length === 0) return null;
+    if (!answers) return null;
+    
+    let totalScore = 0;
+    let totalWeightAnswered = 0;
+    let hasAnswers = false;
+
+    criteriaList.forEach(criterion => {
+        // Tenta achar a resposta (suporta estrutura v2 aninhada ou v1 plana)
+        const noteId = answers?.[sectionName]?.[criterion.name] || answers?.[criterion.name];
+        
+        // Ignora 'NA', null ou undefined
+        if (noteId && noteId !== 'NA') {
+            // CORREÃ‡ÃƒO CRÃTICA: Converte ambos para String para garantir o match (1 vs "1")
+            const noteObj = ratingScale.find(n => String(n.id) === String(noteId));
+            
+            if (noteObj) {
+                hasAnswers = true;
+                const weight = Number(criterion.weight) || 0;
+                
+                // CÃ¡lculo: Valor da Nota * Peso
+                totalScore += (Number(noteObj.valor) * weight);
+                totalWeightAnswered += weight;
+            }
+        }
+    });
+
+    if (!hasAnswers || totalWeightAnswered === 0) return null;
+
+    // Normaliza para escala 0-10
+    return (totalScore / totalWeightAnswered);
+};
+
+export const processEvaluation = (evaluationObj, parameters) => {
+    if (!evaluationObj || !parameters) {
+        return { triagem: 0, cultura: 0, tecnico: 0, total: 0 };
+    }
+
+    const answers = evaluationObj.scores || evaluationObj; 
+    const ratingScale = parameters.notas || [];
+    
+    const pTriagem = parameters.triagem || [];
+    const pCultura = parameters.cultura || [];
+    const pTecnico = parameters.tecnico || parameters['tÃ©cnico'] || parameters['tÃƒÂ©cnico'] || [];
+
+    // Calcula parciais
+    const triagem = calculatePillarScore('triagem', pTriagem, answers, ratingScale);
+    const cultura = calculatePillarScore('cultura', pCultura, answers, ratingScale);
+    const tecnico = calculatePillarScore('tecnico', pTecnico, answers, ratingScale);
+
+    // MÃ©dia AritmÃ©tica Simples dos pilares respondidos
+    let sum = 0;
+    let count = 0;
+
+    if (triagem !== null) { sum += triagem; count++; }
+    if (cultura !== null) { sum += cultura; count++; }
+    if (tecnico !== null) { sum += tecnico; count++; }
+
+    // Se count for 0 (nenhum pilar avaliado), nota Ã© 0.
+    const total = count > 0 ? (sum / count) : 0;
+
+    return {
+        triagem: triagem !== null ? Number(triagem) : 0,
+        cultura: cultura !== null ? Number(cultura) : 0,
+        tecnico: tecnico !== null ? Number(tecnico) : 0,
+        total: Number(total)
+    };
+};
 
 ==================================================
 ARQUIVO: src\utils\formatters.js
