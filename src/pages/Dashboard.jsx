@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabase/client';
 import { useNavigate } from 'react-router-dom';
 import CreateJobModal from '../components/jobs/CreateJobModal';
-import { Briefcase, Users, Plus, Settings as SettingsIcon, Clock } from 'lucide-react';
+import { Briefcase, Users, Plus, Settings as SettingsIcon, Clock, Link as LinkIcon, CheckCircle } from 'lucide-react';
 import { differenceInDays, parseISO } from 'date-fns';
 
 export default function Dashboard() {
@@ -13,6 +13,7 @@ export default function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deptFilter, setDeptFilter] = useState('all');
   const [fixing, setFixing] = useState(false);
+  const [copiedId, setCopiedId] = useState(null); // NOVO: Estado para feedback do botão copiar
 
   useEffect(() => {
     fetchData();
@@ -97,6 +98,16 @@ export default function Dashboard() {
     } finally {
       setFixing(false);
     }
+  };
+
+  // NOVO: Função para copiar link da vaga sem entrar nela
+  const copyJobLink = (e, jobId) => {
+    e.stopPropagation(); // Impede que o clique abra a página da vaga
+    const link = `${window.location.origin}/apply/${jobId}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopiedId(jobId);
+      setTimeout(() => setCopiedId(null), 2000);
+    });
   };
 
   const filteredJobs = useMemo(() => {
@@ -198,13 +209,14 @@ export default function Dashboard() {
                   {/* NOVAS COLUNAS */}
                   <th className="p-4 font-medium text-center">Inscritos</th>
                   <th className="p-4 font-medium text-center">Tempo</th>
+                  <th className="p-4 font-medium text-center">Divulgação</th>
                   <th className="p-4 font-medium">Status</th>
                   <th className="p-4 font-medium text-right">Ação</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredJobs.length === 0 ? (
-                  <tr><td colSpan="6" className="p-8 text-center text-gray-500">Nenhuma vaga encontrada.</td></tr>
+                  <tr><td colSpan="7" className="p-8 text-center text-gray-500">Nenhuma vaga encontrada.</td></tr>
                 ) : (
                   filteredJobs.map(job => (
                     <tr 
@@ -219,8 +231,25 @@ export default function Dashboard() {
                       <td className="p-4 text-center">
                           <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold text-xs">{job.candidateCount}</span>
                       </td>
-                      <td className="p-4 text-center text-gray-500 flex items-center justify-center gap-1">
-                          <Clock size={14}/> {job.daysOpen} dias
+                      <td className="p-4 text-center text-gray-500">
+                          <div className="flex items-center justify-center gap-1">
+                            <Clock size={14}/> {job.daysOpen} dias
+                          </div>
+                      </td>
+
+                      {/* NOVO: BOTÃO DE LINK */}
+                      <td className="p-4 text-center">
+                        <button 
+                          onClick={(e) => copyJobLink(e, job.id)}
+                          className={`p-1.5 rounded transition ${
+                            copiedId === job.id 
+                            ? 'bg-green-100 text-green-700' 
+                            : 'text-gray-400 hover:text-blue-600 hover:bg-white border border-transparent hover:border-gray-200'
+                          }`}
+                          title="Copiar Link para Candidatos"
+                        >
+                          {copiedId === job.id ? <CheckCircle size={16}/> : <LinkIcon size={16}/>}
+                        </button>
                       </td>
 
                       <td className="p-4">
