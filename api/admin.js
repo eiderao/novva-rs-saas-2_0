@@ -2,7 +2,6 @@ import { createClient } from '@supabase/supabase-js';
 
 // Função auxiliar de segurança e validação
 async function validateAdmin(request) {
-  // Conecta com a chave SERVICE_ROLE (Super Usuário)
   const supabaseAdmin = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_KEY
@@ -17,16 +16,16 @@ async function validateAdmin(request) {
   if (userError || !user) throw new Error('Token inválido ou expirado.');
 
   // Busca o perfil do usuário para checar permissões
+  // CORREÇÃO: Removido 'isAdmin' do select (coluna inexistente em user_profiles)
   const { data: userData, error: profileError } = await supabaseAdmin
     .from('user_profiles')
-    .select('id, is_admin_system, tenantId, role, isAdmin')
+    .select('id, is_admin_system, tenantId, role') 
     .eq('id', user.id)
     .single();
 
   if (profileError || !userData) {
-      // Fallback: Se der erro de busca, tenta validar se é o usuário mestre pelo email (hardcoded security)
-      // Isso evita o "lockout" se o perfil sumir do banco
-      if (user.email === 'eider@novvaempresa.com.br') { // Opcional: Trava de segurança extra
+      // Fallback de segurança para evitar lockout do Super Admin
+      if (user.email === 'eider@novvaempresa.com.br') { 
           return { supabaseAdmin, requesterProfile: { is_admin_system: true, id: user.id }, requesterId: user.id };
       }
       throw new Error('Perfil de usuário não encontrado.');
@@ -39,7 +38,6 @@ export default async function handler(request, response) {
   try {
     const { supabaseAdmin, requesterProfile } = await validateAdmin(request);
     
-    // Suporta GET e POST
     const action = request.method === 'GET' ? request.query.action : request.body.action;
     const isSuperAdmin = requesterProfile.is_admin_system === true;
 
@@ -51,14 +49,12 @@ export default async function handler(request, response) {
       case 'getTenantsAndPlans': {
         if (!isSuperAdmin) return response.status(403).json({ error: 'Acesso negado. Apenas Novva.' });
         
-        // Busca Tenants
         const { data: tenants, error: tErr } = await supabaseAdmin
           .from('tenants')
           .select(`id, companyName, planId, cnpj, plans ( name )`)
           .order('created_at', { ascending: false });
         if (tErr) throw tErr;
 
-        // Busca Planos
         const { data: plans, error: pErr } = await supabaseAdmin
           .from('plans')
           .select('*')
@@ -92,18 +88,17 @@ export default async function handler(request, response) {
         });
 
         if (aErr) {
-            // Rollback: Apaga tenant se falhar o user
             await supabaseAdmin.from('tenants').delete().eq('id', newTenant.id);
             throw aErr;
         }
 
         // C. Criar Perfil Admin vinculado ao Tenant
+        // CORREÇÃO: Removido 'isAdmin: true'. Usamos role: 'admin'
         const { error: pErr } = await supabaseAdmin.from('user_profiles').insert({
             id: authUser.user.id,
             name: adminName,
             email: adminEmail,
-            role: 'admin',
-            isAdmin: true,
+            role: 'admin', // Papel de admin da empresa
             tenantId: newTenant.id,
             is_admin_system: false,
             active: true
@@ -131,7 +126,6 @@ export default async function handler(request, response) {
         if (!isSuperAdmin) return response.status(403).json({ error: 'Acesso negado.' });
         const { tenantId } = request.body;
         
-        // Limpeza simples (Idealmente teria Cascade no banco)
         await supabaseAdmin.from('user_profiles').delete().eq('tenantId', tenantId);
         const { error } = await supabaseAdmin.from('tenants').delete().eq('id', tenantId);
         if (error) throw error;
@@ -140,28 +134,65 @@ export default async function handler(request, response) {
       }
 
       // ======================================================================
-      // 2. GESTÃO DE USUÁRIOS E EQUIPE (Área do Cliente)
+      // 2. GESTÃO DE PLANOS (Restaurado)
+      // ======================================================================
+
+      case 'createPlan': {
+        if (request.method !== 'POST') return response.status(405).json({ error: 'Use POST.' });
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin.' });
+        
+        const { planData } = request.body;
+        const { data: newPlan, error } = await supabaseAdmin.from('plans').insert(planData).select().single();
+        if (error) throw error;
+        return response.status(201).json({ message: 'Plano criado!', newPlan });
+      }
+
+      case 'updatePlan': {
+        if (request.method !== 'POST') return response.status(405).json({ error: 'Use POST.' });
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin.' });
+
+        const { planId, planData } = request.body;
+        const { data: updatedPlan, error } = await supabaseAdmin.from('plans').update(planData).eq('id', planId).select().single();
+        if (error) throw error;
+        return response.status(200).json({ message: 'Plano atualizado!', updatedPlan });
+      }
+
+      case 'deletePlan': {
+        if (request.method !== 'POST') return response.status(405).json({ error: 'Use POST.' });
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin.' });
+
+        const { planId } = request.body;
+        const { count, error: checkError } = await supabaseAdmin.from('tenants').select('*', { count: 'exact', head: true }).eq('planId', planId);
+        if (checkError) throw checkError;
+        if (count > 0) return response.status(400).json({ error: `Plano em uso por ${count} empresa(s).` });
+
+        const { error } = await supabaseAdmin.from('plans').delete().eq('id', planId);
+        if (error) throw error;
+        return response.status(200).json({ message: 'Plano excluído!' });
+      }
+
+      // ======================================================================
+      // 3. GESTÃO DE USUÁRIOS E EQUIPE (Área do Cliente)
       // ======================================================================
 
       case 'getTenantDetails': {
-        // Usado pelo Settings.jsx
         const { tenantId } = request.query;
         if (!tenantId) return response.status(400).json({ error: 'ID obrigatório.' });
         
-        // Segurança: Só acessa se for Super Admin OU se pertencer ao tenant
         if (!isSuperAdmin && requesterProfile.tenantId !== tenantId) {
             return response.status(403).json({ error: 'Não autorizado.' });
         }
 
         const { data: tenant } = await supabaseAdmin.from('tenants').select('id, companyName, planId').eq('id', tenantId).single();
-        const { data: users } = await supabaseAdmin.from('user_profiles').select('*').eq('tenantId', tenantId);
+        // CORREÇÃO: Removido 'isAdmin' do select
+        const { data: users } = await supabaseAdmin.from('user_profiles').select('id, name, email, role, is_admin_system').eq('tenantId', tenantId);
         
         return response.status(200).json({ tenant, users });
       }
 
       case 'createUser': {
-        // Cria usuário de equipe (Recrutador/Gerente)
-        const { email, password, name, role, isAdmin, tenantId } = request.body;
+        // CORREÇÃO: Checkbox 'isAdmin' vira role 'admin'
+        const { email, password, name, isAdmin, tenantId } = request.body;
         
         if (!isSuperAdmin && requesterProfile.tenantId !== tenantId) {
             return response.status(403).json({ error: 'Não autorizado para esta empresa.' });
@@ -172,11 +203,19 @@ export default async function handler(request, response) {
         });
         if (aErr) throw aErr;
 
+        const userRole = isAdmin ? 'admin' : 'recruiter';
+
         const { error: pErr } = await supabaseAdmin.from('user_profiles').insert({
-            id: authUser.user.id, name, email, role, isAdmin: !!isAdmin, tenantId, active: true, is_admin_system: false
+            id: authUser.user.id, 
+            name, 
+            email, 
+            role: userRole, 
+            tenantId, 
+            active: true, 
+            is_admin_system: false
         });
         if (pErr) {
-            await supabaseAdmin.auth.admin.deleteUser(authUser.user.id); // Rollback
+            await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
             throw pErr;
         }
 
@@ -186,7 +225,6 @@ export default async function handler(request, response) {
       case 'deleteUser': {
         const { userId } = request.body;
         
-        // Verificação de segurança manual (caso não seja super admin)
         if (!isSuperAdmin) {
             const { data: target } = await supabaseAdmin.from('user_profiles').select('tenantId').eq('id', userId).single();
             if (!target || target.tenantId !== requesterProfile.tenantId) {
