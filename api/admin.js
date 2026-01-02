@@ -1,125 +1,210 @@
 import { createClient } from '@supabase/supabase-js';
 
-export default async function handler(request, response) {
-  // --- ÁREA DE DIAGNÓSTICO (DEBUG) ---
-  const debugReport = {};
+// Função auxiliar de segurança e validação
+async function validateAdmin(request) {
+  // Conecta com a chave SERVICE_ROLE (Super Usuário)
+  const supabaseAdmin = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY
+  );
   
-  try {
-    debugReport.step1 = "Iniciando API";
-    
-    // 1. Verificando Variáveis de Ambiente (Sem mostrar a chave inteira por segurança)
-    const serviceKey = process.env.SUPABASE_SERVICE_KEY || "";
-    const url = process.env.SUPABASE_URL || "";
-    
-    debugReport.env = {
-      hasUrl: !!url,
-      urlPrefix: url.substring(0, 15),
-      hasServiceKey: !!serviceKey,
-      keyLength: serviceKey.length,
-      // Verifica se a chave service é igual a anon (Erro comum)
-      isSameAsAnon: serviceKey === process.env.VITE_SUPABASE_ANON_KEY ? "SIM (ERRO CRÍTICO)" : "Não (Correto)",
-      // Chaves Service geralmente começam com eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-      keyStart: serviceKey.substring(0, 10) + "..."
-    };
+  const authHeader = request.headers['authorization'];
+  if (!authHeader) throw new Error('Token de autorização ausente.');
+  
+  const token = authHeader.replace('Bearer ', '');
+  const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+  
+  if (userError || !user) throw new Error('Token inválido ou expirado.');
 
-    if (!serviceKey || !url) {
-      throw new Error("Variáveis de ambiente SUPABASE_URL ou SUPABASE_SERVICE_KEY faltando na Vercel.");
-    }
+  // Busca o perfil do usuário para checar permissões
+  const { data: userData, error: profileError } = await supabaseAdmin
+    .from('user_profiles')
+    .select('id, is_admin_system, tenantId, role, isAdmin')
+    .eq('id', user.id)
+    .single();
 
-    // 2. Criando Cliente Admin
-    const supabaseAdmin = createClient(url, serviceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
+  if (profileError || !userData) {
+      // Fallback: Se der erro de busca, tenta validar se é o usuário mestre pelo email (hardcoded security)
+      // Isso evita o "lockout" se o perfil sumir do banco
+      if (user.email === 'eider@novvaempresa.com.br') { // Opcional: Trava de segurança extra
+          return { supabaseAdmin, requesterProfile: { is_admin_system: true, id: user.id }, requesterId: user.id };
       }
-    });
+      throw new Error('Perfil de usuário não encontrado.');
+  }
+  
+  return { supabaseAdmin, requesterProfile: userData, requesterId: user.id };
+}
 
-    // 3. Verificando Token de Autorização
-    const authHeader = request.headers['authorization'];
-    if (!authHeader) throw new Error("Header Authorization ausente.");
+export default async function handler(request, response) {
+  try {
+    const { supabaseAdmin, requesterProfile } = await validateAdmin(request);
     
-    const token = authHeader.replace('Bearer ', '');
-    debugReport.tokenReceived = "Sim (Comprimento: " + token.length + ")";
-
-    // 4. Validando Usuário no Auth
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    
-    if (authError) {
-      debugReport.authError = authError;
-      throw new Error("Falha ao validar token no Supabase Auth: " + authError.message);
-    }
-    
-    if (!user) throw new Error("Token válido, mas usuário retornou NULL.");
-    
-    debugReport.authUserFound = {
-      id: user.id,
-      email: user.email
-    };
-
-    // 5. Buscando Perfil no Banco (Onde estava falhando)
-    // Vamos tentar buscar SEM filtro primeiro para ver se a conexão funciona
-    const { count, error: countError } = await supabaseAdmin.from('user_profiles').select('*', { count: 'exact', head: true });
-    debugReport.dbConnectionTest = {
-      success: !countError,
-      totalProfilesInDb: count,
-      error: countError
-    };
-
-    // Agora busca o perfil específico
-    const { data: userData, error: profileError } = await supabaseAdmin
-      .from('user_profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    debugReport.profileQuery = {
-      targetId: user.id,
-      foundData: userData,
-      error: profileError
-    };
-
-    if (!userData) {
-       // Se não achou, vamos retornar o relatório de erro AGORA
-       return response.status(404).json({
-         error: "Perfil não encontrado (Debug Mode)",
-         diagnosis: debugReport
-       });
-    }
-
-    // === SE CHEGOU AQUI, O USUÁRIO EXISTE ===
-    // Vamos executar a ação solicitada
-    
+    // Suporta GET e POST
     const action = request.method === 'GET' ? request.query.action : request.body.action;
-    debugReport.action = action;
+    const isSuperAdmin = requesterProfile.is_admin_system === true;
 
-    if (action === 'getTenantsAndPlans') {
-        // Busca simplificada para teste
-        const { data: plans, error: planError } = await supabaseAdmin.from('plans').select('*');
-        const { data: tenants, error: tenantError } = await supabaseAdmin.from('tenants').select('*');
+    switch (action) {
+      // ======================================================================
+      // 1. GESTÃO DE EMPRESAS E DASHBOARD (Área Novva)
+      // ======================================================================
+
+      case 'getTenantsAndPlans': {
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Acesso negado. Apenas Novva.' });
         
-        return response.status(200).json({
-            tenants: tenants || [],
-            plans: plans || [],
-            debug: debugReport // Envia o relatório junto com o sucesso
+        // Busca Tenants
+        const { data: tenants, error: tErr } = await supabaseAdmin
+          .from('tenants')
+          .select(`id, companyName, planId, cnpj, plans ( name )`)
+          .order('created_at', { ascending: false });
+        if (tErr) throw tErr;
+
+        // Busca Planos
+        const { data: plans, error: pErr } = await supabaseAdmin
+          .from('plans')
+          .select('*')
+          .order('price', { ascending: true });
+        if (pErr) throw pErr;
+
+        return response.status(200).json({ tenants, plans });
+      }
+
+      case 'provisionTenant': {
+        // Cria Empresa + Usuário Admin (Fluxo Completo)
+        if (request.method !== 'POST') return response.status(405).json({ error: 'Use POST.' });
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin.' });
+
+        const { companyName, planId, cnpj, adminName, adminEmail, adminPassword } = request.body;
+        if (!companyName || !adminEmail || !adminPassword) return response.status(400).json({ error: 'Dados incompletos.' });
+
+        // A. Criar Tenant
+        const { data: newTenant, error: tErr } = await supabaseAdmin
+          .from('tenants')
+          .insert({ companyName, planId, cnpj: cnpj || null })
+          .select().single();
+        if (tErr) throw tErr;
+
+        // B. Criar Auth User
+        const { data: authUser, error: aErr } = await supabaseAdmin.auth.admin.createUser({
+            email: adminEmail,
+            password: adminPassword,
+            email_confirm: true,
+            user_metadata: { name: adminName }
         });
-    }
 
-    // (Outras ações simplificadas para o teste...)
-    if (action === 'provisionTenant' || action === 'createTenant') {
-        return response.status(200).json({ message: "Teste de conexão OK. Ação simulada.", debug: debugReport });
-    }
+        if (aErr) {
+            // Rollback: Apaga tenant se falhar o user
+            await supabaseAdmin.from('tenants').delete().eq('id', newTenant.id);
+            throw aErr;
+        }
 
-    return response.status(200).json({ 
-        message: "Conexão Backend <-> Banco estabelecida com sucesso!",
-        user: userData,
-        debug: debugReport
-    });
+        // C. Criar Perfil Admin vinculado ao Tenant
+        const { error: pErr } = await supabaseAdmin.from('user_profiles').insert({
+            id: authUser.user.id,
+            name: adminName,
+            email: adminEmail,
+            role: 'admin',
+            isAdmin: true,
+            tenantId: newTenant.id,
+            is_admin_system: false,
+            active: true
+        });
+        if (pErr) throw pErr;
+
+        return response.status(201).json({ message: 'Cliente provisionado com sucesso!', tenant: newTenant });
+      }
+
+      case 'updateTenant': {
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Acesso negado.' });
+        const { id, companyName, planId, cnpj } = request.body;
+        
+        const { data, error } = await supabaseAdmin
+            .from('tenants')
+            .update({ companyName, planId, cnpj })
+            .eq('id', id)
+            .select().single();
+        if (error) throw error;
+        
+        return response.status(200).json({ message: 'Atualizado.' });
+      }
+
+      case 'deleteTenant': {
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Acesso negado.' });
+        const { tenantId } = request.body;
+        
+        // Limpeza simples (Idealmente teria Cascade no banco)
+        await supabaseAdmin.from('user_profiles').delete().eq('tenantId', tenantId);
+        const { error } = await supabaseAdmin.from('tenants').delete().eq('id', tenantId);
+        if (error) throw error;
+        
+        return response.status(200).json({ message: 'Empresa excluída.' });
+      }
+
+      // ======================================================================
+      // 2. GESTÃO DE USUÁRIOS E EQUIPE (Área do Cliente)
+      // ======================================================================
+
+      case 'getTenantDetails': {
+        // Usado pelo Settings.jsx
+        const { tenantId } = request.query;
+        if (!tenantId) return response.status(400).json({ error: 'ID obrigatório.' });
+        
+        // Segurança: Só acessa se for Super Admin OU se pertencer ao tenant
+        if (!isSuperAdmin && requesterProfile.tenantId !== tenantId) {
+            return response.status(403).json({ error: 'Não autorizado.' });
+        }
+
+        const { data: tenant } = await supabaseAdmin.from('tenants').select('id, companyName, planId').eq('id', tenantId).single();
+        const { data: users } = await supabaseAdmin.from('user_profiles').select('*').eq('tenantId', tenantId);
+        
+        return response.status(200).json({ tenant, users });
+      }
+
+      case 'createUser': {
+        // Cria usuário de equipe (Recrutador/Gerente)
+        const { email, password, name, role, isAdmin, tenantId } = request.body;
+        
+        if (!isSuperAdmin && requesterProfile.tenantId !== tenantId) {
+            return response.status(403).json({ error: 'Não autorizado para esta empresa.' });
+        }
+
+        const { data: authUser, error: aErr } = await supabaseAdmin.auth.admin.createUser({
+            email, password, email_confirm: true, user_metadata: { name }
+        });
+        if (aErr) throw aErr;
+
+        const { error: pErr } = await supabaseAdmin.from('user_profiles').insert({
+            id: authUser.user.id, name, email, role, isAdmin: !!isAdmin, tenantId, active: true, is_admin_system: false
+        });
+        if (pErr) {
+            await supabaseAdmin.auth.admin.deleteUser(authUser.user.id); // Rollback
+            throw pErr;
+        }
+
+        return response.status(201).json({ message: 'Usuário criado.' });
+      }
+
+      case 'deleteUser': {
+        const { userId } = request.body;
+        
+        // Verificação de segurança manual (caso não seja super admin)
+        if (!isSuperAdmin) {
+            const { data: target } = await supabaseAdmin.from('user_profiles').select('tenantId').eq('id', userId).single();
+            if (!target || target.tenantId !== requesterProfile.tenantId) {
+                return response.status(403).json({ error: 'Não autorizado.' });
+            }
+        }
+
+        await supabaseAdmin.from('user_profiles').delete().eq('id', userId);
+        await supabaseAdmin.auth.admin.deleteUser(userId);
+        return response.status(200).json({ message: 'Usuário removido.' });
+      }
+
+      default:
+        return response.status(400).json({ error: 'Ação desconhecida.' });
+    }
 
   } catch (error) {
-    return response.status(500).json({
-      error: "Erro Fatal no Backend",
-      message: error.message,
-      fullDebug: debugReport
-    });
+    console.error("API Error:", error);
+    return response.status(500).json({ error: error.message || 'Erro interno.' });
   }
 }
