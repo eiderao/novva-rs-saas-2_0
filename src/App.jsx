@@ -8,6 +8,7 @@ import JobDetails from './pages/JobDetails';
 import ApplicationDetails from './pages/ApplicationDetails';
 import Settings from './pages/Settings';
 import ApplyJob from './pages/ApplyJob'; // NOVO IMPORT
+import SuperAdminDashboard from './pages/SuperAdminDashboard';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="/jobs/:jobId" element={session ? <JobDetails /> : <Navigate to="/login" />} />
         <Route path="/applications/:appId" element={session ? <ApplicationDetails /> : <Navigate to="/login" />} />
         <Route path="/settings" element={session ? <Settings /> : <Navigate to="/login" />} />
+        <Route path="/admin/super" element={session ? <SuperAdminDashboard /> : <Navigate to="/login" />} />
       </Routes>
     </BrowserRouter>
   );
