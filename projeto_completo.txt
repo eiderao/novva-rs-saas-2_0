@@ -6303,3 +6303,4107 @@ export const formatDate = (dateStr) => {
     }
 };
 
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\components\jobs\CreateJobModal.jsx
+------------------------------------------------
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../../supabase/client';
+import AreaSelect from '../AreaSelect';
+import { AlertTriangle, Copy } from 'lucide-react';
+
+export default function CreateJobModal({ open, onClose, onSuccess }) {
+  const [tenantId, setTenantId] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [limitError, setLimitError] = useState(null);
+  const [previousJobs, setPreviousJobs] = useState([]); // Lista de vagas para cÃ³pia
+  const [copyFromId, setCopyFromId] = useState(''); // ID da vaga selecionada para cÃ³pia
+
+  const [formData, setFormData] = useState({
+    title: '', description: '', requirements: '', type: 'CLT', location_type: 'HÃ­brido', company_department_id: ''
+  });
+
+  useEffect(() => {
+    if (open) {
+      initialize();
+    }
+  }, [open]);
+
+  const initialize = async () => {
+    setLimitError(null);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // 1. Pega Tenant
+    const { data: profile } = await supabase.from('user_profiles').select('tenantId').eq('id', user.id).single();
+    if (!profile?.tenantId) return;
+    setTenantId(profile.tenantId);
+
+    // 2. Verifica Limites
+    const { data: tenant } = await supabase.from('tenants').select('planId').eq('id', profile.tenantId).single();
+    const { data: plan } = await supabase.from('plans').select('job_limit').eq('id', tenant.planId || 'freemium').single();
+    
+    const limit = plan?.job_limit || 2;
+    const isUnlimited = limit === -1;
+
+    const { count } = await supabase
+        .from('jobs')
+        .select('*', { count: 'exact', head: true })
+        .eq('tenantId', profile.tenantId)
+        .eq('status', 'active');
+
+    if (!isUnlimited && count >= limit) {
+        setLimitError(`Limite de vagas ativas atingido (${limit}).`);
+    }
+
+    // 3. Busca vagas anteriores para permitir cÃ³pia de critÃ©rios
+    const { data: jobs } = await supabase
+        .from('jobs')
+        .select('id, title')
+        .eq('tenantId', profile.tenantId)
+        .order('created_at', { ascending: false });
+    setPreviousJobs(jobs || []);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (limitError) return;
+    
+    setLoading(true);
+    
+    let parameters = {}; // PadrÃ£o vazio
+
+    // Se escolheu copiar, busca os parÃ¢metros da vaga origem
+    if (copyFromId) {
+        const { data } = await supabase.from('jobs').select('parameters').eq('id', copyFromId).single();
+        if (data?.parameters) {
+            parameters = data.parameters;
+        }
+    } else {
+        // ParÃ¢metros Default
+        parameters = {
+            triagem: [], cultura: [], tecnico: [],
+            notas: [{id:'1',nome:'Abaixo',valor:0}, {id:'2',nome:'Atende',valor:50}, {id:'3',nome:'Supera',valor:100}]
+        };
+    }
+
+    const payload = {
+      ...formData,
+      tenantId: tenantId,
+      status: 'active',
+      company_department_id: formData.company_department_id ? parseInt(formData.company_department_id) : null,
+      parameters: parameters // Salva os critÃ©rios copiados ou padrÃ£o
+    };
+
+    const { error } = await supabase.from('jobs').insert(payload);
+
+    if (error) alert('Erro: ' + error.message);
+    else {
+      setFormData({ title: '', description: '', requirements: '', type: 'CLT', location_type: 'HÃ­brido', company_department_id: '' });
+      setCopyFromId('');
+      onSuccess();
+      onClose();
+    }
+    setLoading(false);
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b flex justify-between items-center">
+          <h2 className="text-xl font-bold">Nova Vaga</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">âœ•</button>
+        </div>
+        
+        {limitError ? (
+            <div className="p-6 text-center">
+                <div className="bg-red-50 text-red-700 p-4 rounded border border-red-200 mb-4 flex items-start gap-3 text-left">
+                    <AlertTriangle className="w-6 h-6 shrink-0" />
+                    <div>
+                        <p className="font-bold">Limite Atingido</p>
+                        <p className="text-sm mt-1">{limitError}</p>
+                    </div>
+                </div>
+                <button onClick={onClose} className="bg-gray-200 px-4 py-2 rounded">Fechar</button>
+            </div>
+        ) : (
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            
+            {/* Seletor de CÃ³pia - NOVIDADE */}
+            {previousJobs.length > 0 && (
+                <div className="bg-blue-50 p-3 rounded border border-blue-100 mb-4">
+                    <label className="block text-xs font-bold text-blue-800 mb-1 flex items-center gap-1">
+                        <Copy size={12}/> Copiar critÃ©rios de avaliaÃ§Ã£o de:
+                    </label>
+                    <select 
+                        className="w-full border p-2 rounded text-sm bg-white"
+                        value={copyFromId}
+                        onChange={e => setCopyFromId(e.target.value)}
+                    >
+                        <option value="">-- ComeÃ§ar do Zero --</option>
+                        {previousJobs.map(j => (
+                            <option key={j.id} value={j.id}>{j.title}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">TÃ­tulo da Vaga *</label>
+                <input required className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
+            </div>
+
+            {tenantId && <AreaSelect tenantId={tenantId} value={formData.company_department_id} onChange={val => setFormData({...formData, company_department_id: val})} />}
+
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Modelo</label>
+                <select className="w-full border p-2 rounded bg-white" value={formData.location_type} onChange={e => setFormData({...formData, location_type: e.target.value})}>
+                    <option>Presencial</option><option>HÃ­brido</option><option>Remoto</option>
+                </select>
+                </div>
+                <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contrato</label>
+                <select className="w-full border p-2 rounded bg-white" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
+                    <option>CLT</option><option>PJ</option><option>EstÃ¡gio</option>
+                </select>
+                </div>
+            </div>
+
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">DescriÃ§Ã£o</label><textarea className="w-full border p-2 rounded outline-none" rows="3" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Requisitos</label><textarea className="w-full border p-2 rounded outline-none" rows="3" value={formData.requirements} onChange={e => setFormData({...formData, requirements: e.target.value})} /></div>
+
+            <div className="flex justify-end gap-2 pt-4">
+                <button type="button" onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded">Cancelar</button>
+                <button type="submit" disabled={loading} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{loading ? 'Criando...' : 'Criar Vaga'}</button>
+            </div>
+            </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\components\jobs\JobCriteria.jsx
+------------------------------------------------
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../../supabase/client';
+import { Save, Plus, Trash2, Copy, AlertCircle, CheckCircle2 } from 'lucide-react';
+
+export default function JobCriteria({ job, onUpdate }) {
+  const defaultParams = {
+    triagem: [],
+    cultura: [],
+    tecnico: [],
+    notas: [
+      { id: '1', nome: 'Abaixo', valor: 0 },
+      { id: '2', nome: 'Atende', valor: 5 },
+      { id: '3', nome: 'Supera', valor: 10 }
+    ]
+  };
+
+  const [params, setParams] = useState(job.parameters || defaultParams);
+  const [loading, setLoading] = useState(false);
+  const [importJobId, setImportJobId] = useState('');
+  const [allJobs, setAllJobs] = useState([]);
+
+  useEffect(() => {
+    const fetchJobs = async () => {
+      const { data } = await supabase
+        .from('jobs')
+        .select('id, title')
+        .neq('id', job.id)
+        .order('created_at', { ascending: false });
+      setAllJobs(data || []);
+    };
+    fetchJobs();
+  }, [job.id]);
+
+  // --- LÃ“GICA DE CRITÃ‰RIOS (PESOS) ---
+  const getSectionTotal = (sectionKey) => {
+    const items = params[sectionKey] || [];
+    return items.reduce((acc, item) => acc + (Number(item.weight) || 0), 0);
+  };
+
+  const addItem = (section) => {
+    const newItem = { name: '', weight: 0 };
+    setParams({ ...params, [section]: [...(params[section] || []), newItem] });
+  };
+
+  const removeItem = (section, index) => {
+    const newList = [...params[section]];
+    newList.splice(index, 1);
+    setParams({ ...params, [section]: newList });
+  };
+
+  const updateItem = (section, index, field, value) => {
+    const newList = [...params[section]];
+    newList[index][field] = value;
+    setParams({ ...params, [section]: newList });
+  };
+
+  // --- LÃ“GICA DA RÃ‰GUA DE NOTAS (NOVA) ---
+  const addNoteLevel = () => {
+    const newNote = { id: crypto.randomUUID(), nome: '', valor: 0 };
+    setParams({ ...params, notas: [...(params.notas || []), newNote] });
+  };
+
+  const removeNoteLevel = (index) => {
+    const newNotas = [...params.notas];
+    newNotas.splice(index, 1);
+    setParams({ ...params, notas: newNotas });
+  };
+
+  const updateNoteLevel = (index, field, value) => {
+    const newNotas = [...params.notas];
+    newNotas[index][field] = value;
+    setParams({ ...params, notas: newNotas });
+  };
+
+  // --- SALVAR E IMPORTAR ---
+  const handleSave = async () => {
+    // 1. ValidaÃ§Ã£o de Pesos
+    const sections = ['triagem', 'cultura', 'tecnico'];
+    const errors = [];
+
+    sections.forEach(sec => {
+      const total = getSectionTotal(sec);
+      if ((params[sec] && params[sec].length > 0) && total !== 100) {
+        errors.push(`A seÃ§Ã£o ${sec.toUpperCase()} soma ${total}% (deve ser 100%).`);
+      }
+    });
+
+    // 2. ValidaÃ§Ã£o da RÃ©gua de Notas
+    if (!params.notas || params.notas.length < 2) {
+      errors.push("A RÃ©gua de Notas deve ter pelo menos 2 nÃ­veis (ex: Min e Max).");
+    }
+
+    if (errors.length > 0) {
+      alert(`Erro de ValidaÃ§Ã£o:\n\n${errors.join('\n')}\n\nAjuste antes de salvar.`);
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase
+      .from('jobs')
+      .update({ parameters: params })
+      .eq('id', job.id);
+
+    if (error) alert("Erro ao salvar: " + error.message);
+    else {
+      alert("CritÃ©rios atualizados com sucesso!");
+      if (onUpdate) onUpdate();
+    }
+    setLoading(false);
+  };
+
+  const importCriteria = async () => {
+    if (!importJobId) return;
+    const { data } = await supabase.from('jobs').select('parameters').eq('id', importJobId).single();
+    if (data?.parameters) {
+      setParams(data.parameters);
+      alert("CritÃ©rios importados! Verifique os pesos e salve.");
+    }
+  };
+
+  // --- RENDERIZADORES ---
+  const renderSection = (title, key, color) => {
+    const totalWeight = getSectionTotal(key);
+    const isValid = totalWeight === 100;
+    const isEmpty = !params[key] || params[key].length === 0;
+
+    let statusColor = "text-gray-400";
+    let statusIcon = null;
+    let statusText = "Vazio (0%)";
+
+    if (!isEmpty) {
+      if (isValid) {
+        statusColor = "text-green-600";
+        statusIcon = <CheckCircle2 size={16} />;
+        statusText = "Total: 100% (OK)";
+      } else {
+        statusColor = "text-red-600";
+        statusIcon = <AlertCircle size={16} />;
+        statusText = `Total: ${totalWeight}% (Faltam ${100 - totalWeight}%)`;
+      }
+    }
+
+    return (
+      <div className={`bg-gray-50 p-4 rounded border mb-4 ${!isEmpty && !isValid ? 'border-red-200 bg-red-50' : ''}`}>
+        <div className="flex justify-between items-center mb-3">
+          <div className="flex flex-col">
+            <h3 className={`font-bold uppercase text-sm ${color}`}>{title}</h3>
+            <div className={`text-xs font-bold flex items-center gap-1 mt-1 ${statusColor}`}>
+              {statusIcon} {statusText}
+            </div>
+          </div>
+          <button onClick={() => addItem(key)} className="text-xs flex items-center gap-1 text-blue-600 font-bold hover:underline">
+            <Plus size={14}/> Adicionar CritÃ©rio
+          </button>
+        </div>
+        
+        {isEmpty && <p className="text-sm text-gray-400 italic">Nenhum critÃ©rio definido.</p>}
+
+        <div className="space-y-2">
+          {(params[key] || []).map((item, idx) => (
+            <div key={idx} className="flex gap-2 items-center">
+              <input 
+                className="flex-1 border p-1 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="Nome do CritÃ©rio (Ex: ComunicaÃ§Ã£o)"
+                value={item.name}
+                onChange={e => updateItem(key, idx, 'name', e.target.value)}
+              />
+              <div className="w-24 relative">
+                <input 
+                  type="number"
+                  className="w-full border p-1 rounded text-sm text-center pr-6 outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="%"
+                  value={item.weight}
+                  onChange={e => updateItem(key, idx, 'weight', e.target.value)}
+                />
+                <span className="absolute right-2 top-1 text-gray-400 text-xs">%</span>
+              </div>
+              <button onClick={() => removeItem(key, idx)} className="text-red-500 hover:bg-red-100 p-1 rounded">
+                <Trash2 size={14}/>
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-end border-b pb-4">
+        <div>
+          <h2 className="text-lg font-bold text-gray-800">ConfiguraÃ§Ã£o da AvaliaÃ§Ã£o</h2>
+          <p className="text-sm text-gray-500">Defina os critÃ©rios e seus pesos (Soma deve ser 100%).</p>
+        </div>
+        
+        <div className="flex gap-2 items-center">
+          <select 
+            className="border p-2 rounded text-sm max-w-[200px]"
+            value={importJobId}
+            onChange={e => setImportJobId(e.target.value)}
+          >
+            <option value="">Copiar de outra vaga...</option>
+            {allJobs.map(j => <option key={j.id} value={j.id}>{j.title}</option>)}
+          </select>
+          <button onClick={importCriteria} disabled={!importJobId} className="bg-gray-200 p-2 rounded hover:bg-gray-300" title="Copiar">
+            <Copy size={16}/>
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          {renderSection('Triagem (RH)', 'triagem', 'text-purple-600')}
+          {renderSection('Fit Cultural', 'cultura', 'text-green-600')}
+        </div>
+        
+        <div>
+          {renderSection('TÃ©cnico / Hard Skills', 'tecnico', 'text-blue-600')}
+          
+          {/* CONFIGURAÃ‡ÃƒO DA RÃ‰GUA DE NOTAS (DINÃ‚MICA) */}
+          <div className="bg-white p-4 rounded border shadow-sm border-l-4 border-l-orange-400">
+            <div className="flex justify-between items-center mb-3">
+              <div>
+                <h3 className="font-bold uppercase text-sm text-gray-800">RÃ©gua de Notas</h3>
+                <p className="text-xs text-gray-500">Defina os nÃ­veis e valores para o cÃ¡lculo.</p>
+              </div>
+              <button onClick={addNoteLevel} className="text-xs flex items-center gap-1 text-orange-600 font-bold hover:underline">
+                <Plus size={14}/> Novo NÃ­vel
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex gap-2 text-xs font-bold text-gray-400 px-1">
+                <span className="flex-1">Nome do NÃ­vel</span>
+                <span className="w-20 text-center">Nota</span>
+                <span className="w-6"></span>
+              </div>
+              
+              {(params.notas || []).map((nota, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <input 
+                    className="flex-1 border p-1 rounded text-sm outline-none focus:ring-1 focus:ring-orange-500"
+                    value={nota.nome}
+                    placeholder="Ex: Atende"
+                    onChange={e => updateNoteLevel(idx, 'nome', e.target.value)}
+                  />
+                  <input 
+                    type="number"
+                    className="w-20 border p-1 rounded text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
+                    value={nota.valor}
+                    placeholder="0"
+                    onChange={e => updateNoteLevel(idx, 'valor', e.target.value)}
+                  />
+                  <button onClick={() => removeNoteLevel(idx)} className="text-red-400 hover:text-red-600 p-1">
+                    <Trash2 size={14}/>
+                  </button>
+                </div>
+              ))}
+              
+              {(!params.notas || params.notas.length === 0) && (
+                <p className="text-sm text-red-500 italic py-2 text-center bg-red-50 rounded">
+                  Defina pelo menos 2 nÃ­veis de nota.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-end pt-4 border-t">
+        <button 
+          onClick={handleSave} 
+          disabled={loading}
+          className="bg-blue-600 text-white px-6 py-2 rounded flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm"
+        >
+          <Save size={18}/> {loading ? 'Salvando...' : 'Salvar ConfiguraÃ§Ã£o'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\components\AreaSelect.jsx
+------------------------------------------------
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../supabase/client';
+
+export default function AreaSelect({ tenantId, value, onChange }) {
+  const [departments, setDepartments] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+
+  useEffect(() => {
+    if (tenantId) fetchDepts();
+  }, [tenantId]);
+
+  const fetchDepts = async () => {
+    const { data } = await supabase
+      .from('company_departments')
+      .select('*')
+      .eq('tenantId', tenantId)
+      .order('name');
+    setDepartments(data || []);
+  };
+
+  const handleCreate = async () => {
+    if (!newName.trim()) return;
+    setLoading(true);
+    // Insere direto na tabela criada no SQL anterior
+    const { data, error } = await supabase
+      .from('company_departments')
+      .insert({ name: newName, tenantId })
+      .select()
+      .single();
+    
+    if (!error && data) {
+      setDepartments([...departments, data]);
+      onChange(data.id); // Seleciona o novo
+      setIsCreating(false);
+      setNewName('');
+    } else {
+      alert('Erro ao criar departamento.');
+    }
+    setLoading(false);
+  };
+
+  if (isCreating) {
+    return (
+      <div className="flex gap-2 items-end">
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Nova Ãrea</label>
+          <input 
+            className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            placeholder="Ex: Financeiro"
+            autoFocus
+          />
+        </div>
+        <button 
+          type="button"
+          onClick={handleCreate} 
+          disabled={loading}
+          className="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700 h-[42px]"
+        >
+          {loading ? '...' : 'Salvar'}
+        </button>
+        <button 
+          type="button"
+          onClick={() => setIsCreating(false)} 
+          className="bg-gray-200 text-gray-700 px-3 py-2 rounded hover:bg-gray-300 h-[42px]"
+        >
+          X
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Departamento / Ãrea</label>
+      <select 
+        className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+        value={value || ''}
+        onChange={e => {
+          if (e.target.value === 'NEW') setIsCreating(true);
+          else onChange(e.target.value);
+        }}
+      >
+        <option value="">Selecione...</option>
+        {departments.map(d => (
+          <option key={d.id} value={d.id}>{d.name}</option>
+        ))}
+        <option value="NEW" className="font-bold text-blue-600">+ Criar Nova Ãrea</option>
+      </select>
+    </div>
+  );
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\components\EvaluationForm.jsx
+------------------------------------------------
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../supabase/client';
+import { Save, UserCheck, MessageSquare } from 'lucide-react';
+import { Box, Typography, Paper, Grid, Button, TextField, Alert } from '@mui/material';
+import { processEvaluation } from '../utils/evaluationLogic';
+
+export default function EvaluationForm({ applicationId, jobParameters, initialData, allEvaluations, onSaved }) {
+  const [answers, setAnswers] = useState({ triagem: {}, cultura: {}, tecnico: {} });
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (initialData) {
+        setAnswers({
+            triagem: initialData.triagem || {},
+            cultura: initialData.cultura || {},
+            tecnico: initialData.tecnico || {}
+        });
+        setNotes(initialData.anotacoes_gerais || '');
+    }
+  }, [initialData]);
+
+  const currentScores = processEvaluation({ scores: answers }, jobParameters);
+
+  const handleSelection = (section, criteriaName, noteId) => {
+      setAnswers(prev => {
+          const newSection = { ...prev[section] };
+          if (newSection[criteriaName] === noteId) delete newSection[criteriaName];
+          else newSection[criteriaName] = noteId;
+          return { ...prev, [section]: newSection };
+      });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("UsuÃ¡rio nÃ£o logado");
+
+      const finalCalc = processEvaluation({ scores: answers }, jobParameters);
+
+      const payload = {
+        triagem: answers.triagem,
+        cultura: answers.cultura,
+        tecnico: answers.tecnico,
+        anotacoes_gerais: notes,
+        pillar_scores: finalCalc,
+        evaluator_name: user.email,
+        updated_at: new Date()
+      };
+
+      const { error: evalError } = await supabase.from('evaluations').upsert({
+            application_id: applicationId,
+            evaluator_id: user.id,
+            scores: payload, 
+            notes: notes,
+            final_score: finalCalc.total
+        }, { onConflict: 'application_id, evaluator_id' });
+
+      if (evalError) throw evalError;
+      alert("Salvo!");
+      if (onSaved) onSaved();
+    } catch (error) { alert("Erro: " + error.message); } finally { setSaving(false); }
+  };
+
+  const renderSectionCompact = (key, title, criteria) => {
+    if (!criteria?.length) return null;
+    const ratingScale = jobParameters.notas || [];
+    const tempScores = processEvaluation({ scores: answers }, jobParameters);
+    
+    return (
+      <Paper variant="outlined" sx={{ p: 1.5, mb: 2, borderColor: '#e0e0e0', bgcolor: '#fff' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#1976d2' }}>{title}</Typography>
+            <Typography variant="caption" sx={{ fontWeight: 'bold', bgcolor: '#e3f2fd', px: 1, py: 0.5, borderRadius: 1 }}>Nota: {tempScores[key].toFixed(1)}</Typography>
+        </Box>
+        {criteria.map((crit, idx) => (
+            <Box key={idx} sx={{ mb: 1.5, borderBottom: '1px dashed #eee', pb: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 500, width: '80%', lineHeight: 1.2 }}>{crit.name}</Typography>
+                    <Typography variant="caption" color="text.secondary">{crit.weight}%</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                    {ratingScale.map(option => (
+                        <Button key={option.id} size="small" onClick={() => handleSelection(key, crit.name, option.id)}
+                                sx={{ minWidth: '30px', height: '24px', fontSize: '0.65rem', p: '0 8px', textTransform: 'none', bgcolor: answers[key]?.[crit.name] === option.id ? '#1976d2' : '#f5f5f5', color: answers[key]?.[crit.name] === option.id ? '#fff' : '#666', '&:hover': { bgcolor: answers[key]?.[crit.name] === option.id ? '#1565c0' : '#eeeeee' } }}>
+                            {option.nome}
+                        </Button>
+                    ))}
+                </Box>
+            </Box>
+        ))}
+      </Paper>
+    );
+  };
+
+  if (!jobParameters) return <Typography variant="caption">Carregando...</Typography>;
+
+  return (
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#fff', p: 1.5, borderRadius: 1, border: '1px solid #e0e0e0' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <UserCheck size={16} color="#666" />
+            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>Minha AvaliaÃ§Ã£o</Typography>
+        </Box>
+        <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#1976d2' }}>
+            {currentScores.total.toFixed(1)} <Typography component="span" variant="caption" color="text.secondary">/10</Typography>
+        </Typography>
+      </Box>
+
+      <Box sx={{ flex: 1, overflowY: 'auto', pr: 1 }}>
+          <Grid container spacing={1}>
+              <Grid item xs={12} md={4}>{renderSectionCompact("triagem", "Triagem", jobParameters.triagem)}</Grid>
+              <Grid item xs={12} md={4}>{renderSectionCompact("cultura", "Fit Cultural", jobParameters.cultura)}</Grid>
+              <Grid item xs={12} md={4}>{renderSectionCompact("tecnico", "TÃ©cnico", jobParameters.tecnico || jobParameters['tÃ©cnico'])}</Grid>
+          </Grid>
+          
+          <Paper variant="outlined" sx={{ p: 2, mt: 1 }}>
+            <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'block' }}>Minhas AnotaÃ§Ãµes</Typography>
+            <TextField multiline rows={2} fullWidth variant="outlined" size="small" value={notes} onChange={e => setNotes(e.target.value)} placeholder="ComentÃ¡rios..." sx={{ bgcolor: '#fff' }} InputProps={{ style: { fontSize: '0.8rem' } }} />
+          </Paper>
+
+          {/* HISTÃ“RICO DE TODAS AS ANOTAÃ‡Ã•ES */}
+          <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
+              <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <MessageSquare size={14} /> HistÃ³rico de ObservaÃ§Ãµes ({allEvaluations?.length || 0})
+              </Typography>
+              {allEvaluations && allEvaluations.length > 0 ? allEvaluations.map((ev, i) => (
+                  <Box key={i} sx={{ mb: 1, p: 1.5, bgcolor: '#f9fafb', borderRadius: 1, border: '1px solid #eee' }}>
+                      <Box display="flex" justifyContent="space-between" mb={0.5}>
+                          {/* Usa o nome mapeado ou fallback */}
+                          <Typography variant="caption" fontWeight="bold" color="primary">{ev.evaluator_name || 'UsuÃ¡rio'}</Typography>
+                          <Typography variant="caption" color="text.secondary">Nota: {Number(ev.final_score).toFixed(1)}</Typography>
+                      </Box>
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#444' }}>{ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentÃ¡rios.'}</Typography>
+                  </Box>
+              )) : <Typography variant="caption" color="text.secondary">Nenhuma avaliaÃ§Ã£o registrada ainda.</Typography>}
+          </Box>
+      </Box>
+
+      <Box sx={{ mt: 2, pt: 1, borderTop: '1px solid #eee' }}>
+        <Button onClick={handleSave} disabled={saving} variant="contained" fullWidth color="primary" startIcon={<Save size={16}/>} sx={{ textTransform: 'none', fontWeight: 'bold' }}>{saving ? "Salvando..." : "Salvar Minha Nota"}</Button>
+      </Box>
+    </Box>
+  );
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\pages\ApplicationDetails.jsx
+------------------------------------------------
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { supabase } from '../supabase/client';
+import EvaluationForm from '../components/EvaluationForm';
+import { ArrowLeft, Mail, MapPin, BookOpen, FileText, Download, Linkedin, Github, Phone, Calendar } from 'lucide-react';
+import { Box, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar } from '@mui/material';
+import { processEvaluation } from '../utils/evaluationLogic';
+import { formatPhone, formatUrl } from '../utils/formatters';
+
+export default function ApplicationDetails() {
+  const { appId } = useParams();
+  const navigate = useNavigate();
+  
+  const [appData, setAppData] = useState(null);
+  const [job, setJob] = useState(null);
+  const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null);
+  const [globalScore, setGlobalScore] = useState(0);
+  const [evaluatorsCount, setEvaluatorsCount] = useState(0);
+  const [allEvaluations, setAllEvaluations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchData();
+  }, [appId]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: application } = await supabase.from('applications').select('*, candidates(*)').eq('id', appId).single();
+      const candidateObj = Array.isArray(application.candidates) ? application.candidates[0] : application.candidates;
+      
+      // Parse Seguro do formData
+      let safeFormData = application.formData;
+      if (typeof safeFormData === 'string') {
+          try { safeFormData = JSON.parse(safeFormData); } catch(e) { console.log('Erro parse formData', e); }
+      }
+      
+      setAppData({ ...application, formData: safeFormData, candidate: candidateObj });
+
+      let jobParams = {};
+      if (application.jobId) {
+        const { data: jobData } = await supabase.from('jobs').select('*').eq('id', application.jobId).single();
+        setJob(jobData);
+        jobParams = jobData.parameters || {};
+      }
+
+      const { data: allEvals } = await supabase.from('evaluations').select('*').eq('application_id', appId);
+      if (allEvals) {
+          const userIds = [...new Set(allEvals.map(e => e.evaluator_id))];
+          let usersMap = {};
+          if (userIds.length > 0) {
+              const { data: users } = await supabase.from('users').select('id, name, email').in('id', userIds);
+              users?.forEach(u => usersMap[u.id] = u.name || u.email);
+          }
+          const evalsWithNames = allEvals.map(e => ({ ...e, evaluator_name: usersMap[e.evaluator_id] || 'Avaliador' }));
+          setAllEvaluations(evalsWithNames);
+          setEvaluatorsCount(evalsWithNames.length);
+          
+          let sumTotal = 0, validCount = 0;
+          evalsWithNames.forEach(ev => {
+              const scores = processEvaluation(ev, jobParams);
+              if (scores.total > 0) { sumTotal += scores.total; validCount++; }
+          });
+          setGlobalScore(validCount > 0 ? (sumTotal / validCount) : 0);
+
+          if (user) {
+              const myEval = allEvals.find(e => e.evaluator_id === user.id);
+              if (myEval) {
+                  const myScores = processEvaluation(myEval, jobParams);
+                  setCurrentUserEvaluation({ ...myEval.scores, anotacoes_gerais: myEval.notes || myEval.scores?.anotacoes_gerais, final_score: myScores.total });
+              } else { setCurrentUserEvaluation(null); }
+          }
+      }
+    } catch (err) { console.error(err); } finally { setLoading(false); }
+  };
+
+  const renderInfo = (data) => {
+    if (!data) return null;
+    
+    // Suporte para estrutura plana (novo JSON) ou aninhada (antigo)
+    const course = data.course || data.education?.course;
+    const institution = data.institution || data.education?.institution;
+    const year = data.completionYear || data.education?.date;
+    const birth = data.birthDate;
+    const eng = data.englishLevel;
+
+    return (
+        <>
+            {/* Bloco FormaÃ§Ã£o */}
+            <Box sx={{ mt: 3 }}>
+                <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}>
+                    <BookOpen size={14}/> FormaÃ§Ã£o
+                </Typography>
+                <Box sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 0.5 }}>
+                    <Typography variant="caption" display="block" fontWeight="bold">{course || 'Curso nÃ£o informado'}</Typography>
+                    <Typography variant="caption" display="block" color="text.secondary">{institution || 'InstituiÃ§Ã£o nÃ£o informada'}</Typography>
+                    {year && <Typography variant="caption" display="block" color="text.secondary">ConclusÃ£o: {year}</Typography>}
+                </Box>
+            </Box>
+
+            {/* Bloco Extras (InglÃªs, Nasc) */}
+            {(birth || eng) && (
+                <Box sx={{ mt: 2 }}>
+                    <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}>
+                        <Calendar size={14}/> Detalhes
+                    </Typography>
+                    <Box sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 0.5 }}>
+                        {birth && <Typography variant="caption" display="block">Nascimento: {birth}</Typography>}
+                        {eng && <Typography variant="caption" display="block">InglÃªs: {eng}</Typography>}
+                    </Box>
+                </Box>
+            )}
+        </>
+    );
+  };
+
+  const renderScoreBadges = (gScore, myScore, count) => {
+    const getBgColor = (s) => s >= 8 ? '#e8f5e9' : s >= 5 ? '#fff3e0' : '#ffebee';
+    const getTextColor = (s) => s >= 8 ? '#2e7d32' : s >= 5 ? '#ef6c00' : '#c62828';
+    return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 3, width: '100%' }}>
+            <Paper elevation={0} sx={{ bgcolor: getBgColor(gScore), p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
+                <Typography variant="subtitle2" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.75rem' }}>Nota Global</Typography>
+                <Typography variant="caption" sx={{ display:'block', fontSize: '0.7rem', color: 'text.secondary', mb: 0.5 }}>({count} {count === 1 ? 'avaliaÃ§Ã£o' : 'avaliaÃ§Ãµes'})</Typography>
+                <Typography variant="h3" sx={{ fontWeight: 800, color: getTextColor(gScore), lineHeight: 1 }}>{Number(gScore || 0).toFixed(1)}</Typography>
+            </Paper>
+            <Paper elevation={0} sx={{ bgcolor: '#f3f4f6', p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
+                <Typography variant="subtitle2" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.75rem', mb: 1 }}>Minha Nota</Typography>
+                <Typography variant="h3" sx={{ fontWeight: 800, color: '#374151', lineHeight: 1 }}>{Number(myScore || 0).toFixed(1)}</Typography>
+            </Paper>
+        </Box>
+    );
+  };
+
+  if (loading) return <Box p={4} display="flex" justifyContent="center"><CircularProgress /></Box>;
+  if (!appData) return <Box p={4} textAlign="center">Candidato nÃ£o encontrado.</Box>;
+
+  const params = job?.parameters || {};
+  const formData = appData.formData || {};
+  const candidate = appData.candidate || {};
+  
+  // Mescla dados do formData com a tabela candidate
+  const displayPhone = candidate.phone || formData.phone;
+  const displayCity = candidate.city || formData.city;
+  const displayState = candidate.state || formData.state;
+  const linkedIn = candidate.linkedin_profile || formData.linkedinProfile || formData.linkedin_profile;
+  const gitHub = candidate.github_profile || formData.githubProfile;
+
+  return (
+    <Box sx={{ bgcolor: '#f8f9fa', minHeight: '100vh', p: 2 }}>
+      <Button onClick={() => navigate(-1)} startIcon={<ArrowLeft size={16}/>} sx={{ mb: 2, color: 'text.secondary' }}>Voltar</Button>
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={3}>
+          <Paper sx={{ p: 3, height: '100%' }} elevation={0} variant="outlined">
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+              <Avatar sx={{ width: 80, height: 80, bgcolor: '#1976d2', fontSize: '2rem', mb: 2, fontWeight: 'bold' }}>{candidate.name?.[0]}</Avatar>
+              <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 'bold', lineHeight: 1.2 }}>{candidate.name}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 2 }}>{job?.title}</Typography>
+              {renderScoreBadges(globalScore, currentUserEvaluation?.final_score, evaluatorsCount)}
+            </Box>
+            <Divider sx={{ my: 3 }} />
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                <Box display="flex" alignItems="center" gap={1.5}><Mail size={16} className="text-gray-400"/><Typography variant="body2" sx={{wordBreak: 'break-all'}}>{candidate.email || formData.email}</Typography></Box>
+                <Box display="flex" alignItems="center" gap={1.5}><Phone size={16} className="text-gray-400"/><Typography variant="body2">{formatPhone(displayPhone)}</Typography></Box>
+                <Box display="flex" alignItems="center" gap={1.5}><MapPin size={16} className="text-gray-400"/><Typography variant="body2">{displayCity} - {displayState}</Typography></Box>
+            </Box>
+            <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {candidate.resume_url && (<Button variant="contained" color="primary" fullWidth href={candidate.resume_url} target="_blank" startIcon={<Download size={18}/>} sx={{ mb: 1, textTransform: 'none', fontWeight: 'bold' }}>Ver CurrÃ­culo</Button>)}
+                {linkedIn && (<Button variant="outlined" fullWidth href={formatUrl(linkedIn)} target="_blank" startIcon={<Linkedin size={16}/>} sx={{ textTransform: 'none', color: '#0077b5', borderColor: '#0077b5' }}>LinkedIn</Button>)}
+                {gitHub && (<Button variant="outlined" fullWidth href={formatUrl(gitHub)} target="_blank" startIcon={<Github size={16}/>} sx={{ textTransform: 'none', color: '#333', borderColor: '#333' }}>GitHub</Button>)}
+            </Box>
+            <Divider sx={{ my: 3 }} />
+            
+            {renderInfo(formData)}
+
+            <Box sx={{ mt: 3 }}>
+               <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}><FileText size={14}/> MotivaÃ§Ã£o</Typography>
+               <Typography variant="body2" paragraph sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 1, whiteSpace: 'pre-line', fontSize: '0.85rem' }}>{formData.motivation || 'NÃ£o informada'}</Typography>
+            </Box>
+            <Box sx={{ mt: 2 }}><Typography variant="caption" color="text.secondary">Candidatou-se em: {new Date(appData.created_at).toLocaleDateString('pt-BR')}</Typography></Box>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} md={9}>
+          <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
+             <EvaluationForm applicationId={appData.id} jobParameters={params} initialData={currentUserEvaluation} allEvaluations={allEvaluations} onSaved={fetchData} />
+          </Paper>
+        </Grid>
+      </Grid>
+    </Box>
+  );
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\pages\ApplyJob.jsx
+------------------------------------------------
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { supabase } from '../supabase/client';
+import { Building, MapPin, Briefcase, CheckCircle, Send, GraduationCap, User, Link as LinkIcon, FileText, Upload, Paperclip } from 'lucide-react';
+
+export default function ApplyJob() {
+  const { jobId } = useParams();
+  const [job, setJob] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  // Estados para Upload de Arquivo
+  const [resumeType, setResumeType] = useState('file'); // 'file' ou 'link'
+  const [resumeFile, setResumeFile] = useState(null);
+
+  // Estado do FormulÃ¡rio
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    city: '',
+    state: '',
+    linkedin_profile: '',
+    github_profile: '',
+    resume_url: '', // SerÃ¡ preenchido automaticamente apÃ³s upload
+    
+    motivation: '',
+    education_level: '',
+    education_status: '',
+    course_name: '',
+    institution: '',
+    conclusion_date: '',
+    current_period: ''
+  });
+
+  useEffect(() => {
+    fetchJobDetails();
+  }, [jobId]);
+
+  const fetchJobDetails = async () => {
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('title, description, requirements, location_type, type, status')
+      .eq('id', jobId)
+      .single();
+
+    if (error || !data) {
+      alert("Vaga nÃ£o encontrada ou encerrada.");
+    } else {
+      setJob(data);
+    }
+    setLoading(false);
+  };
+
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setResumeFile(e.target.files[0]);
+    }
+  };
+
+  const uploadResumeToStorage = async () => {
+    if (!resumeFile) return null;
+
+    const fileExt = resumeFile.name.split('.').pop();
+    const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    // 1. Upload para o bucket 'resumes'
+    const { error: uploadError } = await supabase.storage
+      .from('resumes')
+      .upload(filePath, resumeFile);
+
+    if (uploadError) throw new Error("Erro no upload do arquivo: " + uploadError.message);
+
+    // 2. Pegar URL pÃºblica
+    const { data } = supabase.storage.from('resumes').getPublicUrl(filePath);
+    return data.publicUrl;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+
+    try {
+      if (job.status !== 'active') throw new Error("Esta vaga nÃ£o estÃ¡ mais aceitando candidaturas.");
+      
+      let finalResumeUrl = formData.resume_url;
+
+      // --- LÃ“GICA DE UPLOAD ---
+      if (resumeType === 'file') {
+        if (!resumeFile) throw new Error("Por favor, selecione um arquivo de currÃ­culo.");
+        finalResumeUrl = await uploadResumeToStorage();
+      } else {
+        if (!formData.resume_url) throw new Error("Por favor, informe o link do currÃ­culo.");
+      }
+
+      // 1. Upsert Candidato
+      const { data: candidate, error: candError } = await supabase
+        .from('candidates')
+        .upsert({
+            email: formData.email,
+            name: formData.name,
+            phone: formData.phone,
+            city: formData.city,
+            state: formData.state,
+            linkedin_profile: formData.linkedin_profile,
+            github_profile: formData.github_profile,
+            resume_url: finalResumeUrl, // Usa a URL gerada ou o link colado
+            updated_at: new Date()
+        }, { onConflict: 'email' }) // Isso agora vai funcionar com a constraint criada no SQL
+        .select()
+        .single();
+
+      if (candError) throw candError;
+
+      // 2. Prepara Application Data
+      const appPayload = {
+        motivation: formData.motivation,
+        education: {
+            level: formData.education_level,
+            status: formData.education_status,
+            course: formData.course_name,
+            institution: formData.institution,
+            date: formData.conclusion_date,
+            period: formData.current_period
+        },
+        applied_at: new Date().toISOString()
+      };
+
+      // 3. Insert Application
+      const { error: appError } = await supabase
+        .from('applications')
+        .insert({
+            jobId: jobId,
+            candidateId: candidate.id,
+            status: 'new',
+            formData: appPayload
+        });
+
+      if (appError) {
+        if (appError.code === '23505') throw new Error("VocÃª jÃ¡ se candidatou para esta vaga.");
+        throw appError;
+      }
+
+      setSuccess(true);
+
+    } catch (err) {
+      alert("Erro ao enviar: " + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const isSuperiorOrTech = ['tecnico', 'superior', 'pos', 'mestrado'].includes(formData.education_level);
+  const isStudying = formData.education_status === 'cursando';
+  const isCompleted = formData.education_status === 'completo';
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50">Carregando...</div>;
+  if (!job) return <div className="min-h-screen flex items-center justify-center bg-gray-50">Vaga indisponÃ­vel.</div>;
+
+  if (success) {
+    return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+            <div className="bg-white p-8 rounded-lg shadow-md text-center max-w-md w-full border-t-4 border-green-500">
+                <div className="flex justify-center mb-4">
+                    <div className="bg-green-100 p-3 rounded-full">
+                        <CheckCircle className="text-green-600 w-12 h-12" />
+                    </div>
+                </div>
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">Candidatura Enviada!</h2>
+                <p className="text-gray-600 mb-6">
+                    Seus dados foram enviados com sucesso para a vaga de <strong>{job.title}</strong>.
+                </p>
+                <button onClick={() => window.location.reload()} className="text-blue-600 font-medium hover:underline text-sm">
+                    Voltar para a vaga
+                </button>
+            </div>
+        </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-10 px-4 font-sans">
+      <div className="max-w-5xl mx-auto bg-white rounded-xl shadow-xl overflow-hidden border border-gray-100">
+        
+        {/* Header da Vaga */}
+        <div className="bg-slate-800 p-8 text-white relative">
+            <h1 className="text-3xl font-bold mb-3">{job.title}</h1>
+            <div className="flex flex-wrap gap-4 text-slate-300 text-sm font-medium">
+                <span className="flex items-center gap-1 bg-slate-700 px-3 py-1 rounded-full"><Briefcase size={14}/> {job.type}</span>
+                <span className="flex items-center gap-1 bg-slate-700 px-3 py-1 rounded-full"><MapPin size={14}/> {job.location_type}</span>
+                <span className="flex items-center gap-1 bg-slate-700 px-3 py-1 rounded-full"><Building size={14}/> Novva R&S</span>
+            </div>
+        </div>
+
+        <div className="grid lg:grid-cols-12">
+            <div className="lg:col-span-5 p-8 bg-gray-50 border-r border-gray-100 sticky top-0 h-fit">
+                <div className="space-y-8">
+                    <div>
+                        <h3 className="font-bold text-slate-800 text-lg mb-3 flex items-center gap-2">
+                            <FileText size={20} className="text-blue-600"/> DescriÃ§Ã£o
+                        </h3>
+                        <p className="text-slate-600 whitespace-pre-line text-sm leading-relaxed">{job.description || "Sem descriÃ§Ã£o."}</p>
+                    </div>
+                    {job.requirements && (
+                        <div>
+                            <h3 className="font-bold text-slate-800 text-lg mb-3 flex items-center gap-2">
+                                <CheckCircle size={20} className="text-green-600"/> Requisitos
+                            </h3>
+                            <p className="text-slate-600 whitespace-pre-line text-sm leading-relaxed">{job.requirements}</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <div className="lg:col-span-7 p-8 bg-white">
+                <h2 className="text-2xl font-bold text-slate-800 mb-6 pb-2 border-b border-gray-100">Ficha de InscriÃ§Ã£o</h2>
+                
+                <form onSubmit={handleSubmit} className="space-y-8">
+                    
+                    {/* DADOS PESSOAIS */}
+                    <section>
+                        <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide">
+                            <User size={16}/> Dados BÃ¡sicos
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div className="md:col-span-2">
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Nome Completo *</label>
+                                <input required className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                    value={formData.name} onChange={e => handleInputChange('name', e.target.value)} />
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Email *</label>
+                                <input required type="email" className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                    value={formData.email} onChange={e => handleInputChange('email', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Telefone / Celular *</label>
+                                <input required className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                    value={formData.phone} onChange={e => handleInputChange('phone', e.target.value)} />
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                                <div className="col-span-2">
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">Cidade</label>
+                                    <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                        value={formData.city} onChange={e => handleInputChange('city', e.target.value)} />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">UF</label>
+                                    <select className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
+                                        value={formData.state} onChange={e => handleInputChange('state', e.target.value)}>
+                                        <option value="">--</option>
+                                        {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => (
+                                            <option key={uf} value={uf}>{uf}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* CURRÃCULO E LINKS (COM UPLOAD) */}
+                    <section>
+                        <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6">
+                            <Paperclip size={16}/> CurrÃ­culo e Links
+                        </h4>
+                        
+                        {/* Toggle Tipo de CurrÃ­culo */}
+                        <div className="bg-gray-50 p-4 rounded-lg border mb-4">
+                            <label className="block text-xs font-bold text-gray-500 mb-2">Como deseja enviar seu currÃ­culo?</label>
+                            <div className="flex gap-4 mb-4">
+                                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                    <input type="radio" name="resumeType" checked={resumeType === 'file'} onChange={() => setResumeType('file')} />
+                                    <Upload size={16} className="text-gray-600"/> Enviar Arquivo (PDF/DOC)
+                                </label>
+                                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                    <input type="radio" name="resumeType" checked={resumeType === 'link'} onChange={() => setResumeType('link')} />
+                                    <LinkIcon size={16} className="text-gray-600"/> Colar Link (Drive/LinkedIn)
+                                </label>
+                            </div>
+
+                            {resumeType === 'file' ? (
+                                <div>
+                                    <input 
+                                      type="file" 
+                                      accept=".pdf,.doc,.docx"
+                                      onChange={handleFileChange}
+                                      className="block w-full text-sm text-slate-500
+                                        file:mr-4 file:py-2 file:px-4
+                                        file:rounded-full file:border-0
+                                        file:text-sm file:font-semibold
+                                        file:bg-blue-50 file:text-blue-700
+                                        hover:file:bg-blue-100"
+                                    />
+                                    <p className="text-xs text-gray-400 mt-1">Formatos aceitos: PDF, DOC, DOCX. MÃ¡x 5MB.</p>
+                                </div>
+                            ) : (
+                                <input 
+                                    className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                    placeholder="Cole aqui o link do seu currÃ­culo..."
+                                    value={formData.resume_url} 
+                                    onChange={e => handleInputChange('resume_url', e.target.value)} 
+                                />
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Linkedin (Opcional)</label>
+                                <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                    placeholder="linkedin.com/in/..."
+                                    value={formData.linkedin_profile} onChange={e => handleInputChange('linkedin_profile', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">GitHub / PortfÃ³lio (Opcional)</label>
+                                <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                    placeholder="github.com/..."
+                                    value={formData.github_profile} onChange={e => handleInputChange('github_profile', e.target.value)} />
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* ESCOLARIDADE (CONDICIONAL) */}
+                    <section>
+                        <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6">
+                            <GraduationCap size={16}/> FormaÃ§Ã£o
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">NÃ­vel de Escolaridade *</label>
+                                <select required className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
+                                    value={formData.education_level} onChange={e => handleInputChange('education_level', e.target.value)}
+                                >
+                                    <option value="">Selecione...</option>
+                                    <option value="medio">Ensino MÃ©dio</option>
+                                    <option value="tecnico">Ensino TÃ©cnico</option>
+                                    <option value="superior">Superior (GraduaÃ§Ã£o)</option>
+                                    <option value="pos">PÃ³s-GraduaÃ§Ã£o / MBA</option>
+                                    <option value="mestrado">Mestrado / Doutorado</option>
+                                </select>
+                            </div>
+
+                            {formData.education_level && (
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">Status *</label>
+                                    <select required className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
+                                        value={formData.education_status} onChange={e => handleInputChange('education_status', e.target.value)}
+                                    >
+                                        <option value="">Selecione...</option>
+                                        <option value="completo">Completo</option>
+                                        <option value="cursando">Cursando</option>
+                                        <option value="incompleto">Incompleto / Trancado</option>
+                                    </select>
+                                </div>
+                            )}
+
+                            {isSuperiorOrTech && formData.education_status && (
+                                <>
+                                    <div className="md:col-span-2">
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">Nome do Curso *</label>
+                                        <input required className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                            value={formData.course_name} onChange={e => handleInputChange('course_name', e.target.value)} />
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">InstituiÃ§Ã£o de Ensino *</label>
+                                        <input required className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                            value={formData.institution} onChange={e => handleInputChange('institution', e.target.value)} />
+                                    </div>
+                                </>
+                            )}
+
+                            {isSuperiorOrTech && isStudying && (
+                                <>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">PrevisÃ£o de Formatura *</label>
+                                        <input required type="month" className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100" 
+                                            value={formData.conclusion_date} onChange={e => handleInputChange('conclusion_date', e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">PerÃ­odo Atual *</label>
+                                        <select required className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
+                                            value={formData.current_period} onChange={e => handleInputChange('current_period', e.target.value)}
+                                        >
+                                            <option value="">Selecione...</option>
+                                            {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={`${n}Âº Semestre`}>{n}Âº Semestre</option>)}
+                                        </select>
+                                    </div>
+                                </>
+                            )}
+
+                            {isSuperiorOrTech && isCompleted && (
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">Ano de ConclusÃ£o *</label>
+                                    <input required type="number" min="1970" max="2030" className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100" 
+                                        value={formData.conclusion_date} onChange={e => handleInputChange('conclusion_date', e.target.value)} />
+                                </div>
+                            )}
+                        </div>
+                    </section>
+
+                    {/* MOTIVAÃ‡ÃƒO */}
+                    <section>
+                        <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6">
+                            <FileText size={16}/> MotivaÃ§Ã£o
+                        </h4>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">Por que vocÃª quer esta vaga?</label>
+                        <textarea className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" rows="4" 
+                            value={formData.motivation} onChange={e => handleInputChange('motivation', e.target.value)} />
+                    </section>
+
+                    <div className="pt-4">
+                        <button 
+                            disabled={submitting}
+                            className="w-full bg-blue-600 text-white font-bold py-4 rounded-lg hover:bg-blue-700 transition flex justify-center items-center gap-2 shadow-lg disabled:opacity-70"
+                        >
+                           {submitting ? 'Enviando...' : <><Send size={18}/> Confirmar Candidatura</>}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\pages\Dashboard.jsx
+------------------------------------------------
+import React, { useState, useEffect, useMemo } from 'react';
+import { supabase } from '../supabase/client';
+import { useNavigate } from 'react-router-dom';
+import CreateJobModal from '../components/jobs/CreateJobModal';
+import { Briefcase, Users, Plus, Settings as SettingsIcon, Clock, Link as LinkIcon, CheckCircle } from 'lucide-react';
+import { differenceInDays, parseISO } from 'date-fns';
+
+export default function Dashboard() {
+  const navigate = useNavigate();
+  const [profile, setProfile] = useState(null);
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [deptFilter, setDeptFilter] = useState('all');
+  const [fixing, setFixing] = useState(false);
+  const [copiedId, setCopiedId] = useState(null); // NOVO: Estado para feedback do botÃ£o copiar
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // 1. Busca Perfil
+      const { data: userProfile } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      setProfile(userProfile);
+
+      // 2. Se tiver Tenant, busca vagas
+      if (userProfile?.tenantId) {
+        const [jobsResult, deptsResult] = await Promise.all([
+          // Busca vagas e jÃ¡ conta os candidatos na query (count)
+          supabase.from('jobs').select('*, applications(count)').eq('tenantId', userProfile.tenantId),
+          supabase.from('company_departments').select('*').eq('tenantId', userProfile.tenantId)
+        ]);
+
+        const rawJobs = jobsResult.data || [];
+        const depts = deptsResult.data || [];
+        
+        const deptMap = {};
+        depts.forEach(d => deptMap[d.id] = d.name);
+
+        const processed = rawJobs.map(j => ({
+          ...j,
+          deptName: j.company_department_id ? (deptMap[j.company_department_id] || 'Geral') : 'Geral',
+          // MÃ©trica 1: Quantidade de Inscritos
+          candidateCount: j.applications?.[0]?.count || 0,
+          // MÃ©trica 2: Dias em Aberto
+          daysOpen: differenceInDays(new Date(), parseISO(j.created_at))
+        }));
+
+        // Ordena por data (mais recente primeiro)
+        processed.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        setJobs(processed);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // FunÃ§Ã£o para corrigir contas sem tenant (Mantida do original para seguranÃ§a)
+  const fixAccount = async () => {
+    setFixing(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      const { data: newTenant, error: tError } = await supabase
+        .from('tenants')
+        .insert({ "companyName": "Minha Empresa" })
+        .select()
+        .single();
+      if (tError) throw tError;
+
+      const { error: pError } = await supabase
+        .from('user_profiles')
+        .upsert({
+          id: user.id,
+          name: user.email.split('@')[0],
+          "tenantId": newTenant.id,
+          role: 'admin'
+        });
+      if (pError) throw pError;
+
+      alert("Conta configurada com sucesso!");
+      fetchData();
+    } catch (err) {
+      alert("Erro ao configurar: " + err.message);
+    } finally {
+      setFixing(false);
+    }
+  };
+
+  // NOVO: FunÃ§Ã£o para copiar link da vaga sem entrar nela
+  const copyJobLink = (e, jobId) => {
+    e.stopPropagation(); // Impede que o clique abra a pÃ¡gina da vaga
+    const link = `${window.location.origin}/apply/${jobId}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopiedId(jobId);
+      setTimeout(() => setCopiedId(null), 2000);
+    });
+  };
+
+  const filteredJobs = useMemo(() => {
+    if (deptFilter === 'all') return jobs;
+    return jobs.filter(j => j.deptName === deptFilter);
+  }, [jobs, deptFilter]);
+
+  const uniqueDepts = [...new Set(jobs.map(j => j.deptName))].sort();
+
+  if (loading) return <div className="p-10 text-center">Carregando Dashboard...</div>;
+
+  return (
+    <div className="p-8 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 border-b pb-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
+            <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600">
+              {profile?.name || 'UsuÃ¡rio'}
+            </span>
+            <span className="text-gray-300">|</span>
+            <button onClick={() => navigate('/settings')} className="text-gray-600 hover:text-blue-600 flex items-center gap-1">
+               <SettingsIcon size={14} /> ConfiguraÃ§Ãµes
+            </button>
+            <span className="text-gray-300">|</span>
+            <button onClick={() => supabase.auth.signOut()} className="text-red-500 hover:underline">
+              Sair
+            </button>
+          </div>
+        </div>
+        
+        {profile?.tenantId && (
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center shadow transition"
+          >
+            <Plus className="w-4 h-4 mr-2" /> Nova Vaga
+          </button>
+        )}
+      </div>
+
+      {!profile?.tenantId ? (
+        <div className="bg-yellow-50 border border-yellow-200 p-8 rounded-lg text-center shadow-sm max-w-2xl mx-auto">
+          <h2 className="text-xl font-bold text-yellow-800 mb-2">Finalizar ConfiguraÃ§Ã£o da Conta</h2>
+          <p className="text-yellow-700 mb-6">
+            Bem-vindo ao Novva R&S! Para comeÃ§ar, precisamos configurar sua empresa.
+          </p>
+          <button 
+            onClick={fixAccount} 
+            disabled={fixing}
+            className="bg-yellow-600 text-white px-6 py-3 rounded-md font-bold hover:bg-yellow-700 shadow transition"
+          >
+            {fixing ? 'Configurando...' : 'âš™ï¸ Configurar Minha Empresa Agora'}
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div className="bg-white p-6 rounded shadow border border-gray-100 flex items-center gap-4">
+              <div className="p-3 bg-blue-100 text-blue-600 rounded-full"><Briefcase size={24}/></div>
+              <div>
+                <p className="text-sm text-gray-500">Vagas Ativas</p>
+                <p className="text-2xl font-bold">{jobs.filter(j => j.status === 'active').length}</p>
+              </div>
+            </div>
+            <div className="bg-white p-6 rounded shadow border border-gray-100 flex items-center gap-4">
+              <div className="p-3 bg-green-100 text-green-600 rounded-full"><Users size={24}/></div>
+              <div>
+                <p className="text-sm text-gray-500">Total Candidatos</p>
+                <p className="text-2xl font-bold">{jobs.reduce((acc, j) => acc + j.candidateCount, 0)}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabela de Vagas */}
+          <div className="bg-white rounded shadow border overflow-hidden">
+            <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+              <h2 className="font-semibold text-gray-700">Listagem de Vagas</h2>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">Filtrar:</span>
+                <select 
+                  className="border p-1 rounded text-sm bg-white outline-none"
+                  value={deptFilter}
+                  onChange={e => setDeptFilter(e.target.value)}
+                >
+                  <option value="all">Todas as Ãreas</option>
+                  {uniqueDepts.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 text-gray-500 border-b">
+                <tr>
+                  <th className="p-4 font-medium">Ãrea / Depto</th>
+                  <th className="p-4 font-medium">TÃ­tulo</th>
+                  {/* NOVAS COLUNAS */}
+                  <th className="p-4 font-medium text-center">Inscritos</th>
+                  <th className="p-4 font-medium text-center">Tempo</th>
+                  <th className="p-4 font-medium text-center">DivulgaÃ§Ã£o</th>
+                  <th className="p-4 font-medium">Status</th>
+                  <th className="p-4 font-medium text-right">AÃ§Ã£o</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredJobs.length === 0 ? (
+                  <tr><td colSpan="7" className="p-8 text-center text-gray-500">Nenhuma vaga encontrada.</td></tr>
+                ) : (
+                  filteredJobs.map(job => (
+                    <tr 
+                      key={job.id} 
+                      onClick={() => navigate(`/jobs/${job.id}`)}
+                      className="border-b hover:bg-blue-50 transition cursor-pointer group"
+                    >
+                      <td className="p-4 text-gray-600">{job.deptName}</td>
+                      <td className="p-4 font-bold text-gray-800 group-hover:text-blue-600">{job.title}</td>
+                      
+                      {/* DADOS ADICIONADOS */}
+                      <td className="p-4 text-center">
+                          <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold text-xs">{job.candidateCount}</span>
+                      </td>
+                      <td className="p-4 text-center text-gray-500">
+                          <div className="flex items-center justify-center gap-1">
+                            <Clock size={14}/> {job.daysOpen} dias
+                          </div>
+                      </td>
+
+                      {/* NOVO: BOTÃƒO DE LINK */}
+                      <td className="p-4 text-center">
+                        <button 
+                          onClick={(e) => copyJobLink(e, job.id)}
+                          className={`p-1.5 rounded transition ${
+                            copiedId === job.id 
+                            ? 'bg-green-100 text-green-700' 
+                            : 'text-gray-400 hover:text-blue-600 hover:bg-white border border-transparent hover:border-gray-200'
+                          }`}
+                          title="Copiar Link para Candidatos"
+                        >
+                          {copiedId === job.id ? <CheckCircle size={16}/> : <LinkIcon size={16}/>}
+                        </button>
+                      </td>
+
+                      <td className="p-4">
+                        <span className={`px-2 py-1 rounded text-xs font-semibold ${job.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                          {job.status === 'active' ? 'Ativa' : 'Inativa'}
+                        </span>
+                      </td>
+                      <td className="p-4 text-right text-blue-600 font-medium">
+                        Gerenciar â†’
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      <CreateJobModal 
+        open={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        onSuccess={fetchData} 
+      />
+    </div>
+  );
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\pages\JobDetails.jsx
+------------------------------------------------
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
+import { supabase } from '../supabase/client';
+import { 
+    Container, Typography, Box, AppBar, Toolbar, Button, CircularProgress, 
+    Paper, Tabs, Tab, TextField, IconButton, Snackbar,
+    List, ListItem, ListItemText, Divider, Grid,
+    Table, TableHead, TableRow, TableCell, TableBody, Checkbox,
+    FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert
+} from '@mui/material';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList } from 'recharts';
+import { Delete as DeleteIcon, ContentCopy as ContentCopyIcon } from '@mui/icons-material';
+import { processEvaluation } from '../utils/evaluationLogic';
+
+// --- COMPONENTES AUXILIARES ---
+const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 500, bgcolor: 'background.paper', boxShadow: 24, p: 4, borderRadius: 2 };
+
+const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
+  const [jobs, setJobs] = useState([]);
+  const [selectedJobId, setSelectedJobId] = useState('');
+  useEffect(() => { if (open) { const f = async () => { const { data } = await supabase.from('jobs').select('id, title').neq('id', currentJobId).eq('status', 'active'); setJobs(data || []); }; f(); } }, [open, currentJobId]);
+  const handleConfirm = async () => { if (!selectedJobId) return; const { data } = await supabase.from('jobs').select('parameters').eq('id', selectedJobId).single(); if (data?.parameters) onCopy(data.parameters); onClose(); };
+  return ( <Modal open={open} onClose={onClose}><Box sx={modalStyle}><Typography variant="h6">Copiar de Vaga</Typography><FormControl fullWidth margin="normal"><InputLabel>Vaga</InputLabel><Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga">{jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}</Select></FormControl><Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}><Button onClick={onClose}>Cancelar</Button><Button onClick={handleConfirm} variant="contained" disabled={!selectedJobId}>Copiar</Button></Box></Box></Modal> );
+};
+
+const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
+  const handleChange = (i, f, v) => { const n = [...criteria]; n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; onCriteriaChange(n); };
+  const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
+  return (
+    <Box sx={{mt:2}}>{criteria.map((c, i) => <Box key={i} display="flex" gap={2} mb={1}><TextField value={c.name} onChange={e=>handleChange(i,'name',e.target.value)} fullWidth size="small" label="CritÃ©rio" /><TextField type="number" value={c.weight} onChange={e=>handleChange(i,'weight',e.target.value)} sx={{width:100}} size="small" label="Peso %" /><IconButton onClick={()=>onCriteriaChange(criteria.filter((_,idx)=>idx!==i))} color="error"><DeleteIcon/></IconButton></Box>)}<Button onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small">Adicionar</Button><Typography color={total===100?'green':'red'} variant="caption" display="block" sx={{mt:1, fontWeight:'bold'}}>Total: {total}%</Typography></Box>
+  );
+};
+
+export default function JobDetails() {
+  const { jobId } = useParams();
+  const [job, setJob] = useState(null);
+  const [parameters, setParameters] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [tabValue, setTabValue] = useState(0);
+  const [applicants, setApplicants] = useState([]);
+  const [allEvaluations, setAllEvaluations] = useState([]);
+  const [usersMap, setUsersMap] = useState({});
+  const [evaluatorFilter, setEvaluatorFilter] = useState('all');
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+  const [feedback, setFeedback] = useState({ open: false, message: '', severity: 'success' });
+
+  useEffect(() => {
+    const fetchAllData = async () => {
+      setLoading(true);
+      try {
+        const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
+        setJob(jobData);
+        setParameters(jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] });
+
+        const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', jobId);
+        setApplicants(appsData || []);
+
+        const appIds = (appsData || []).map(a => a.id);
+        if (appIds.length > 0) {
+            const { data: evalsData } = await supabase.from('evaluations').select('*').in('application_id', appIds);
+            setAllEvaluations(evalsData || []);
+
+            const userIds = [...new Set((evalsData || []).map(e => e.evaluator_id))];
+            if (userIds.length > 0) {
+                const { data: usersData } = await supabase.from('users').select('id, name, email').in('id', userIds);
+                const map = {};
+                usersData?.forEach(u => map[u.id] = u.name || u.email);
+                setUsersMap(map);
+            }
+        }
+      } catch (err) { console.error(err); } finally { setLoading(false); }
+    };
+    fetchAllData();
+  }, [jobId]);
+
+  const processedData = useMemo(() => {
+    if (!parameters) return { chartData: [], evaluators: [] };
+
+    const evaluators = Object.keys(usersMap).map(id => ({ id, name: usersMap[id] || 'Desconhecido' }));
+
+    const chartData = applicants.map(app => {
+        const appEvals = allEvaluations.filter(e => 
+            String(e.application_id) === String(app.id) && 
+            (evaluatorFilter === 'all' || e.evaluator_id === evaluatorFilter)
+        );
+
+        let sumT = 0, sumC = 0, sumTc = 0, count = 0, sumTotal = 0;
+        appEvals.forEach(ev => {
+            const scores = processEvaluation(ev, parameters);
+            if (scores.total > 0 || scores.triagem > 0 || scores.cultura > 0 || scores.tecnico > 0) {
+                sumT += scores.triagem; sumC += scores.cultura; sumTc += scores.tecnico; sumTotal += scores.total; count++;
+            }
+        });
+
+        const avgT = count > 0 ? sumT / count : 0;
+        const avgC = count > 0 ? sumC / count : 0;
+        const avgTc = count > 0 ? sumTc / count : 0;
+        const general = count > 0 ? sumTotal / count : 0;
+
+        return {
+            appId: app.id,
+            name: app.candidate?.name || 'Sem Nome',
+            email: app.candidate?.email,
+            triagem: Number(avgT.toFixed(1)),
+            cultura: Number(avgC.toFixed(1)),
+            tecnico: Number(avgTc.toFixed(1)),
+            total: Number(general.toFixed(1)),
+            count: count,
+            hired: app.isHired
+        };
+    }).sort((a, b) => b.total - a.total);
+
+    return { chartData, evaluators };
+  }, [applicants, allEvaluations, evaluatorFilter, parameters, usersMap]);
+
+  const handleHireToggle = async (appId, currentStatus) => {
+      const newStatus = !currentStatus;
+      setApplicants(prev => prev.map(a => a.id === appId ? {...a, isHired: newStatus} : a));
+      await supabase.from('applications').update({ isHired: newStatus }).eq('id', appId);
+  };
+  const handleSaveParameters = async () => {
+      await supabase.from('jobs').update({ parameters }).eq('id', jobId);
+      setFeedback({ open: true, message: 'Salvo!', severity: 'success' });
+  };
+
+  if (loading) return <Box p={5} display="flex" justifyContent="center"><CircularProgress /></Box>;
+
+  return (
+    <Box>
+        <AppBar position="static" color="default" elevation={1}><Toolbar><Typography variant="h6" sx={{flexGrow:1}}>{job?.title}</Typography><Button color="inherit" component={RouterLink} to="/">Voltar</Button></Toolbar></AppBar>
+        <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+            <Paper sx={{ mb: 3 }}><Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered><Tab label="Candidatos" /><Tab label="ClassificaÃ§Ã£o" /><Tab label="ConfiguraÃ§Ãµes da Vaga" /></Tabs></Paper>
+            
+            {tabValue === 0 && (
+                <Paper sx={{ p: 0 }}>
+                    <Table>
+                        <TableHead sx={{ bgcolor: '#f5f5f5' }}><TableRow><TableCell><strong>Nome</strong></TableCell><TableCell><strong>Email</strong></TableCell><TableCell align="center"><strong>AvaliaÃ§Ãµes</strong></TableCell><TableCell align="center"><strong>Nota Geral</strong></TableCell></TableRow></TableHead>
+                        <TableBody>{processedData.chartData.map(d => (
+                            <TableRow key={d.appId} hover component={RouterLink} to={`/applications/${d.appId}`} style={{textDecoration:'none', cursor:'pointer'}}>
+                                <TableCell>{d.name}</TableCell>
+                                <TableCell>{d.email}</TableCell>
+                                <TableCell align="center"><Chip label={d.count} size="small" /></TableCell>
+                                <TableCell align="center"><Chip label={d.total.toFixed(1)} color={d.total >= 8 ? 'success' : d.total >= 5 ? 'warning' : 'default'} variant={d.count > 0 ? 'filled' : 'outlined'}/></TableCell>
+                            </TableRow>
+                        ))}</TableBody>
+                    </Table>
+                </Paper>
+            )}
+
+            {tabValue === 1 && (
+                <Grid container spacing={3}>
+                    <Grid item xs={12} md={8}>
+                        <Paper sx={{ p: 3, height: '600px', display: 'flex', flexDirection: 'column' }} elevation={3}>
+                            {/* CABEÃ‡ALHO DO GRÃFICO MELHORADO */}
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, pb: 2, borderBottom: '1px solid #f0f0f0' }}>
+                                <Typography variant="h6" color="text.primary" fontWeight="bold">Comparativo de Desempenho</Typography>
+                                <FormControl size="small" sx={{ minWidth: 220 }}>
+                                    <InputLabel>Filtrar por Avaliador</InputLabel>
+                                    <Select value={evaluatorFilter} label="Filtrar por Avaliador" onChange={(e) => setEvaluatorFilter(e.target.value)}>
+                                        <MenuItem value="all">VisÃ£o Geral (MÃ©dia da Equipe)</MenuItem>
+                                        {processedData.evaluators.map(ev => <MenuItem key={ev.id} value={ev.id}>{ev.name}</MenuItem>)}
+                                    </Select>
+                                </FormControl>
+                            </Box>
+                            
+                            {processedData.chartData.some(d => d.total > 0) ? (
+                                <Box sx={{ flex: 1, width: '100%', minHeight: 0 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart 
+                                            data={processedData.chartData} 
+                                            layout="vertical" 
+                                            margin={{ top: 10, right: 30, left: 10, bottom: 5 }} 
+                                            barGap={4}
+                                        >
+                                            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={true} stroke="#eee" />
+                                            <XAxis type="number" domain={[0, 10]} ticks={[0, 2, 4, 6, 8, 10]} stroke="#999" />
+                                            <YAxis 
+                                                dataKey="name" 
+                                                type="category" 
+                                                width={150} // AUMENTADO PARA NÃƒO CORTAR NOMES
+                                                style={{fontSize: '0.8rem', fontWeight: 500, fill: '#444'}} 
+                                            />
+                                            <Tooltip 
+                                                cursor={{fill: '#f5f5f5'}}
+                                                contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                                formatter={(val, name) => [val, name]} 
+                                            />
+                                            <Legend verticalAlign="top" height={40} iconType="circle" />
+                                            
+                                            <Bar dataKey="triagem" name="Triagem" fill="#90caf9" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="triagem" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
+                                            </Bar>
+                                            <Bar dataKey="cultura" name="Fit Cultural" fill="#a5d6a7" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="cultura" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
+                                            </Bar>
+                                            <Bar dataKey="tecnico" name="TÃ©cnico" fill="#ffcc80" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="tecnico" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
+                                            </Bar>
+                                            
+                                            {/* BARRA DE MÃ‰DIA GERAL DESTACADA */}
+                                            <Bar dataKey="total" name="MÃ©dia Geral" fill="#4caf50" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="total" position="right" style={{fontSize:'0.8rem', fontWeight:'bold', fill:'#2e7d32'}} />
+                                            </Bar>
+                                            
+                                            <ReferenceLine x={5} stroke="red" strokeDasharray="3 3" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </Box>
+                            ) : (
+                                <Box sx={{ flex: 1, display: 'flex', flexDirection:'column', alignItems: 'center', justifyContent: 'center', color: 'text.secondary', bgcolor:'#fafafa', borderRadius:2 }}>
+                                    <Typography variant="body1">Ainda nÃ£o hÃ¡ dados suficientes.</Typography>
+                                    <Typography variant="caption">Realize avaliaÃ§Ãµes para visualizar o grÃ¡fico.</Typography>
+                                </Box>
+                            )}
+                        </Paper>
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                        <Paper sx={{ height: '600px', display: 'flex', flexDirection: 'column' }} elevation={3}>
+                            <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderBottom: '1px solid #e0e0e0' }}><Typography variant="subtitle1" fontWeight="bold">Ranking Final</Typography></Box>
+                            <List sx={{ overflowY: 'auto', flex: 1 }}>
+                                {processedData.chartData.map((d, index) => (
+                                    <React.Fragment key={d.appId}>
+                                        <ListItem secondaryAction={<Checkbox checked={d.hired || false} onChange={() => handleHireToggle(d.appId, d.hired)} color="success" />}>
+                                            <ListItemText 
+                                                primary={<Typography variant="body2" fontWeight="bold">#{index + 1} {d.name}</Typography>} 
+                                                secondary={<Typography variant="caption" color="text.secondary">MÃ©dia: <strong style={{color:'#2e7d32', fontSize:'0.9rem'}}>{d.total.toFixed(1)}</strong></Typography>} 
+                                            />
+                                        </ListItem>
+                                        <Divider component="li" />
+                                    </React.Fragment>
+                                ))}
+                            </List>
+                        </Paper>
+                    </Grid>
+                </Grid>
+            )}
+
+            {tabValue === 2 && (
+                <Box p={3} sx={{ bgcolor: 'white', borderRadius: 1, boxShadow: 1 }}>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>1. Triagem</Typography><ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} /></Paper>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>2. Fit Cultural</Typography><ParametersSection criteria={parameters?.cultura || []} onCriteriaChange={(c) => setParameters({...parameters, cultura: c})} /></Paper>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>3. Teste TÃ©cnico</Typography><ParametersSection criteria={parameters?.tecnico || parameters?.['tÃ©cnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} /></Paper>
+                    <Box display="flex" justifyContent="flex-end"><Button variant="contained" color="primary" onClick={handleSaveParameters}>Salvar ConfiguraÃ§Ãµes</Button></Box>
+                </Box>
+            )}
+        </Container>
+        <CopyParametersModal open={isCopyModalOpen} onClose={() => setIsCopyModalOpen(false)} currentJobId={jobId} onCopy={(p) => { setParameters(p); setFeedback({open:true, message:'Copiado!', severity:'info'}); }} />
+        <Snackbar open={feedback.open} autoHideDuration={4000} onClose={() => setFeedback({...feedback, open:false})}><Alert severity={feedback.severity} variant="filled">{feedback.message}</Alert></Snackbar>
+    </Box>
+  );
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\pages\Login.jsx
+------------------------------------------------
+import React, { useState } from 'react';
+import { supabase } from '../supabase/client';
+
+export default function Login() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) alert(error.message);
+    setLoading(false);
+  };
+
+  return (
+    <div className="flex h-screen items-center justify-center bg-gray-100">
+      <form onSubmit={handleLogin} className="p-8 bg-white rounded shadow-md w-96 border border-gray-200">
+        <h1 className="text-2xl font-bold mb-6 text-center text-blue-600">Novva R&S 2.0</h1>
+        <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input 
+              className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" 
+              placeholder="seu@email.com" 
+              value={email} 
+              onChange={e => setEmail(e.target.value)} 
+            />
+        </div>
+        <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
+            <input 
+              className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" 
+              type="password" 
+              placeholder="********" 
+              value={password} 
+              onChange={e => setPassword(e.target.value)} 
+            />
+        </div>
+        <button disabled={loading} className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 transition">
+          {loading ? 'Entrando...' : 'Entrar'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\pages\Register.jsx
+------------------------------------------------
+import React, { useState } from 'react';
+import { supabase } from '../supabase/client';
+import { Link, useNavigate } from 'react-router-dom';
+
+export default function Register() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [companyId, setCompanyId] = useState('');
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    try {
+      let tenantIdToUse = null;
+
+      // 1. ValidaÃ§Ã£o PRÃ‰VIA do CÃ³digo da Empresa
+      if (companyId.trim()) {
+        const { data: tenant, error: tError } = await supabase
+            .from('tenants')
+            .select('id, planId')
+            .eq('id', companyId.trim())
+            .single();
+        
+        if (tError || !tenant) {
+            setLoading(false);
+            return alert("CÃ³digo da empresa invÃ¡lido.");
+        }
+
+        // Busca o plano usando user_limit
+        const { data: plan } = await supabase
+            .from('plans')
+            .select('user_limit')
+            .eq('id', tenant.planId || 'freemium')
+            .single();
+            
+        const limit = plan?.user_limit || 1;
+        const isUnlimited = limit === -1;
+
+        // Conta usuÃ¡rios ativos
+        const { count } = await supabase
+            .from('user_profiles')
+            .select('*', { count: 'exact', head: true })
+            .eq('tenantId', tenant.id)
+            .eq('active', true);
+
+        if (!isUnlimited && count >= limit) {
+            setLoading(false);
+            return alert(`Esta empresa atingiu o limite de ${limit} usuÃ¡rios do plano. NÃ£o Ã© possÃ­vel entrar.`);
+        }
+        
+        tenantIdToUse = tenant.id;
+      }
+
+      // 2. Cria usuÃ¡rio Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
+      if (authError) throw authError;
+
+      const user = authData.user;
+      if (user) {
+        if (!tenantIdToUse) {
+           // Cria nova empresa (Plano FREEMIUM padrÃ£o)
+           const { data: newTenant } = await supabase
+             .from('tenants')
+             .insert({ "companyName": "Minha Nova Empresa", "planId": "freemium" })
+             .select()
+             .single();
+           tenantIdToUse = newTenant?.id;
+        }
+
+        // 3. Cria Perfil
+        if (tenantIdToUse) {
+           await supabase.from('user_profiles').upsert({
+             id: user.id,
+             name: email.split('@')[0],
+             "tenantId": tenantIdToUse,
+             role: companyId.trim() ? 'user' : 'admin',
+             active: true
+           });
+        }
+      }
+
+      alert("Cadastro realizado!");
+      navigate('/');
+
+    } catch (error) {
+      alert("Erro: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex h-screen items-center justify-center bg-gray-100">
+      <form onSubmit={handleRegister} className="p-8 bg-white rounded shadow-md w-96 border border-gray-200">
+        <h1 className="text-2xl font-bold mb-2 text-center text-green-600">Criar Conta</h1>
+        <p className="text-center text-gray-500 text-sm mb-6">Novva R&S 2.0</p>
+        
+        <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+            <input 
+              className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-green-500" 
+              placeholder="seu@email.com" 
+              value={email} 
+              onChange={e => setEmail(e.target.value)}
+              required 
+            />
+        </div>
+        <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Senha *</label>
+            <input 
+              className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-green-500" 
+              type="password" 
+              placeholder="Min. 6 caracteres" 
+              value={password} 
+              onChange={e => setPassword(e.target.value)}
+              required 
+            />
+        </div>
+        
+        <div className="mb-6 pt-4 border-t">
+            <label className="block text-sm font-bold text-gray-700 mb-1">CÃ³digo de Convite</label>
+            <input 
+              className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" 
+              placeholder="Cole o ID da empresa (Opcional)" 
+              value={companyId} 
+              onChange={e => setCompanyId(e.target.value)}
+            />
+        </div>
+        
+        <button disabled={loading} className="w-full bg-green-600 text-white p-2 rounded hover:bg-green-700 transition font-medium">
+          {loading ? 'Validando...' : 'Cadastrar'}
+        </button>
+        <div className="mt-4 text-center text-sm">
+          <Link to="/login" className="text-blue-600 hover:underline">Voltar para Login</Link>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\pages\Settings.jsx
+------------------------------------------------
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../supabase/client';
+import { Building, Users, ArrowLeft, Shield, Plus, Trash2, Mail, Lock, AlertCircle } from 'lucide-react';
+
+export default function Settings() {
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('company');
+  const [loading, setLoading] = useState(true);
+  
+  const [tenant, setTenant] = useState(null);
+  const [team, setTeam] = useState([]);
+  const [currentUserProfile, setCurrentUserProfile] = useState(null);
+
+  // Estados para Novo UsuÃ¡rio
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'recruiter', isAdmin: false });
+  const [isAddingUser, setIsAddingUser] = useState(false);
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return navigate('/login');
+
+      // 1. Pega perfil do usuÃ¡rio logado diretamente
+      const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', session.user.id).single();
+      setCurrentUserProfile(profile);
+
+      if (profile?.tenantId) {
+        // 2. Busca EMPRESA diretamente (Leitura)
+        const { data: tenantData } = await supabase
+            .from('tenants')
+            .select('*')
+            .eq('id', profile.tenantId)
+            .single();
+        setTenant(tenantData);
+
+        // 3. Busca EQUIPE diretamente (Leitura)
+        const { data: teamData } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('tenantId', profile.tenantId);
+        setTeam(teamData || []);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar dados:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddUser = async (e) => {
+    e.preventDefault();
+    if (!newUser.name || !newUser.email || !newUser.password) return alert("Preencha todos os campos.");
+
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    // Tenta usar a API Serverless (ProduÃ§Ã£o)
+    try {
+      const res = await fetch('/api/admin', {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+            action: 'createUser',
+            tenantId: tenant.id,
+            ...newUser
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao conectar na API.");
+
+      alert("UsuÃ¡rio adicionado com sucesso!");
+      setIsAddingUser(false);
+      setNewUser({ name: '', email: '', password: '', role: 'recruiter', isAdmin: false });
+      fetchData();
+      
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao criar usuÃ¡rio: " + err.message + "\n\nNota: Em localhost, a criaÃ§Ã£o de usuÃ¡rios depende da Vercel Functions rodando. Se estiver testando localmente, suba para a Vercel.");
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (!confirm("Tem certeza? O acesso deste usuÃ¡rio serÃ¡ revogado imediatamente.")) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    try {
+        const res = await fetch('/api/admin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+            body: JSON.stringify({ action: 'deleteUser', userId })
+        });
+
+        if (res.ok) {
+            alert("UsuÃ¡rio removido.");
+            fetchData();
+        } else {
+            throw new Error("Falha na API");
+        }
+    } catch (e) {
+        alert("Erro: " + e.message);
+    }
+  };
+
+  if (loading) return <div className="p-10 text-center text-gray-500">Carregando configuraÃ§Ãµes...</div>;
+
+  return (
+    <div className="p-8 max-w-5xl mx-auto font-sans">
+      <button onClick={() => navigate('/')} className="flex items-center text-gray-500 mb-6 hover:text-blue-600 transition-colors">
+        <ArrowLeft className="mr-2" size={20}/> Voltar ao Dashboard
+      </button>
+
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold text-gray-800">ConfiguraÃ§Ãµes</h1>
+        {currentUserProfile?.is_admin_system && (
+            <button onClick={() => navigate('/admin/super')} className="text-xs bg-slate-800 text-white px-3 py-1 rounded hover:bg-slate-700 transition shadow-sm">
+                Acessar Painel Novva (Super Admin)
+            </button>
+        )}
+      </div>
+
+      <div className="flex gap-6 border-b mb-6">
+        <button onClick={() => setActiveTab('company')} className={`pb-3 px-2 border-b-2 flex items-center gap-2 font-medium transition-colors ${activeTab === 'company' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          <Building size={18}/> Minha Empresa
+        </button>
+        <button onClick={() => setActiveTab('team')} className={`pb-3 px-2 border-b-2 flex items-center gap-2 font-medium transition-colors ${activeTab === 'team' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          <Users size={18}/> GestÃ£o de Equipe
+        </button>
+      </div>
+
+      {/* ABA 1: EMPRESA (LEITURA) */}
+      {activeTab === 'company' && tenant && (
+        <div className="bg-white p-6 rounded-lg shadow-sm border max-w-2xl animate-in fade-in slide-in-from-left-2">
+            <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-500 mb-1">RazÃ£o Social</label>
+                <div className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                    {tenant.companyName} <Lock size={18} className="text-gray-400" title="Campo gerenciado pela Novva"/>
+                </div>
+                <div className="text-sm text-gray-400 font-mono mt-1">ID: {tenant.id}</div>
+            </div>
+            
+            <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
+                <div className="flex items-start gap-4">
+                    <Shield className="text-slate-600 mt-1 shrink-0" size={24} />
+                    <div>
+                        <h3 className="font-bold text-slate-800 text-lg">Plano de Assinatura</h3>
+                        <p className="text-sm text-slate-600 mt-2 leading-relaxed">
+                            Seu plano atual Ã© gerenciado pela equipe da <strong>Novva Desenvolvimento</strong>.
+                            Para upgrades, downgrades ou alteraÃ§Ãµes cadastrais (CNPJ), entre em contato com nosso suporte.
+                        </p>
+                        <div className="mt-4 flex gap-2">
+                            <span className="text-xs font-semibold bg-green-100 text-green-700 px-3 py-1 rounded-full border border-green-200">
+                                Status: Ativo
+                            </span>
+                            <span className="text-xs font-semibold bg-slate-200 text-slate-700 px-3 py-1 rounded-full border border-slate-300">
+                                Plano ID: {tenant.planId || 'Standard'}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* ABA 2: EQUIPE (CRUD) */}
+      {activeTab === 'team' && (
+        <div className="animate-in fade-in slide-in-from-right-2">
+            <div className="flex justify-between items-center mb-4">
+                <div>
+                    <h2 className="text-lg font-semibold text-gray-800">Membros da Equipe</h2>
+                    <p className="text-sm text-gray-500">Gerencie quem tem acesso aos dados da {tenant?.companyName}.</p>
+                </div>
+                {!isAddingUser && (
+                    <button onClick={() => setIsAddingUser(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-sm transition">
+                        <Plus size={18}/> Adicionar UsuÃ¡rio
+                    </button>
+                )}
+            </div>
+
+            {isAddingUser && (
+                <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 mb-6 shadow-sm">
+                    <h3 className="font-bold mb-4 text-blue-900 flex items-center gap-2"><Plus size={16}/> Cadastrar Novo Membro</h3>
+                    <form onSubmit={handleAddUser}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+                            <div>
+                                <label className="block text-xs font-bold text-blue-700 mb-1">Nome Completo</label>
+                                <input required className="w-full border border-blue-200 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
+                                    value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-blue-700 mb-1">E-mail Corporativo</label>
+                                <input required type="email" className="w-full border border-blue-200 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
+                                    value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-blue-700 mb-1">Senha Inicial</label>
+                                <input required type="password" className="w-full border border-blue-200 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
+                                    value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
+                            </div>
+                            <div className="flex items-center h-full pt-6">
+                                <label className="flex items-center gap-3 cursor-pointer bg-white px-4 py-2 rounded-lg border border-blue-200 w-full hover:bg-blue-50 transition">
+                                    <input type="checkbox" className="w-5 h-5 text-blue-600 rounded" checked={newUser.isAdmin} onChange={e => setNewUser({...newUser, isAdmin: e.target.checked})} />
+                                    <span className="text-sm font-medium text-blue-900">Dar acesso de Administrador?</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div className="flex gap-3 pt-2">
+                            <button type="submit" className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-blue-700 shadow transition">Salvar UsuÃ¡rio</button>
+                            <button type="button" onClick={() => setIsAddingUser(false)} className="bg-white text-gray-700 px-6 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50 font-medium transition">Cancelar</button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                            <th className="p-5 font-semibold text-slate-600 text-sm uppercase tracking-wide">Nome</th>
+                            <th className="p-5 font-semibold text-slate-600 text-sm uppercase tracking-wide">Email</th>
+                            <th className="p-5 font-semibold text-slate-600 text-sm uppercase tracking-wide">FunÃ§Ã£o</th>
+                            <th className="p-5 font-semibold text-slate-600 text-sm uppercase tracking-wide text-right">AÃ§Ãµes</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {team.map(user => (
+                            <tr key={user.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-5 font-medium text-slate-900">{user.name || 'Sem nome'}</td>
+                                <td className="p-5 text-slate-600 flex items-center gap-2"><Mail size={16} className="text-slate-400"/> {user.email}</td>
+                                <td className="p-5">
+                                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ${user.isAdmin ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                        {user.isAdmin ? 'Admin' : 'Membro'}
+                                    </span>
+                                </td>
+                                <td className="p-5 text-right">
+                                    {user.id !== currentUserProfile?.id ? (
+                                        <button onClick={() => handleDeleteUser(user.id)} className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-all" title="Remover UsuÃ¡rio">
+                                            <Trash2 size={18} />
+                                        </button>
+                                    ) : (
+                                        <span className="text-xs text-slate-400 italic pr-2">VocÃª</span>
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {team.length === 0 && (
+                    <div className="p-10 text-center flex flex-col items-center">
+                        <AlertCircle className="text-slate-300 mb-2" size={48} />
+                        <p className="text-slate-500 font-medium">Nenhum membro encontrado.</p>
+                        <p className="text-sm text-slate-400">Adicione usuÃ¡rios para colaborar nesta empresa.</p>
+                    </div>
+                )}
+            </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\pages\SuperAdminDashboard.jsx
+------------------------------------------------
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../supabase/client';
+import { useNavigate } from 'react-router-dom';
+import { Building, Edit, Trash2, Plus, X, Save, UserCheck, Key, Users, Check } from 'lucide-react';
+
+export default function SuperAdminDashboard() {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [tenants, setTenants] = useState([]);
+  const [plans, setPlans] = useState([]);
+  
+  // Modais
+  const [isModalOpen, setIsModalOpen] = useState(false); // Modal Empresa
+  const [isUsersModalOpen, setIsUsersModalOpen] = useState(false); // Modal UsuÃ¡rios
+  
+  const [editingTenant, setEditingTenant] = useState(null); 
+  const [selectedTenantUsers, setSelectedTenantUsers] = useState([]); // Lista de usuÃ¡rios do tenant selecionado
+  const [currentTenantName, setCurrentTenantName] = useState('');
+  
+  // Estado para EdiÃ§Ã£o de UsuÃ¡rio
+  const [editingUser, setEditingUser] = useState(null); // ID do user sendo editado
+  const [userForm, setUserForm] = useState({ id: '', name: '', email: '', password: '' });
+
+  // FormulÃ¡rio Empresa
+  const [formData, setFormData] = useState({ 
+      companyName: '', planId: 'freemium', cnpj: '',
+      adminName: '', adminEmail: '', adminPassword: ''
+  });
+
+  useEffect(() => { checkPermission(); }, []);
+
+  const checkPermission = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return navigate('/login');
+    
+    const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('is_admin_system')
+        .eq('id', session.user.id)
+        .single();
+
+    if (!profile?.is_admin_system) {
+        alert("Acesso restrito."); 
+        return navigate('/');
+    }
+    fetchData(session.access_token);
+  };
+
+  const fetchData = async (token) => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/admin?action=getTenantsAndPlans', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTenants(data.tenants || []);
+        setPlans(data.plans || []);
+      }
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  };
+
+  // --- GESTÃƒO DE EMPRESAS ---
+
+  const handleSubmitTenant = async (e) => {
+    e.preventDefault();
+    const { data: { session } } = await supabase.auth.getSession();
+    const action = editingTenant ? 'updateTenant' : 'provisionTenant';
+    const payload = editingTenant ? { id: editingTenant.id, companyName: formData.companyName, planId: formData.planId, cnpj: formData.cnpj } : formData;
+
+    try {
+        const res = await fetch('/api/admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({ action, ...payload })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert("Sucesso!");
+          setIsModalOpen(false);
+          setEditingTenant(null);
+          resetForm();
+          fetchData(session.access_token);
+        } else {
+          throw new Error(data.error);
+        }
+    } catch (err) { alert("Erro: " + err.message); }
+  };
+
+  const handleDeleteTenant = async (tenantId) => {
+      if(!confirm("Tem certeza absoluta? Isso apagarÃ¡ TUDO desta empresa.")) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      await fetch('/api/admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({ action: 'deleteTenant', tenantId })
+      });
+      fetchData(session.access_token);
+  };
+
+  // --- GESTÃƒO DE USUÃRIOS DO CLIENTE ---
+
+  const openUsersModal = async (tenant) => {
+      setCurrentTenantName(tenant.companyName);
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      // Busca usuÃ¡rios dessa empresa
+      const res = await fetch(`/api/admin?action=getTenantDetails&tenantId=${tenant.id}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` }
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+          setSelectedTenantUsers(data.users || []);
+          setIsUsersModalOpen(true);
+          setEditingUser(null);
+      } else {
+          alert("Erro ao buscar usuÃ¡rios: " + data.error);
+      }
+  };
+
+  const handleEditUserClick = (user) => {
+      setEditingUser(user.id);
+      setUserForm({ id: user.id, name: user.name, email: user.email, password: '' });
+  };
+
+  const handleSaveUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!userForm.name || !userForm.email) return alert("Nome e Email sÃ£o obrigatÃ³rios.");
+
+      try {
+          const res = await fetch('/api/admin', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+              body: JSON.stringify({
+                  action: 'updateUserAuth',
+                  userId: userForm.id,
+                  name: userForm.name,
+                  email: userForm.email,
+                  password: userForm.password || undefined // SÃ³ envia se preenchido
+              })
+          });
+
+          if (res.ok) {
+              alert("UsuÃ¡rio atualizado com sucesso!");
+              setEditingUser(null);
+              // Recarrega a lista localmente
+              setSelectedTenantUsers(prev => prev.map(u => u.id === userForm.id ? { ...u, name: userForm.name, email: userForm.email } : u));
+          } else {
+              const err = await res.json();
+              throw new Error(err.error);
+          }
+      } catch (e) {
+          alert("Erro ao atualizar: " + e.message);
+      }
+  };
+
+  // --- AUXILIARES ---
+
+  const openEditTenant = (t) => {
+      setEditingTenant(t);
+      setFormData({ companyName: t.companyName, planId: t.planId, cnpj: t.cnpj || '', adminName: '', adminEmail: '', adminPassword: '' });
+      setIsModalOpen(true);
+  };
+
+  const openNewTenant = () => {
+      setEditingTenant(null);
+      resetForm();
+      setIsModalOpen(true);
+  };
+
+  const resetForm = () => {
+      setFormData({ companyName: '', planId: 'freemium', cnpj: '', adminName: '', adminEmail: '', adminPassword: '' });
+  };
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-100 text-slate-500">Carregando Painel...</div>;
+
+  return (
+    <div className="min-h-screen bg-slate-100 p-8 font-sans">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-8">
+            <div>
+                <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Painel Novva</h1>
+                <p className="text-slate-500">GestÃ£o e Provisionamento de Clientes (SaaS)</p>
+            </div>
+            <button onClick={openNewTenant} className="bg-slate-900 text-white px-5 py-2.5 rounded-lg flex gap-2 hover:bg-slate-800 shadow-lg items-center font-medium">
+                <Plus size={18}/> Novo Cliente
+            </button>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <table className="w-full text-left">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                        <th className="p-5 text-sm uppercase text-slate-500 font-bold">Empresa Cliente</th>
+                        <th className="p-5 text-sm uppercase text-slate-500 font-bold">Plano</th>
+                        <th className="p-5 text-right text-sm uppercase text-slate-500 font-bold">AÃ§Ãµes</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                    {tenants.map(t => (
+                        <tr key={t.id} className="hover:bg-slate-50">
+                            <td className="p-5">
+                                <div className="font-bold text-slate-800">{t.companyName}</div>
+                                <div className="text-xs text-slate-400 font-mono">{t.cnpj || 'Sem CNPJ'}</div>
+                            </td>
+                            <td className="p-5">
+                                <span className="px-3 py-1 rounded-full text-xs font-bold uppercase border bg-slate-100 text-slate-600 border-slate-200">
+                                  {t.plans?.name || t.planId}
+                                </span>
+                            </td>
+                            <td className="p-5 text-right flex justify-end gap-2">
+                                <button onClick={() => openUsersModal(t)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg" title="Gerenciar UsuÃ¡rios / Senhas">
+                                    <Users size={18} />
+                                </button>
+                                <button onClick={() => openEditTenant(t)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="Editar Empresa">
+                                    <Edit size={18} />
+                                </button>
+                                <button onClick={() => handleDeleteTenant(t.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Excluir">
+                                    <Trash2 size={18} />
+                                </button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+      </div>
+
+      {/* MODAL 1: EMPRESA (CriaÃ§Ã£o/EdiÃ§Ã£o) */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+                <div className="flex justify-between items-center p-6 border-b">
+                    <h3 className="text-xl font-bold">{editingTenant ? 'Editar Empresa' : 'Provisionar Novo Cliente'}</h3>
+                    <button onClick={() => setIsModalOpen(false)}><X/></button>
+                </div>
+                <form onSubmit={handleSubmitTenant} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+                    {/* Campos de Empresa ... */}
+                    <div className="space-y-3">
+                        <label className="block text-xs font-bold uppercase">RazÃ£o Social</label>
+                        <input required className="w-full border p-2.5 rounded-lg" value={formData.companyName} onChange={e => setFormData({...formData, companyName: e.target.value})} />
+                        
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-bold uppercase">CNPJ</label>
+                                <input className="w-full border p-2.5 rounded-lg" value={formData.cnpj} onChange={e => setFormData({...formData, cnpj: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase">Plano</label>
+                                <select className="w-full border p-2.5 rounded-lg bg-white" value={formData.planId} onChange={e => setFormData({...formData, planId: e.target.value})}>
+                                    {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    {!editingTenant && (
+                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 space-y-3">
+                            <h4 className="font-bold text-sm text-blue-800 flex items-center gap-2"><UserCheck size={16}/> Admin Inicial</h4>
+                            <input required placeholder="Nome ResponsÃ¡vel" className="w-full border p-2 rounded" value={formData.adminName} onChange={e => setFormData({...formData, adminName: e.target.value})} />
+                            <input required type="email" placeholder="Email Login" className="w-full border p-2 rounded" value={formData.adminEmail} onChange={e => setFormData({...formData, adminEmail: e.target.value})} />
+                            <input required type="text" placeholder="Senha TemporÃ¡ria" className="w-full border p-2 rounded" value={formData.adminPassword} onChange={e => setFormData({...formData, adminPassword: e.target.value})} />
+                        </div>
+                    )}
+
+                    <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 flex justify-center gap-2">
+                        <Save size={18}/> Salvar
+                    </button>
+                </form>
+            </div>
+        </div>
+      )}
+
+      {/* MODAL 2: GESTÃƒO DE USUÃRIOS (Reset de Senha/CorreÃ§Ã£o) */}
+      {isUsersModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                  <div className="p-6 border-b bg-slate-50 flex justify-between items-center">
+                      <div>
+                          <h3 className="text-lg font-bold text-slate-800">UsuÃ¡rios: {currentTenantName}</h3>
+                          <p className="text-xs text-slate-500">Gerencie acessos e resete senhas se necessÃ¡rio.</p>
+                      </div>
+                      <button onClick={() => setIsUsersModalOpen(false)}><X className="text-slate-400 hover:text-slate-600"/></button>
+                  </div>
+                  
+                  <div className="p-0 overflow-y-auto flex-1">
+                      <table className="w-full text-left border-collapse">
+                          <thead className="bg-slate-100 text-xs uppercase text-slate-500 font-semibold">
+                              <tr>
+                                  <th className="p-4 border-b">Nome</th>
+                                  <th className="p-4 border-b">Email (Login)</th>
+                                  <th className="p-4 border-b">Cargo</th>
+                                  <th className="p-4 border-b text-right">AÃ§Ã£o</th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              {selectedTenantUsers.map(u => (
+                                  <tr key={u.id} className={`border-b hover:bg-slate-50 ${editingUser === u.id ? 'bg-blue-50' : ''}`}>
+                                      {editingUser === u.id ? (
+                                          // MODO EDIÃ‡ÃƒO
+                                          <>
+                                              <td className="p-3">
+                                                  <input className="w-full border border-blue-300 p-1.5 rounded text-sm" 
+                                                      value={userForm.name} onChange={e => setUserForm({...userForm, name: e.target.value})} />
+                                              </td>
+                                              <td className="p-3">
+                                                  <input className="w-full border border-blue-300 p-1.5 rounded text-sm" 
+                                                      value={userForm.email} onChange={e => setUserForm({...userForm, email: e.target.value})} />
+                                              </td>
+                                              <td className="p-3 text-sm text-slate-500">{u.role}</td>
+                                              <td className="p-3 text-right">
+                                                  <div className="flex flex-col gap-2 items-end">
+                                                      <input type="text" placeholder="Nova Senha (Opcional)" className="w-32 border border-blue-300 p-1.5 rounded text-xs" 
+                                                          value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
+                                                      <div className="flex gap-2">
+                                                          <button onClick={handleSaveUser} className="bg-blue-600 text-white p-1.5 rounded hover:bg-blue-700" title="Salvar"><Check size={16}/></button>
+                                                          <button onClick={() => setEditingUser(null)} className="bg-white border text-slate-500 p-1.5 rounded hover:bg-slate-100" title="Cancelar"><X size={16}/></button>
+                                                      </div>
+                                                  </div>
+                                              </td>
+                                          </>
+                                      ) : (
+                                          // MODO LEITURA
+                                          <>
+                                              <td className="p-4 font-medium text-slate-700">{u.name}</td>
+                                              <td className="p-4 text-slate-600 text-sm">{u.email}</td>
+                                              <td className="p-4">
+                                                  <span className={`px-2 py-1 text-xs rounded-full border ${u.role === 'admin' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-slate-100 text-slate-600'}`}>
+                                                      {u.role}
+                                                  </span>
+                                              </td>
+                                              <td className="p-4 text-right">
+                                                  <button onClick={() => handleEditUserClick(u)} className="text-blue-600 hover:bg-blue-50 p-2 rounded transition flex items-center gap-1 ml-auto text-sm font-medium">
+                                                      <Key size={14}/> Editar Acesso
+                                                  </button>
+                                              </td>
+                                          </>
+                                      )}
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
+                      {selectedTenantUsers.length === 0 && <div className="p-8 text-center text-slate-400">Nenhum usuÃ¡rio encontrado nesta empresa.</div>}
+                  </div>
+              </div>
+          </div>
+      )}
+    </div>
+  );
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\supabase\client.js
+------------------------------------------------
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Chaves do Supabase ausentes no arquivo .env');
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\utils\evaluationLogic.js
+------------------------------------------------
+// src/utils/evaluationLogic.js
+
+export const calculatePillarScore = (sectionName, criteriaList, answers, ratingScale) => {
+    // Se nÃ£o houver critÃ©rios ou respostas, retorna null (neutro)
+    if (!criteriaList || !Array.isArray(criteriaList) || criteriaList.length === 0) return null;
+    if (!answers) return null;
+    
+    let totalScore = 0;
+    let totalWeightAnswered = 0;
+    let hasAnswers = false;
+
+    criteriaList.forEach(criterion => {
+        // Tenta achar a resposta (suporta estrutura v2 aninhada ou v1 plana)
+        const noteId = answers?.[sectionName]?.[criterion.name] || answers?.[criterion.name];
+        
+        // Ignora 'NA', null ou undefined
+        if (noteId && noteId !== 'NA') {
+            // CORREÃ‡ÃƒO CRÃTICA: Converte ambos para String para garantir o match (1 vs "1")
+            const noteObj = ratingScale.find(n => String(n.id) === String(noteId));
+            
+            if (noteObj) {
+                hasAnswers = true;
+                const weight = Number(criterion.weight) || 0;
+                
+                // CÃ¡lculo: Valor da Nota * Peso
+                totalScore += (Number(noteObj.valor) * weight);
+                totalWeightAnswered += weight;
+            }
+        }
+    });
+
+    if (!hasAnswers || totalWeightAnswered === 0) return null;
+
+    // Normaliza para escala 0-10
+    return (totalScore / totalWeightAnswered);
+};
+
+export const processEvaluation = (evaluationObj, parameters) => {
+    if (!evaluationObj || !parameters) {
+        return { triagem: 0, cultura: 0, tecnico: 0, total: 0 };
+    }
+
+    const answers = evaluationObj.scores || evaluationObj; 
+    const ratingScale = parameters.notas || [];
+    
+    const pTriagem = parameters.triagem || [];
+    const pCultura = parameters.cultura || [];
+    const pTecnico = parameters.tecnico || parameters['tÃ©cnico'] || parameters['tÃƒÂ©cnico'] || [];
+
+    // Calcula parciais
+    const triagem = calculatePillarScore('triagem', pTriagem, answers, ratingScale);
+    const cultura = calculatePillarScore('cultura', pCultura, answers, ratingScale);
+    const tecnico = calculatePillarScore('tecnico', pTecnico, answers, ratingScale);
+
+    // MÃ©dia AritmÃ©tica Simples dos pilares respondidos
+    let sum = 0;
+    let count = 0;
+
+    if (triagem !== null) { sum += triagem; count++; }
+    if (cultura !== null) { sum += cultura; count++; }
+    if (tecnico !== null) { sum += tecnico; count++; }
+
+    // Se count for 0 (nenhum pilar avaliado), nota Ã© 0.
+    const total = count > 0 ? (sum / count) : 0;
+
+    return {
+        triagem: triagem !== null ? Number(triagem) : 0,
+        cultura: cultura !== null ? Number(cultura) : 0,
+        tecnico: tecnico !== null ? Number(tecnico) : 0,
+        total: Number(total)
+    };
+};
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\utils\formatters.js
+------------------------------------------------
+import { format, parseISO } from 'date-fns';
+
+export const formatStatus = (status) => {
+  const statusMap = {
+    active: 'Ativa',
+    inactive: 'Inativa',
+    filled: 'Preenchida',
+  };
+  return statusMap[status] || status;
+};
+
+export const formatPhone = (phone) => {
+  if (!phone) return 'NÃ£o informado';
+  const cleaned = phone.replace(/\D/g, '');
+  if (cleaned.length === 11) {
+    return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 7)}-${cleaned.substring(7)}`;
+  }
+  if (cleaned.length === 10) {
+    return `(${cleaned.substring(0, 2)}) ${cleaned.substring(2, 6)}-${cleaned.substring(6)}`;
+  }
+  return phone;
+};
+
+export const formatUrl = (url) => {
+  if (!url) return '#';
+  if (url.startsWith('http://') || url.startsWith('https://')) { return url; }
+  return `//${url}`;
+};
+
+export const formatDate = (dateStr) => {
+    if (!dateStr) return 'NÃ£o informado';
+    try {
+        return format(parseISO(dateStr), 'dd/MM/yyyy');
+    } catch (error) {
+        console.error("Erro ao formatar data:", dateStr, error);
+        return 'Data invÃ¡lida';
+    }
+};
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\App.jsx
+------------------------------------------------
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { supabase } from './supabase/client';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Dashboard from './pages/Dashboard';
+import JobDetails from './pages/JobDetails';
+import ApplicationDetails from './pages/ApplicationDetails';
+import Settings from './pages/Settings';
+import ApplyJob from './pages/ApplyJob'; // NOVO IMPORT
+import SuperAdminDashboard from './pages/SuperAdminDashboard';
+
+export default function App() {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) return <div className="p-10 text-center">Carregando Sistema...</div>;
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* ROTAS PÃšBLICAS (Candidatos) */}
+        <Route path="/apply/:jobId" element={<ApplyJob />} />
+
+        {/* ROTAS DE AUTENTICAÃ‡ÃƒO */}
+        <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
+        <Route path="/register" element={!session ? <Register /> : <Navigate to="/" />} />
+        
+        {/* ROTAS PROTEGIDAS (Admin/Recrutador) */}
+        <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" />} />
+        <Route path="/jobs/:jobId" element={session ? <JobDetails /> : <Navigate to="/login" />} />
+        <Route path="/applications/:appId" element={session ? <ApplicationDetails /> : <Navigate to="/login" />} />
+        <Route path="/settings" element={session ? <Settings /> : <Navigate to="/login" />} />
+        <Route path="/admin/super" element={session ? <SuperAdminDashboard /> : <Navigate to="/login" />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\index.css
+------------------------------------------------
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-50 text-gray-900;
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\src\main.jsx
+------------------------------------------------
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.jsx'
+import './index.css'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\api\_utils\calculator.js
+------------------------------------------------
+// api/_utils/calculator.js
+export function calculateWeightedScore(userScores, jobParameters) {
+    if (!userScores || !jobParameters) return 0;
+
+    // Converte lista de notas do banco em Mapa para acesso rÃ¡pido
+    // Ex: { "uuid-nota-1": 0, "uuid-nota-2": 50, "uuid-nota-3": 100 }
+    const notesMap = new Map((jobParameters.notas || []).map(n => [n.id, Number(n.valor)]));
+
+    const sections = ['triagem', 'cultura', 'tecnico']; // SeÃ§Ãµes padrÃ£o
+    let totalScore = 0;
+    let totalMaxPossible = 0;
+
+    sections.forEach(section => {
+        const criteriaList = jobParameters[section] || []; // Ex: [{name: 'React', weight: 2}]
+        const userSectionScores = userScores[section] || {}; // Ex: { 'React': 'uuid-nota-3' }
+
+        criteriaList.forEach(criterion => {
+            const noteId = userSectionScores[criterion.name];
+            
+            // LÃ“GICA DE N/A: Se a notaId for 'NA' ou nÃ£o existir, ignoramos este critÃ©rio
+            if (!noteId || noteId === 'NA') return;
+
+            const noteValue = notesMap.get(noteId); // Valor (0, 50, 100)
+            const weight = Number(criterion.weight) || 1; // Peso (1x, 2x...)
+
+            if (noteValue !== undefined) {
+                totalScore += (noteValue * weight);
+                totalMaxPossible += (100 * weight); // O mÃ¡ximo seria tirar 100 nesse critÃ©rio
+            }
+        });
+    });
+
+    // Evita divisÃ£o por zero se tudo for N/A
+    if (totalMaxPossible === 0) return 0;
+
+    // Normaliza para 0-100 com 1 casa decimal
+    return Number(((totalScore / totalMaxPossible) * 100).toFixed(1));
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\api\admin.js
+------------------------------------------------
+import { createClient } from '@supabase/supabase-js';
+
+// FunÃ§Ã£o auxiliar de seguranÃ§a e validaÃ§Ã£o
+async function validateAdmin(request) {
+  const supabaseAdmin = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY
+  );
+  
+  const authHeader = request.headers['authorization'];
+  if (!authHeader) throw new Error('Token de autorizaÃ§Ã£o ausente.');
+  
+  const token = authHeader.replace('Bearer ', '');
+  const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+  
+  if (userError || !user) throw new Error('Token invÃ¡lido ou expirado.');
+
+  // Busca o perfil do usuÃ¡rio para checar permissÃµes
+  const { data: userData, error: profileError } = await supabaseAdmin
+    .from('user_profiles')
+    .select('id, is_admin_system, tenantId, role') 
+    .eq('id', user.id)
+    .single();
+
+  if (profileError || !userData) {
+      if (user.email === 'eider@novvaempresa.com.br') { 
+          return { supabaseAdmin, requesterProfile: { is_admin_system: true, id: user.id }, requesterId: user.id };
+      }
+      throw new Error('Perfil de usuÃ¡rio nÃ£o encontrado.');
+  }
+  
+  return { supabaseAdmin, requesterProfile: userData, requesterId: user.id };
+}
+
+export default async function handler(request, response) {
+  try {
+    const { supabaseAdmin, requesterProfile } = await validateAdmin(request);
+    
+    const action = request.method === 'GET' ? request.query.action : request.body.action;
+    const isSuperAdmin = requesterProfile.is_admin_system === true;
+
+    switch (action) {
+      // ======================================================================
+      // 1. GESTÃƒO DE EMPRESAS E DASHBOARD
+      // ======================================================================
+
+      case 'getTenantsAndPlans': {
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Acesso negado.' });
+        
+        const { data: tenants, error: tErr } = await supabaseAdmin
+          .from('tenants')
+          .select(`id, companyName, planId, cnpj, plans ( name )`)
+          .order('created_at', { ascending: false });
+        if (tErr) throw tErr;
+
+        const { data: plans, error: pErr } = await supabaseAdmin
+          .from('plans')
+          .select('*')
+          .order('price', { ascending: true });
+        if (pErr) throw pErr;
+
+        return response.status(200).json({ tenants, plans });
+      }
+
+      case 'provisionTenant': {
+        if (request.method !== 'POST') return response.status(405).json({ error: 'Use POST.' });
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin.' });
+
+        const { companyName, planId, cnpj, adminName, adminEmail, adminPassword } = request.body;
+        if (!companyName || !adminEmail || !adminPassword) return response.status(400).json({ error: 'Dados incompletos.' });
+
+        // A. Criar Tenant
+        const { data: newTenant, error: tErr } = await supabaseAdmin
+          .from('tenants')
+          .insert({ companyName, planId, cnpj: cnpj || null })
+          .select().single();
+        if (tErr) throw tErr;
+
+        // B. Criar Auth User
+        const { data: authUser, error: aErr } = await supabaseAdmin.auth.admin.createUser({
+            email: adminEmail,
+            password: adminPassword,
+            email_confirm: true,
+            user_metadata: { name: adminName }
+        });
+
+        if (aErr) {
+            await supabaseAdmin.from('tenants').delete().eq('id', newTenant.id);
+            throw aErr;
+        }
+
+        // C. Criar Perfil
+        const { error: pErr } = await supabaseAdmin.from('user_profiles').insert({
+            id: authUser.user.id,
+            name: adminName,
+            email: adminEmail,
+            role: 'admin',
+            tenantId: newTenant.id,
+            is_admin_system: false,
+            active: true
+        });
+        if (pErr) throw pErr;
+
+        return response.status(201).json({ message: 'Cliente provisionado com sucesso!', tenant: newTenant });
+      }
+
+      case 'updateTenant': {
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Acesso negado.' });
+        const { id, companyName, planId, cnpj } = request.body;
+        
+        const { data, error } = await supabaseAdmin
+            .from('tenants')
+            .update({ companyName, planId, cnpj })
+            .eq('id', id)
+            .select().single();
+        if (error) throw error;
+        
+        return response.status(200).json({ message: 'Atualizado.' });
+      }
+
+      case 'deleteTenant': {
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Acesso negado.' });
+        const { tenantId } = request.body;
+        
+        await supabaseAdmin.from('user_profiles').delete().eq('tenantId', tenantId);
+        const { error } = await supabaseAdmin.from('tenants').delete().eq('id', tenantId);
+        if (error) throw error;
+        
+        return response.status(200).json({ message: 'Empresa excluÃ­da.' });
+      }
+
+      // ======================================================================
+      // 2. GESTÃƒO DE PLANOS
+      // ======================================================================
+
+      case 'createPlan': {
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin.' });
+        const { planData } = request.body;
+        const { data: newPlan, error } = await supabaseAdmin.from('plans').insert(planData).select().single();
+        if (error) throw error;
+        return response.status(201).json({ message: 'Plano criado!', newPlan });
+      }
+
+      case 'updatePlan': {
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin.' });
+        const { planId, planData } = request.body;
+        const { data: updatedPlan, error } = await supabaseAdmin.from('plans').update(planData).eq('id', planId).select().single();
+        if (error) throw error;
+        return response.status(200).json({ message: 'Plano atualizado!', updatedPlan });
+      }
+
+      case 'deletePlan': {
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin.' });
+        const { planId } = request.body;
+        const { count, error: checkError } = await supabaseAdmin.from('tenants').select('*', { count: 'exact', head: true }).eq('planId', planId);
+        if (checkError) throw checkError;
+        if (count > 0) return response.status(400).json({ error: `Plano em uso por ${count} empresa(s).` });
+        const { error } = await supabaseAdmin.from('plans').delete().eq('id', planId);
+        if (error) throw error;
+        return response.status(200).json({ message: 'Plano excluÃ­do!' });
+      }
+
+      // ======================================================================
+      // 3. GESTÃƒO DE USUÃRIOS E EQUIPE
+      // ======================================================================
+
+      case 'getTenantDetails': {
+        const { tenantId } = request.query;
+        if (!tenantId) return response.status(400).json({ error: 'ID obrigatÃ³rio.' });
+        
+        if (!isSuperAdmin && requesterProfile.tenantId !== tenantId) {
+            return response.status(403).json({ error: 'NÃ£o autorizado.' });
+        }
+
+        const { data: tenant } = await supabaseAdmin.from('tenants').select('id, companyName, planId').eq('id', tenantId).single();
+        const { data: users } = await supabaseAdmin.from('user_profiles').select('id, name, email, role, is_admin_system').eq('tenantId', tenantId);
+        
+        return response.status(200).json({ tenant, users });
+      }
+
+      // --- NOVO: GESTÃƒO COMPLETA DE USUÃRIO (Update Auth + Profile) ---
+      case 'updateUserAuth': {
+        if (request.method !== 'POST') return response.status(405).json({ error: 'Use POST.' });
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin pode alterar credenciais de terceiros.' });
+
+        const { userId, email, password, name } = request.body;
+        if (!userId) return response.status(400).json({ error: 'ID do usuÃ¡rio necessÃ¡rio.' });
+
+        // 1. Atualiza Auth (Login, Senha, Metadados)
+        const updateData = { email_confirm: true };
+        if (email) updateData.email = email;
+        if (password) updateData.password = password;
+        if (name) updateData.user_metadata = { name };
+
+        const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, updateData);
+        if (authError) throw authError;
+
+        // 2. Atualiza Profile (Dados visuais)
+        const profileUpdate = {};
+        if (email) profileUpdate.email = email;
+        if (name) profileUpdate.name = name;
+
+        if (Object.keys(profileUpdate).length > 0) {
+            const { error: profileError } = await supabaseAdmin
+                .from('user_profiles')
+                .update(profileUpdate)
+                .eq('id', userId);
+            if (profileError) throw profileError;
+        }
+
+        return response.status(200).json({ message: 'Dados do usuÃ¡rio atualizados com sucesso!' });
+      }
+      // ---------------------------------------------------------------
+
+      case 'createUser': {
+        const { email, password, name, isAdmin, tenantId } = request.body;
+        
+        if (!isSuperAdmin && requesterProfile.tenantId !== tenantId) {
+            return response.status(403).json({ error: 'NÃ£o autorizado para esta empresa.' });
+        }
+
+        const { data: authUser, error: aErr } = await supabaseAdmin.auth.admin.createUser({
+            email, password, email_confirm: true, user_metadata: { name }
+        });
+        if (aErr) throw aErr;
+
+        const userRole = isAdmin ? 'admin' : 'recruiter';
+
+        const { error: pErr } = await supabaseAdmin.from('user_profiles').insert({
+            id: authUser.user.id, 
+            name, 
+            email, 
+            role: userRole, 
+            tenantId, 
+            active: true, 
+            is_admin_system: false
+        });
+        if (pErr) {
+            await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
+            throw pErr;
+        }
+
+        return response.status(201).json({ message: 'UsuÃ¡rio criado.' });
+      }
+
+      case 'deleteUser': {
+        const { userId } = request.body;
+        
+        if (!isSuperAdmin) {
+            const { data: target } = await supabaseAdmin.from('user_profiles').select('tenantId').eq('id', userId).single();
+            if (!target || target.tenantId !== requesterProfile.tenantId) {
+                return response.status(403).json({ error: 'NÃ£o autorizado.' });
+            }
+        }
+
+        await supabaseAdmin.from('user_profiles').delete().eq('id', userId);
+        await supabaseAdmin.auth.admin.deleteUser(userId);
+        return response.status(200).json({ message: 'UsuÃ¡rio removido.' });
+      }
+
+      default:
+        return response.status(400).json({ error: 'AÃ§Ã£o desconhecida.' });
+    }
+
+  } catch (error) {
+    console.error("API Error:", error);
+    return response.status(500).json({ error: error.message || 'Erro interno.' });
+  }
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\api\apply.js
+------------------------------------------------
+// api/apply.js (VERSÃƒO FINAL, COMPLETA E CORRIGIDA)
+import { createClient } from '@supabase/supabase-js';
+import { formidable } from 'formidable';
+import fs from 'fs';
+import path from 'path';
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+export default async function handler(request, response) {
+  if (request.method !== 'POST') {
+    return response.status(405).json({ error: `MÃ©todo ${request.method} nÃ£o permitido.` });
+  }
+
+  try {
+    const supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
+    );
+
+    const form = formidable({});
+    const [fields, files] = await form.parse(request);
+    
+    const jobId = fields.jobId ? fields.jobId[0] : null;
+    if (!jobId) { return response.status(400).json({ error: 'ID da vaga Ã© obrigatÃ³rio.' }); }
+
+    // --- LÃ“GICA DE LIMITE ROBUSTA ---
+    const { data: job, error: jobError } = await supabaseAdmin
+      .from('jobs')
+      .select('tenantId')
+      .eq('id', jobId)
+      .single();
+    
+    if (jobError || !job) { return response.status(404).json({ error: 'Vaga nÃ£o encontrada.' }); }
+
+    const { data: tenant, error: tenantError } = await supabaseAdmin
+      .from('tenants')
+      .select('planId')
+      .eq('id', job.tenantId)
+      .single();
+
+    if (tenantError || !tenant) { throw new Error('Empresa (tenant) nÃ£o encontrada para esta vaga.'); }
+
+    const { data: plan, error: planError } = await supabaseAdmin
+      .from('plans')
+      .select('candidate_limit')
+      .eq('id', tenant.planId)
+      .single();
+    
+    if (planError || !plan) {
+      throw new Error(`ConfiguraÃ§Ã£o de plano invÃ¡lida. O plano com ID "${tenant.planId}" nÃ£o foi encontrado na tabela 'plans'.`);
+    }
+    
+    if (plan.candidate_limit !== -1) {
+      const { count, error: countError } = await supabaseAdmin
+        .from('applications')
+        .select('*', { count: 'exact', head: true })
+        .eq('jobId', jobId);
+      if (countError) throw countError;
+      if (count >= plan.candidate_limit) {
+        return response.status(403).json({ error: `Limite de ${plan.candidate_limit} candidaturas para esta vaga foi atingido.` });
+      }
+    }
+    // --- FIM DA LÃ“GICA DE LIMITE ---
+
+    const { name, email } = fields;
+    const resumeFile = files.resume;
+    if (!name || !email || !resumeFile) { return response.status(400).json({ error: 'Nome, e-mail e currÃ­culo sÃ£o obrigatÃ³rios.' }); }
+    const fileContent = fs.readFileSync(resumeFile[0].filepath);
+    const fileExtension = path.extname(resumeFile[0].originalFilename);
+    const fileName = `${email[0].replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}${fileExtension}`;
+    const { data: uploadData, error: uploadError } = await supabaseAdmin.storage.from('resumes').upload(fileName, fileContent, { contentType: resumeFile[0].mimetype, upsert: false });
+    if (uploadError) throw new Error(`Erro no upload: ${uploadError.message}`);
+    let { data: candidate } = await supabaseAdmin.from('candidates').select('id').eq('email', email[0]).single();
+    if (!candidate) {
+      const { data: newCandidate, error: newCandidateError } = await supabaseAdmin.from('candidates').insert({ name: name[0], email: email[0] }).select('id').single();
+      if (newCandidateError) throw newCandidateError;
+      candidate = newCandidate;
+    }
+    const applicationFields = {};
+    for (const key in fields) { applicationFields[key] = fields[key][0]; }
+    const { error: applicationError } = await supabaseAdmin.from('applications').insert({ jobId: jobId, candidateId: candidate.id, resumeUrl: uploadData.path, formData: applicationFields });
+    if (applicationError) throw applicationError;
+    
+    return response.status(201).json({ message: 'Candidatura enviada com sucesso!' });
+
+  } catch (error) {
+    console.error("Erro na candidatura:", error.message);
+    return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
+  }
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\api\createJob.js
+------------------------------------------------
+// api/createJob.js (VersÃ£o V2.0 - Freemium Limit & Full Fields)
+import { createClient } from '@supabase/supabase-js';
+
+export default async function handler(request, response) {
+  if (request.method !== 'POST') {
+    response.setHeader('Allow', ['POST']);
+    return response.status(405).json({ error: `MÃ©todo ${request.method} nÃ£o permitido.` });
+  }
+  try {
+    const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+    const authHeader = request.headers['authorization'];
+    if (!authHeader) return response.status(401).json({ error: 'NÃ£o autorizado.' });
+    
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError) return response.status(401).json({ error: 'Token invÃ¡lido.' });
+    
+    const { data: userData } = await supabaseAdmin.from('users').select('tenantId').eq('id', user.id).single();
+    if (!userData) return response.status(404).json({ error: 'Perfil nÃ£o encontrado.' });
+    const tenantId = userData.tenantId;
+
+    // Busca dados do plano e contagem atual
+    const { data: tenant, error: tenantError } = await supabaseAdmin
+      .from('tenants')
+      .select('plan:plans(id, job_limit)')
+      .eq('id', tenantId)
+      .single();
+    
+    if (tenantError) throw tenantError;
+
+    // REGRA 6: Limite de Vagas Ativas apenas (especialmente Freemium)
+    const job_limit = tenant.plan.job_limit;
+    
+    // Se o limite for diferente de -1 (ilimitado), verificamos
+    if (job_limit !== -1) {
+      const { count, error: countError } = await supabaseAdmin
+        .from('jobs')
+        .select('*', { count: 'exact', head: true })
+        .eq('tenantId', tenantId)
+        .eq('status', 'active'); // Conta apenas ativas!
+
+      if (countError) throw countError;
+      
+      if (count >= job_limit) {
+        return response.status(403).json({ 
+            error: `Limite de ${job_limit} vagas ativas atingido para o plano ${tenant.plan.id}. Arquive ou exclua uma vaga para criar outra.` 
+        });
+      }
+    }
+
+    // Recebe todos os campos novos
+    const { 
+        title, 
+        description, 
+        requirements, 
+        type, 
+        location_type, 
+        company_department_id 
+    } = request.body;
+
+    if (!title) return response.status(400).json({ error: 'O tÃ­tulo da vaga Ã© obrigatÃ³rio.' });
+    
+    // Prepara objeto de inserÃ§Ã£o com campos seguros
+    const insertData = {
+        title,
+        tenantId,
+        status: 'active',
+        description: description || '',
+        requirements: requirements || '',
+        type: type || 'CLT',
+        location_type: location_type || 'HÃ­brido',
+        // Inicia com parÃ¢metros padrÃ£o se nÃ£o existirem
+        parameters: { 
+            triagem: [], 
+            cultura: [], 
+            tecnico: [], 
+            notas: [
+                {id: '1', nome: 'Abaixo', valor: 0},
+                {id: '2', nome: 'Atende', valor: 50},
+                {id: '3', nome: 'Supera', valor: 100}
+            ] 
+        }
+    };
+
+    // SÃ³ adiciona o departamento se ele vier preenchido
+    if (company_department_id) {
+        insertData.company_department_id = company_department_id;
+    }
+    
+    const { data: newJob, error: insertError } = await supabaseAdmin
+      .from('jobs')
+      .insert(insertData)
+      .select()
+      .single();
+      
+    if (insertError) throw insertError;
+    
+    return response.status(201).json({ newJob });
+
+  } catch (error) {
+    console.error("Erro createJob:", error);
+    return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
+  }
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\api\getApplicantsForJob.js
+------------------------------------------------
+// api/getApplicantsForJob.js (VERSÃƒO FINAL E CORRIGIDA)
+import { createClient } from '@supabase/supabase-js';
+
+export default async function handler(request, response) {
+  try {
+    const supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
+    );
+
+    // ValidaÃ§Ã£o do usuÃ¡rio (sem alteraÃ§Ãµes)
+    const authHeader = request.headers['authorization'];
+    if (!authHeader) return response.status(401).json({ error: 'NÃ£o autorizado.' });
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError) return response.status(401).json({ error: 'Token invÃ¡lido.' });
+    const { data: userData } = await supabaseAdmin.from('users').select('tenantId').eq('id', user.id).single();
+    if (!userData) return response.status(404).json({ error: 'Perfil de usuÃ¡rio nÃ£o encontrado.' });
+    const tenantId = userData.tenantId;
+    const { jobId } = request.query;
+    if (!jobId) return response.status(400).json({ error: 'O ID da vaga Ã© obrigatÃ³rio.' });
+
+    // Busca a vaga e suas candidaturas de uma sÃ³ vez
+    const { data: job, error: jobError } = await supabaseAdmin
+      .from('jobs')
+      .select(`
+        id,
+        tenantId,
+        parameters,
+        applications (
+          id,
+          created_at,
+          evaluation,
+          isHired,
+          candidate:candidates ( id, name, email )
+        )
+      `)
+      .eq('id', Number(jobId))
+      .eq('tenantId', tenantId)
+      .single();
+
+    if (jobError || !job) {
+      return response.status(404).json({ error: 'Vaga nÃ£o encontrada ou nÃ£o pertence Ã  sua empresa.' });
+    }
+
+    // Prepara os mapas para cÃ¡lculo (sem alteraÃ§Ãµes)
+    const parameters = job.parameters || {};
+    const notesMap = new Map((parameters.notas || []).map(note => [note.id, note.valor]));
+    const weightsMap = {
+      triagem: new Map((parameters.triagem || []).map(c => [c.name, c.weight])),
+      cultura: new Map((parameters.cultura || []).map(c => [c.name, c.weight])),
+      tÃ©cnico: new Map((parameters.tÃ©cnico || []).map(c => [c.name, c.weight])),
+    };
+
+    // Calcula as notas para cada candidatura
+    const classifiedApplicants = job.applications.map(app => {
+      const scores = { notaTriagem: 0, notaCultura: 0, notaTecnico: 0, notaGeral: 0 };
+      if (app.evaluation) {
+        ['triagem', 'cultura', 'tÃ©cnico'].forEach(section => {
+          let sectionScore = 0;
+          const sectionEvaluation = app.evaluation[section];
+          if (sectionEvaluation) {
+            for (const criterionName in sectionEvaluation) {
+              if (criterionName !== 'anotacoes') {
+                const noteId = sectionEvaluation[criterionName];
+                const noteValue = notesMap.get(noteId) ?? 0;
+                const weight = weightsMap[section]?.get(criterionName) ?? 0;
+                sectionScore += (noteValue * weight) / 100;
+              }
+            }
+          }
+          if (section === 'triagem') scores.notaTriagem = sectionScore;
+          if (section === 'cultura') scores.notaCultura = sectionScore;
+          if (section === 'tÃ©cnico') scores.notaTecnico = sectionScore;
+        });
+        scores.notaGeral = scores.notaTriagem + scores.notaCultura + scores.notaTecnico;
+      }
+
+      // A CORREÃ‡ÃƒO ESTÃ AQUI: O campo 'isHired' foi restaurado
+      return {
+        applicationId: app.id,
+        submissionDate: app.created_at,
+        isHired: app.isHired,
+        candidateName: app.candidate.name,
+        candidateEmail: app.candidate.email,
+        ...scores
+      };
+    });
+    
+    return response.status(200).json({ applicants: classifiedApplicants });
+
+  } catch (error) {
+    console.error("Erro na funÃ§Ã£o getApplicantsForJob:", error);
+    return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
+  }
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\api\getApplicationDetails.js
+------------------------------------------------
+// api/getApplicationDetails.js (VersÃ£o Definitivamente Corrigida)
+import { createClient } from '@supabase/supabase-js';
+
+export default async function handler(request, response) {
+  try {
+    const supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
+    );
+
+    const authHeader = request.headers['authorization'];
+    if (!authHeader) return response.status(401).json({ error: 'NÃ£o autorizado.' });
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError) return response.status(401).json({ error: 'Token invÃ¡lido.' });
+
+    const { data: userData } = await supabaseAdmin.from('users').select('tenantId').eq('id', user.id).single();
+    if (!userData) return response.status(404).json({ error: 'Perfil de usuÃ¡rio nÃ£o encontrado.' });
+    const tenantId = userData.tenantId;
+
+    const { applicationId } = request.query;
+    if (!applicationId) {
+      return response.status(400).json({ error: 'O ID da candidatura Ã© obrigatÃ³rio.' });
+    }
+
+    const { data: application, error: applicationError } = await supabaseAdmin
+      .from('applications')
+      .select(`
+        id,
+        created_at,
+        formData,
+        resumeUrl,
+        evaluation, 
+        candidate:candidates ( * ),
+        job:jobs ( title, parameters, tenantId )
+      `)
+      .eq('id', Number(applicationId))
+      .single();
+
+    if (applicationError) {
+      if (applicationError.code === 'PGRST116') {
+         return response.status(404).json({ error: 'Candidatura nÃ£o encontrada.' });
+      }
+      throw applicationError;
+    }
+
+    if (application.job.tenantId !== tenantId) {
+      return response.status(403).json({ error: 'VocÃª nÃ£o tem permissÃ£o para ver esta candidatura.' });
+    }
+
+    return response.status(200).json({ application });
+
+  } catch (error) {
+    console.error("Erro na funÃ§Ã£o getApplicationDetails:", error);
+    return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
+  }
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\api\getHiredApplicants.js
+------------------------------------------------
+// api/getHiredApplicants.js
+import { createClient } from '@supabase/supabase-js';
+
+export default async function handler(request, response) {
+  try {
+    const supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
+    );
+
+    // ValidaÃ§Ã£o do usuÃ¡rio de RH
+    const authHeader = request.headers['authorization'];
+    if (!authHeader) return response.status(401).json({ error: 'NÃ£o autorizado.' });
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError) return response.status(401).json({ error: 'Token invÃ¡lido.' });
+    
+    const { data: userData } = await supabaseAdmin.from('users').select('tenantId').eq('id', user.id).single();
+    if (!userData) return response.status(404).json({ error: 'Perfil de usuÃ¡rio nÃ£o encontrado.' });
+    const tenantId = userData.tenantId;
+
+    // Busca todas as candidaturas marcadas como 'isHired = true'
+    const { data: hiredApplications, error: fetchError } = await supabaseAdmin
+      .from('applications')
+      .select(`
+        id,
+        hiredAt,
+        formData,
+        candidate:candidates ( name, email ),
+        job:jobs ( id, title, tenantId )
+      `)
+      .eq('isHired', true);
+
+    if (fetchError) throw fetchError;
+
+    // Filtra no servidor para garantir que o usuÃ¡rio sÃ³ veja os aprovados do seu prÃ³prio tenant
+    const tenantHired = hiredApplications.filter(app => app.job.tenantId === tenantId);
+
+    return response.status(200).json({ hired: tenantHired });
+
+  } catch (error) {
+    console.error("Erro ao buscar candidatos contratados:", error);
+    return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
+  }
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\api\getPublicJobData.js
+------------------------------------------------
+// api/getPublicJobData.js (VERSÃƒO FINAL E CORRIGIDA)
+import { createClient } from '@supabase/supabase-js';
+
+export default async function handler(request, response) {
+  try {
+    const supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
+    );
+
+    const { id: jobId } = request.query;
+    if (!jobId) {
+      return response.status(400).json({ error: 'O ID da vaga Ã© obrigatÃ³rio.' });
+    }
+
+    // A CORREÃ‡ÃƒO ESTÃ AQUI: Convertemos o jobId para Number()
+    const { data: job, error: jobError } = await supabaseAdmin
+      .from('jobs')
+      .select(`
+        title,
+        tenantId,
+        applications ( count )
+      `)
+      .eq('id', Number(jobId)) // Comparando nÃºmero com nÃºmero
+      .single();
+
+    if (jobError) throw jobError;
+
+    const { data: tenant, error: tenantError } = await supabaseAdmin
+      .from('tenants')
+      .select('planId')
+      .eq('id', job.tenantId)
+      .single();
+    
+    if (tenantError) throw tenantError;
+    
+    const formattedJob = {
+      title: job.title,
+      candidateCount: job.applications[0] ? job.applications[0].count : 0,
+      planId: tenant.planId
+    };
+
+    return response.status(200).json({ job: formattedJob });
+  } catch (error) {
+    console.error("Erro ao buscar dados pÃºblicos da vaga:", error);
+    return response.status(500).json({ error: 'NÃ£o foi possÃ­vel buscar os dados da vaga.' });
+  }
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\api\getResumeSignedUrl.js
+------------------------------------------------
+// api/getResumeSignedUrl.js
+import { createClient } from '@supabase/supabase-js';
+
+export default async function handler(request, response) {
+  try {
+    const supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
+    );
+
+    // ValidaÃ§Ã£o de seguranÃ§a (sÃ³ usuÃ¡rios logados podem pedir links)
+    const authHeader = request.headers['authorization'];
+    if (!authHeader) return response.status(401).json({ error: 'NÃ£o autorizado.' });
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError) return response.status(401).json({ error: 'Token invÃ¡lido.' });
+
+    // Pega o caminho do arquivo que o frontend quer acessar
+    const { filePath } = request.query;
+    if (!filePath) {
+      return response.status(400).json({ error: 'O caminho do arquivo Ã© obrigatÃ³rio.' });
+    }
+
+    // Gera uma URL assinada e segura, com validade de 60 segundos
+    const { data, error: urlError } = await supabaseAdmin
+      .storage
+      .from('resumes')
+      .createSignedUrl(filePath, 60); // 60 segundos de validade
+
+    if (urlError) throw urlError;
+
+    return response.status(200).json({ signedUrl: data.signedUrl });
+
+  } catch (error) {
+    console.error("Erro ao gerar URL assinada:", error);
+    return response.status(500).json({ error: 'Erro interno do servidor.' });
+  }
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\api\jobs.js
+------------------------------------------------
+import { createClient } from '@supabase/supabase-js';
+
+export default async function handler(request, response) {
+  // Usa a chave de serviÃ§o para ter acesso TOTAL (ignora RLS e permissÃµes)
+  const supabaseAdmin = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY
+  );
+
+  try {
+    // 1. AutenticaÃ§Ã£o BÃ¡sica
+    const authHeader = request.headers['authorization'];
+    if (!authHeader) throw new Error('Token ausente.');
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (userError || !user) throw new Error('Token invÃ¡lido.');
+
+    // 2. Busca o Perfil para pegar o Tenant ID correto
+    const { data: profile } = await supabaseAdmin
+        .from('user_profiles')
+        .select('tenantId, name, is_admin_system')
+        .eq('id', user.id)
+        .single();
+
+    if (!profile || !profile.tenantId) {
+        throw new Error('Perfil de usuÃ¡rio nÃ£o encontrado ou sem empresa.');
+    }
+
+    const tenantId = profile.tenantId;
+
+    if (request.method === 'GET') {
+        const { id } = request.query;
+
+        // --- BUSCAS SEPARADAS (BLINDAGEM CONTRA ERRO DE TIPOS) ---
+
+        // A. Busca Dados da Empresa
+        const { data: tenant } = await supabaseAdmin
+            .from('tenants')
+            .select('companyName, planId')
+            .eq('id', tenantId)
+            .single();
+
+        // B. Busca TODAS as Vagas deste Tenant
+        const { data: jobs, error: jobsError } = await supabaseAdmin
+            .from('jobs')
+            .select('*') // Pega tudo, sem tentar join quebrado
+            .eq('tenantId', tenantId);
+
+        if (jobsError) throw jobsError;
+
+        // C. Busca TODOS os Departamentos deste Tenant
+        // (Aqui resolvemos o problema: O banco pode ter salvo como texto ou uuid, pegamos por string)
+        const { data: departments } = await supabaseAdmin
+            .from('company_departments')
+            .select('id, name, tenantId'); 
+            // Filtramos no cÃ³digo abaixo para garantir, caso o tipo no banco impeÃ§a o .eq()
+
+        // D. Busca Contagem de Candidatos
+        // Fazemos uma query raw ou agrupada para evitar join complexo
+        const { data: applications } = await supabaseAdmin
+            .from('applications')
+            .select('jobId');
+
+        // --- MONTAGEM DOS DADOS (MANUAL JOIN) ---
+        
+        // 1. Mapa de Contagem de Candidatos
+        const candidateCounts = {};
+        applications.forEach(app => {
+            candidateCounts[app.jobId] = (candidateCounts[app.jobId] || 0) + 1;
+        });
+
+        // 2. Mapa de Departamentos (ID -> Nome)
+        const deptMap = {};
+        if (departments) {
+            departments.forEach(d => {
+                // Normaliza para string para garantir o match
+                if (String(d.tenantId) === String(tenantId)) {
+                    deptMap[d.id] = d.name;
+                }
+            });
+        }
+
+        // 3. Monta o Objeto Final para o Dashboard
+        let formattedJobs = jobs.map(job => ({
+            id: job.id,
+            title: job.title,
+            status: job.status,
+            created_at: job.created_at,
+            type: job.type,
+            location_type: job.location_type,
+            candidateCount: candidateCounts[job.id] || 0,
+            // Aqui fazemos o vÃ­nculo manual que o banco estava recusando
+            deptName: deptMap[job.company_department_id] || 'Geral'
+        }));
+
+        // 4. OrdenaÃ§Ã£o
+        formattedJobs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        // Se for detalhe de uma vaga especÃ­fica
+        if (id) {
+            const specificJob = formattedJobs.find(j => j.id == id); // == para aceitar string/number
+            if (!specificJob) return response.status(404).json({ error: 'Vaga nÃ£o encontrada.' });
+            
+            // Adiciona campos extras necessÃ¡rios para a tela de detalhes
+            const rawJob = jobs.find(j => j.id == id);
+            specificJob.description = rawJob.description;
+            specificJob.requirements = rawJob.requirements;
+            specificJob.parameters = rawJob.parameters;
+            
+            return response.status(200).json({ job: specificJob });
+        }
+
+        return response.status(200).json({
+            jobs: formattedJobs,
+            meta: {
+                companyName: tenant?.companyName || 'Minha Empresa',
+                userName: profile.name || user.email,
+                planId: tenant?.planId || 'free',
+                isAdmin: profile.is_admin_system
+            }
+        });
+    }
+
+    // POST (Escrita) - Mantido simples e direto
+    if (request.method === 'POST') {
+         const { action, jobId, newStatus } = request.body;
+         
+         if (action === 'updateJobStatus') {
+            await supabaseAdmin.from('jobs').update({ status: newStatus }).eq('id', jobId);
+            return response.status(200).json({ message: 'Atualizado' });
+         }
+         if (action === 'deleteJob') {
+            await supabaseAdmin.from('applications').delete().eq('jobId', jobId);
+            await supabaseAdmin.from('jobs').delete().eq('id', jobId);
+            return response.status(200).json({ message: 'Deletado' });
+         }
+    }
+
+    return response.status(405).json({ error: 'Method not allowed' });
+
+  } catch (error) {
+    console.error('API Error:', error.message);
+    return response.status(500).json({ error: error.message });
+  }
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\api\saveEvaluation.js
+------------------------------------------------
+import { createClient } from '@supabase/supabase-js';
+// Certifique-se de que o arquivo _utils/calculator.js existe conforme passo anterior
+import { calculateWeightedScore } from './_utils/calculator.js'; 
+
+export default async function handler(request, response) {
+  if (request.method !== 'POST') return response.status(405).json({ error: 'MÃ©todo nÃ£o permitido' });
+
+  const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+  try {
+    const authHeader = request.headers['authorization'];
+    if (!authHeader) throw new Error('Token ausente.');
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (authError || !user) throw new Error('Token invÃ¡lido.');
+
+    const { applicationId, scores, notes } = request.body;
+
+    // 1. Busca ParÃ¢metros da Vaga
+    const { data: appData, error: appError } = await supabaseAdmin
+        .from('applications')
+        .select('job:jobs(parameters)')
+        .eq('id', applicationId)
+        .single();
+
+    if (appError || !appData) throw new Error('Candidatura nÃ£o encontrada.');
+
+    // 2. Calcula Nota (Backend)
+    // A funÃ§Ã£o calculateWeightedScore deve tratar o 'N/A' ignorando o peso
+    const finalScore = calculateWeightedScore(scores, appData.job.parameters);
+
+    // 3. Salva na tabela EVALUATIONS (Confirmada nos metadados)
+    const { error: saveError } = await supabaseAdmin
+        .from('evaluations')
+        .upsert({
+            application_id: applicationId,
+            evaluator_id: user.id,
+            scores: scores,
+            notes: notes,
+            final_score: finalScore,
+            updated_at: new Date()
+        }, { onConflict: 'application_id, evaluator_id' });
+
+    if (saveError) throw saveError;
+
+    return response.status(200).json({ message: 'AvaliaÃ§Ã£o salva!', score: finalScore });
+
+  } catch (error) {
+    console.error('Save Error:', error);
+    return response.status(500).json({ error: error.message });
+  }
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\api\updateHiredStatus.js
+------------------------------------------------
+// api/updateHiredStatus.js (VersÃ£o com data de contrataÃ§Ã£o)
+import { createClient } from '@supabase/supabase-js';
+
+export default async function handler(request, response) {
+  if (request.method !== 'POST') {
+    return response.status(405).json({ error: 'MÃ©todo nÃ£o permitido.' });
+  }
+
+  try {
+    const supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
+    );
+
+    // ValidaÃ§Ã£o do usuÃ¡rio (sem alteraÃ§Ãµes)
+    const authHeader = request.headers['authorization'];
+    if (!authHeader) return response.status(401).json({ error: 'NÃ£o autorizado.' });
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError) return response.status(401).json({ error: 'Token invÃ¡lido.' });
+    
+    const { applicationId, isHired } = request.body;
+    if (!applicationId || typeof isHired !== 'boolean') {
+      return response.status(400).json({ error: 'applicationId e isHired (booleano) sÃ£o obrigatÃ³rios.' });
+    }
+
+    // AQUI ESTÃ A LÃ“GICA ADITIVA:
+    // Se estÃ¡ contratando, define a data atual. Se estÃ¡ "descontratando", define como nulo.
+    const updateData = {
+      isHired: isHired,
+      hiredAt: isHired ? new Date().toISOString() : null
+    };
+
+    const { data, error: updateError } = await supabaseAdmin
+      .from('applications')
+      .update(updateData) // Usa o novo objeto de dados
+      .eq('id', applicationId)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    return response.status(200).json({ message: 'Status do candidato atualizado com sucesso!', updatedApplication: data });
+
+  } catch (error) {
+    console.error("Erro ao atualizar status de contrataÃ§Ã£o:", error);
+    return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
+  }
+}
+
+
+------------------------------------------------
+ ARQUIVO: C:\Users\Eider\NOVVA\novva-rs-saas-2_0\api\updateJobParameters.js
+------------------------------------------------
+// api/updateJobParameters.js
+import { createClient } from '@supabase/supabase-js';
+
+export default async function handler(request, response) {
+  if (request.method !== 'POST') {
+    response.setHeader('Allow', ['POST']);
+    return response.status(405).json({ error: `MÃ©todo ${request.method} nÃ£o permitido.` });
+  }
+
+  try {
+    const supabaseAdmin = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
+    );
+
+    // 1. Valida o token do usuÃ¡rio para garantir que ele estÃ¡ logado
+    const authHeader = request.headers['authorization'];
+    if (!authHeader) {
+      return response.status(401).json({ error: 'NÃ£o autorizado.' });
+    }
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+    if (userError) {
+      return response.status(401).json({ error: 'Token invÃ¡lido.' });
+    }
+
+    // 2. Busca o tenantId do usuÃ¡rio para garantir que ele sÃ³ edite suas prÃ³prias vagas
+    const { data: userData } = await supabaseAdmin.from('users').select('tenantId').eq('id', user.id).single();
+    if (!userData) {
+      return response.status(404).json({ error: 'Perfil de usuÃ¡rio nÃ£o encontrado.' });
+    }
+    const tenantId = userData.tenantId;
+
+    // 3. Pega o ID da vaga e os novos parÃ¢metros do corpo da requisiÃ§Ã£o
+    const { jobId, parameters } = request.body;
+    if (!jobId || !parameters) {
+      return response.status(400).json({ error: 'jobId e parameters sÃ£o obrigatÃ³rios.' });
+    }
+
+    // 4. Atualiza a vaga no banco de dados
+    const { data, error: updateError } = await supabaseAdmin
+      .from('jobs')
+      .update({ parameters: parameters }) // Atualiza apenas a coluna 'parameters'
+      .eq('id', jobId)                   // Onde o ID da vaga bate
+      .eq('tenantId', tenantId)          // E ONDE a vaga pertence ao tenant do usuÃ¡rio (SEGURANÃ‡A)
+      .select()
+      .single();
+
+    if (updateError) {
+      // Se o erro for 'PGRST116', significa que a vaga nÃ£o foi encontrada (ou nÃ£o pertence ao tenant)
+      if (updateError.code === 'PGRST116') {
+        return response.status(404).json({ error: 'Vaga nÃ£o encontrada ou vocÃª nÃ£o tem permissÃ£o para editÃ¡-la.' });
+      }
+      throw updateError;
+    }
+
+    // 5. Retorna sucesso
+    return response.status(200).json({ message: 'ParÃ¢metros salvos com sucesso!', updatedJob: data });
+
+  } catch (error) {
+    console.error("Erro na funÃ§Ã£o updateJobParameters:", error);
+    return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
+  }
+}
