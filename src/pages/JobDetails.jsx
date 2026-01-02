@@ -6,17 +6,18 @@ import {
     Paper, Tabs, Tab, TextField, IconButton, Snackbar,
     List, ListItem, ListItemText, Divider, Grid,
     Table, TableHead, TableRow, TableCell, TableBody, Checkbox,
-    FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert, Tooltip as MuiTooltip
+    FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert, Tooltip
 } from '@mui/material';
 import { 
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList 
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList 
 } from 'recharts';
-import { Delete as DeleteIcon, Add as AddIcon, Info as InfoIcon } from '@mui/icons-material';
+import { Delete as DeleteIcon, Add as AddIcon, ContentCopy as ContentCopyIcon, Info as InfoIcon } from '@mui/icons-material';
 import { processEvaluation } from '../utils/evaluationLogic';
 
 // --- COMPONENTES AUXILIARES ---
 const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 500, bgcolor: 'background.paper', boxShadow: 24, p: 4, borderRadius: 2 };
 
+// Modal para Copiar Parâmetros de outra vaga
 const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState('');
@@ -41,10 +42,10 @@ const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   return ( 
       <Modal open={open} onClose={onClose}>
           <Box sx={modalStyle}>
-              <Typography variant="h6">Copiar de Vaga</Typography>
+              <Typography variant="h6" mb={2}>Copiar de Vaga</Typography>
               <FormControl fullWidth margin="normal">
-                  <InputLabel>Vaga</InputLabel>
-                  <Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga">
+                  <InputLabel>Vaga de Origem</InputLabel>
+                  <Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga de Origem">
                       {jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}
                   </Select>
               </FormControl>
@@ -57,6 +58,7 @@ const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   );
 };
 
+// Seção de Critérios (Triagem, Cultura, Técnico)
 const ParametersSection = ({ title, criteria = [], onCriteriaChange }) => {
   const handleChange = (i, f, v) => { 
       const n = [...criteria];
@@ -82,14 +84,14 @@ const ParametersSection = ({ title, criteria = [], onCriteriaChange }) => {
                     onChange={e=>handleChange(i,'name',e.target.value)} 
                     fullWidth 
                     size="small" 
-                    label="Critério" 
-                    placeholder="Ex: Comunicação Clara"
+                    label="Nome do Critério" 
+                    placeholder="Ex: Comunicação"
                 />
                 <TextField 
                     type="number" 
                     value={c.weight} 
                     onChange={e=>handleChange(i,'weight',e.target.value)} 
-                    sx={{width: 120}} 
+                    sx={{width: 100}} 
                     size="small" 
                     label="Peso %" 
                 />
@@ -105,53 +107,60 @@ const ParametersSection = ({ title, criteria = [], onCriteriaChange }) => {
   );
 };
 
-// --- COMPONENTE RESTAURADO: RÉGUA DE NOTAS ---
+// --- COMPONENTE DE RÉGUA DE NOTAS (RESTAURADO) ---
 const GradeScaleSection = ({ notas = [], onNotasChange }) => {
-    const handleChange = (i, f, v) => {
-        const n = [...notas];
-        n[i] = { ...n[i], [f]: f === 'valor' ? Number(v) : v };
-        onNotasChange(n);
+    const handleChange = (i, field, value) => {
+        const newNotas = [...notas];
+        newNotas[i] = { ...newNotas[i], [field]: field === 'valor' ? Number(value) : value };
+        onNotasChange(newNotas);
     };
 
     const handleAdd = () => {
         onNotasChange([...notas, { id: crypto.randomUUID(), nome: '', valor: 0 }]);
     };
 
+    const handleDelete = (index) => {
+        onNotasChange(notas.filter((_, i) => i !== index));
+    };
+
     return (
-        <Paper variant="outlined" sx={{ p: 3, mb: 3, borderColor: 'orange' }}>
+        <Paper variant="outlined" sx={{ p: 3, mb: 3, borderColor: '#ed6c02', bgcolor: '#fff7e0' }}>
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
                 <Box>
                     <Typography variant="subtitle1" fontWeight="bold" color="warning.dark">Régua de Notas (Escala)</Typography>
-                    <Typography variant="caption" color="text.secondary">Defina os níveis de avaliação. Ex: 0, 5, 10.</Typography>
+                    <Typography variant="caption" color="text.secondary">Defina os níveis e seus valores. Ex: 0, 5, 10.</Typography>
                 </Box>
-                <MuiTooltip title="Esses valores são usados para calcular a média final. Recomendamos: Abaixo=0, Atende=5, Supera=10.">
+                <Tooltip title="Estes valores são usados para calcular a média final. Ajuste aqui se as notas estiverem aparecendo erradas (ex: 50 em vez de 5.0).">
                     <IconButton size="small"><InfoIcon fontSize="small" /></IconButton>
-                </MuiTooltip>
+                </Tooltip>
             </Box>
 
-            {notas.map((n, i) => (
-                <Box key={n.id || i} display="flex" gap={2} mb={1} alignItems="center">
+            {notas.map((nota, i) => (
+                <Box key={nota.id || i} display="flex" gap={2} mb={1} alignItems="center">
                     <TextField 
-                        value={n.nome} 
+                        value={nota.nome} 
                         onChange={e => handleChange(i, 'nome', e.target.value)} 
                         fullWidth 
                         size="small" 
                         label="Nome do Nível (ex: Atende)" 
+                        variant="filled"
+                        sx={{ bgcolor: 'white' }}
                     />
                     <TextField 
                         type="number" 
-                        value={n.valor} 
+                        value={nota.valor} 
                         onChange={e => handleChange(i, 'valor', e.target.value)} 
-                        sx={{ width: 120 }} 
+                        sx={{ width: 120, bgcolor: 'white' }} 
                         size="small" 
-                        label="Valor (0-10)" 
+                        label="Valor" 
+                        variant="filled"
                     />
-                    <IconButton onClick={() => onNotasChange(notas.filter((_, idx) => idx !== i))} color="error" size="small">
+                    <IconButton onClick={() => handleDelete(i)} color="error" size="small">
                         <DeleteIcon />
                     </IconButton>
                 </Box>
             ))}
-            <Button startIcon={<AddIcon />} onClick={handleAdd} variant="outlined" color="warning" size="small" sx={{ mt: 1 }}>
+            <Button startIcon={<AddIcon />} onClick={handleAdd} variant="contained" color="warning" size="small" sx={{ mt: 1 }}>
                 Adicionar Nível
             </Button>
         </Paper>
@@ -175,10 +184,11 @@ export default function JobDetails() {
     const fetchAllData = async () => {
       setLoading(true);
       try {
-        const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
+        const { data: jobData, error: jobError } = await supabase.from('jobs').select('*').eq('id', jobId).single();
+        if (jobError) throw jobError;
         setJob(jobData);
         
-        // Garante a estrutura completa, incluindo as NOTAS
+        // Inicialização Segura dos Parâmetros
         const defaultParams = { 
             triagem: [], 
             cultura: [], 
@@ -189,7 +199,8 @@ export default function JobDetails() {
                 {id: '3', nome: 'Supera', valor: 10}
             ] 
         };
-        setParameters(jobData.parameters || defaultParams);
+        // Mescla o que veio do banco com o default para garantir que 'notas' exista
+        setParameters({ ...defaultParams, ...(jobData.parameters || {}) });
 
         const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', jobId);
         setApplicants(appsData || []);
@@ -207,8 +218,12 @@ export default function JobDetails() {
                 setUsersMap(map);
             }
         }
-      } catch (err) { console.error(err);
-      } finally { setLoading(false); }
+      } catch (err) { 
+          console.error(err);
+          setFeedback({ open: true, message: 'Erro ao carregar dados: ' + err.message, severity: 'error' });
+      } finally { 
+          setLoading(false); 
+      }
     };
     fetchAllData();
   }, [jobId]);
@@ -282,7 +297,6 @@ export default function JobDetails() {
         <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
             <Paper sx={{ mb: 3 }}><Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered><Tab label="Candidatos" /><Tab label="Classificação" /><Tab label="Configurações da Vaga" /></Tabs></Paper>
             
-            {/* ABA 1: LISTA DE CANDIDATOS */}
             {tabValue === 0 && (
                 <Paper sx={{ p: 0 }}>
                     <Table>
@@ -299,7 +313,6 @@ export default function JobDetails() {
                 </Paper>
             )}
 
-            {/* ABA 2: GRÁFICOS E RANKING */}
             {tabValue === 1 && (
                 <Grid container spacing={3}>
                     <Grid item xs={12} md={8}>
@@ -332,7 +345,7 @@ export default function JobDetails() {
                                                 width={150} 
                                                 style={{fontSize: '0.8rem', fontWeight: 500, fill: '#444'}} 
                                             />
-                                            <Tooltip cursor={{fill: '#f5f5f5'}} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} formatter={(val, name) => [val, name]} />
+                                            <RechartsTooltip cursor={{fill: '#f5f5f5'}} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} formatter={(val, name) => [val, name]} />
                                             <Legend verticalAlign="top" height={40} iconType="circle" />
                                             
                                             <Bar dataKey="triagem" name="Triagem" fill="#90caf9" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="triagem" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/></Bar>
@@ -373,10 +386,8 @@ export default function JobDetails() {
                 </Grid>
             )}
 
-            {/* ABA 3: CONFIGURAÇÕES DA VAGA (RESTAURADO) */}
             {tabValue === 2 && (
                 <Box p={3} sx={{ bgcolor: 'white', borderRadius: 1, boxShadow: 1 }}>
-                    {/* Botão de Copiar */}
                     <Box mb={2} display="flex" justifyContent="flex-end">
                         <Button startIcon={<ContentCopyIcon/>} onClick={()=>setIsCopyModalOpen(true)} variant="outlined" size="small">Copiar de outra Vaga</Button>
                     </Box>
@@ -388,17 +399,11 @@ export default function JobDetails() {
                             <ParametersSection title="3. Teste Técnico (Hard Skills)" criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} />
                         </Grid>
                         <Grid item xs={12} md={5}>
-                            {/* AQUI ESTÁ A SEÇÃO QUE FALTAVA: RÉGUA DE NOTAS */}
+                            {/* SEÇÃO DA RÉGUA DE NOTAS - RESTAURADA E FUNCIONAL */}
                             <GradeScaleSection 
                                 notas={parameters?.notas || []} 
                                 onNotasChange={(n) => setParameters({...parameters, notas: n})} 
                             />
-                            
-                            <Paper variant="outlined" sx={{ p: 2, bgcolor: '#f9fafb' }}>
-                                <Typography variant="caption" color="text.secondary" paragraph>
-                                    <strong>Dica:</strong> Se as notas estiverem aparecendo erradas (ex: 50/10), ajuste os valores na Régua acima para 0, 5 e 10.
-                                </Typography>
-                            </Paper>
                         </Grid>
                     </Grid>
 
@@ -410,7 +415,7 @@ export default function JobDetails() {
                 </Box>
             )}
         </Container>
-        <CopyParametersModal open={isCopyModalOpen} onClose={() => setIsCopyModalOpen(false)} currentJobId={jobId} onCopy={(p) => { setParameters(p); setFeedback({open:true, message:'Critérios Copiados!', severity:'info'}); }} />
+        <CopyParametersModal open={isCopyModalOpen} onClose={() => setIsCopyModalOpen(false)} currentJobId={jobId} onCopy={(p) => { setParameters(p); setFeedback({open:true, message:'Copiado!', severity:'info'}); }} />
         <Snackbar open={feedback.open} autoHideDuration={4000} onClose={() => setFeedback({...feedback, open:false})}><Alert severity={feedback.severity} variant="filled">{feedback.message}</Alert></Snackbar>
     </Box>
   );
