@@ -1,170 +1,35 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, Link as RouterLink } from 'react-router-dom';
+import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import { 
     Container, Typography, Box, AppBar, Toolbar, Button, CircularProgress, 
     Paper, Tabs, Tab, TextField, IconButton, Snackbar,
     List, ListItem, ListItemText, Divider, Grid,
     Table, TableHead, TableRow, TableCell, TableBody, Checkbox,
-    FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert, Tooltip
+    FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert
 } from '@mui/material';
-import { 
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList 
-} from 'recharts';
-import { Delete as DeleteIcon, Add as AddIcon, ContentCopy as ContentCopyIcon, Info as InfoIcon } from '@mui/icons-material';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList } from 'recharts';
+// CORREÇÃO: Adicionado Save as SaveIcon
+import { Delete as DeleteIcon, ContentCopy as ContentCopyIcon, Save as SaveIcon } from '@mui/icons-material';
 import { processEvaluation } from '../utils/evaluationLogic';
 
 // --- COMPONENTES AUXILIARES ---
 const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 500, bgcolor: 'background.paper', boxShadow: 24, p: 4, borderRadius: 2 };
 
-// Modal para Copiar Parâmetros de outra vaga
 const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState('');
-  
-  useEffect(() => { 
-      if (open) { 
-          const f = async () => { 
-              const { data } = await supabase.from('jobs').select('id, title').neq('id', currentJobId).eq('status', 'active'); 
-              setJobs(data || []); 
-          }; 
-          f(); 
-      } 
-  }, [open, currentJobId]);
-
-  const handleConfirm = async () => { 
-      if (!selectedJobId) return; 
-      const { data } = await supabase.from('jobs').select('parameters').eq('id', selectedJobId).single();
-      if (data?.parameters) onCopy(data.parameters); 
-      onClose(); 
-  };
-
-  return ( 
-      <Modal open={open} onClose={onClose}>
-          <Box sx={modalStyle}>
-              <Typography variant="h6" mb={2}>Copiar de Vaga</Typography>
-              <FormControl fullWidth margin="normal">
-                  <InputLabel>Vaga de Origem</InputLabel>
-                  <Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga de Origem">
-                      {jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}
-                  </Select>
-              </FormControl>
-              <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-                  <Button onClick={onClose}>Cancelar</Button>
-                  <Button onClick={handleConfirm} variant="contained" disabled={!selectedJobId}>Copiar</Button>
-              </Box>
-          </Box>
-      </Modal> 
-  );
+  useEffect(() => { if (open) { const f = async () => { const { data } = await supabase.from('jobs').select('id, title').neq('id', currentJobId).eq('status', 'active'); setJobs(data || []); }; f(); } }, [open, currentJobId]);
+  const handleConfirm = async () => { if (!selectedJobId) return; const { data } = await supabase.from('jobs').select('parameters').eq('id', selectedJobId).single(); if (data?.parameters) onCopy(data.parameters); onClose(); };
+  return ( <Modal open={open} onClose={onClose}><Box sx={modalStyle}><Typography variant="h6">Copiar de Vaga</Typography><FormControl fullWidth margin="normal"><InputLabel>Vaga</InputLabel><Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga">{jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}</Select></FormControl><Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}><Button onClick={onClose}>Cancelar</Button><Button onClick={handleConfirm} variant="contained" disabled={!selectedJobId}>Copiar</Button></Box></Box></Modal> );
 };
 
-// Seção de Critérios (Triagem, Cultura, Técnico)
-const ParametersSection = ({ title, criteria = [], onCriteriaChange }) => {
-  const handleChange = (i, f, v) => { 
-      const n = [...criteria];
-      n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; 
-      onCriteriaChange(n); 
-  };
-  
+const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
+  const handleChange = (i, f, v) => { const n = [...criteria]; n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; onCriteriaChange(n); };
   const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
-
   return (
-    <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-            <Typography variant="subtitle1" fontWeight="bold">{title}</Typography>
-            <Typography variant="caption" color={total === 100 ? 'success.main' : 'error.main'} fontWeight="bold">
-                Total Pesos: {total}% {total !== 100 && '(Deve ser 100%)'}
-            </Typography>
-        </Box>
-        
-        {criteria.map((c, i) => (
-            <Box key={i} display="flex" gap={2} mb={1} alignItems="center">
-                <TextField 
-                    value={c.name} 
-                    onChange={e=>handleChange(i,'name',e.target.value)} 
-                    fullWidth 
-                    size="small" 
-                    label="Nome do Critério" 
-                    placeholder="Ex: Comunicação"
-                />
-                <TextField 
-                    type="number" 
-                    value={c.weight} 
-                    onChange={e=>handleChange(i,'weight',e.target.value)} 
-                    sx={{width: 100}} 
-                    size="small" 
-                    label="Peso %" 
-                />
-                <IconButton onClick={()=>onCriteriaChange(criteria.filter((_,idx)=>idx!==i))} color="error" size="small">
-                    <DeleteIcon/>
-                </IconButton>
-            </Box>
-        ))}
-        <Button startIcon={<AddIcon/>} onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small" sx={{mt: 1}}>
-            Adicionar Critério
-        </Button>
-    </Paper>
+    <Box sx={{mt:2}}>{criteria.map((c, i) => <Box key={i} display="flex" gap={2} mb={1}><TextField value={c.name} onChange={e=>handleChange(i,'name',e.target.value)} fullWidth size="small" label="Critério" /><TextField type="number" value={c.weight} onChange={e=>handleChange(i,'weight',e.target.value)} sx={{width:100}} size="small" label="Peso %" /><IconButton onClick={()=>onCriteriaChange(criteria.filter((_,idx)=>idx!==i))} color="error"><DeleteIcon/></IconButton></Box>)}<Button onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small">Adicionar</Button><Typography color={total===100?'green':'red'} variant="caption" display="block" sx={{mt:1, fontWeight:'bold'}}>Total: {total}%</Typography></Box>
   );
-};
-
-// --- COMPONENTE DE RÉGUA DE NOTAS (RESTAURADO) ---
-const GradeScaleSection = ({ notas = [], onNotasChange }) => {
-    const handleChange = (i, field, value) => {
-        const newNotas = [...notas];
-        newNotas[i] = { ...newNotas[i], [field]: field === 'valor' ? Number(value) : value };
-        onNotasChange(newNotas);
-    };
-
-    const handleAdd = () => {
-        onNotasChange([...notas, { id: crypto.randomUUID(), nome: '', valor: 0 }]);
-    };
-
-    const handleDelete = (index) => {
-        onNotasChange(notas.filter((_, i) => i !== index));
-    };
-
-    return (
-        <Paper variant="outlined" sx={{ p: 3, mb: 3, borderColor: '#ed6c02', bgcolor: '#fff7e0' }}>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                <Box>
-                    <Typography variant="subtitle1" fontWeight="bold" color="warning.dark">Régua de Notas (Escala)</Typography>
-                    <Typography variant="caption" color="text.secondary">Defina os níveis e seus valores. Ex: 0, 5, 10.</Typography>
-                </Box>
-                <Tooltip title="Estes valores são usados para calcular a média final. Ajuste aqui se as notas estiverem aparecendo erradas (ex: 50 em vez de 5.0).">
-                    <IconButton size="small"><InfoIcon fontSize="small" /></IconButton>
-                </Tooltip>
-            </Box>
-
-            {notas.map((nota, i) => (
-                <Box key={nota.id || i} display="flex" gap={2} mb={1} alignItems="center">
-                    <TextField 
-                        value={nota.nome} 
-                        onChange={e => handleChange(i, 'nome', e.target.value)} 
-                        fullWidth 
-                        size="small" 
-                        label="Nome do Nível (ex: Atende)" 
-                        variant="filled"
-                        sx={{ bgcolor: 'white' }}
-                    />
-                    <TextField 
-                        type="number" 
-                        value={nota.valor} 
-                        onChange={e => handleChange(i, 'valor', e.target.value)} 
-                        sx={{ width: 120, bgcolor: 'white' }} 
-                        size="small" 
-                        label="Valor" 
-                        variant="filled"
-                    />
-                    <IconButton onClick={() => handleDelete(i)} color="error" size="small">
-                        <DeleteIcon />
-                    </IconButton>
-                </Box>
-            ))}
-            <Button startIcon={<AddIcon />} onClick={handleAdd} variant="contained" color="warning" size="small" sx={{ mt: 1 }}>
-                Adicionar Nível
-            </Button>
-        </Paper>
-    );
 };
 
 export default function JobDetails() {
@@ -172,6 +37,7 @@ export default function JobDetails() {
   const [job, setJob] = useState(null);
   const [parameters, setParameters] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false); // Estado para feedback visual de salvamento
   const [tabValue, setTabValue] = useState(0);
   const [applicants, setApplicants] = useState([]);
   const [allEvaluations, setAllEvaluations] = useState([]);
@@ -184,23 +50,9 @@ export default function JobDetails() {
     const fetchAllData = async () => {
       setLoading(true);
       try {
-        const { data: jobData, error: jobError } = await supabase.from('jobs').select('*').eq('id', jobId).single();
-        if (jobError) throw jobError;
+        const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         setJob(jobData);
-        
-        // Inicialização Segura dos Parâmetros
-        const defaultParams = { 
-            triagem: [], 
-            cultura: [], 
-            tecnico: [], 
-            notas: [
-                {id: '1', nome: 'Abaixo', valor: 0},
-                {id: '2', nome: 'Atende', valor: 5},
-                {id: '3', nome: 'Supera', valor: 10}
-            ] 
-        };
-        // Mescla o que veio do banco com o default para garantir que 'notas' exista
-        setParameters({ ...defaultParams, ...(jobData.parameters || {}) });
+        setParameters(jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] });
 
         const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', jobId);
         setApplicants(appsData || []);
@@ -218,12 +70,7 @@ export default function JobDetails() {
                 setUsersMap(map);
             }
         }
-      } catch (err) { 
-          console.error(err);
-          setFeedback({ open: true, message: 'Erro ao carregar dados: ' + err.message, severity: 'error' });
-      } finally { 
-          setLoading(false); 
-      }
+      } catch (err) { console.error(err); } finally { setLoading(false); }
     };
     fetchAllData();
   }, [jobId]);
@@ -239,17 +86,11 @@ export default function JobDetails() {
             (evaluatorFilter === 'all' || e.evaluator_id === evaluatorFilter)
         );
 
-        let sumTotal = 0, count = 0;
-        let sumT = 0, sumC = 0, sumTc = 0;
-
+        let sumT = 0, sumC = 0, sumTc = 0, count = 0, sumTotal = 0;
         appEvals.forEach(ev => {
             const scores = processEvaluation(ev, parameters);
             if (scores.total > 0 || scores.triagem > 0 || scores.cultura > 0 || scores.tecnico > 0) {
-                sumT += scores.triagem; 
-                sumC += scores.cultura; 
-                sumTc += scores.tecnico; 
-                sumTotal += scores.total; 
-                count++;
+                sumT += scores.triagem; sumC += scores.cultura; sumTc += scores.tecnico; sumTotal += scores.total; count++;
             }
         });
 
@@ -281,12 +122,10 @@ export default function JobDetails() {
   };
 
   const handleSaveParameters = async () => {
-      const { error } = await supabase.from('jobs').update({ parameters }).eq('id', jobId);
-      if (error) {
-          setFeedback({ open: true, message: 'Erro ao salvar: ' + error.message, severity: 'error' });
-      } else {
-          setFeedback({ open: true, message: 'Configurações salvas com sucesso!', severity: 'success' });
-      }
+      setSaving(true);
+      await supabase.from('jobs').update({ parameters }).eq('id', jobId);
+      setSaving(false);
+      setFeedback({ open: true, message: 'Configurações salvas com sucesso!', severity: 'success' });
   };
 
   if (loading) return <Box p={5} display="flex" justifyContent="center"><CircularProgress /></Box>;
@@ -317,6 +156,7 @@ export default function JobDetails() {
                 <Grid container spacing={3}>
                     <Grid item xs={12} md={8}>
                         <Paper sx={{ p: 3, height: '600px', display: 'flex', flexDirection: 'column' }} elevation={3}>
+                            {/* CABEÇALHO DO GRÁFICO MELHORADO */}
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, pb: 2, borderBottom: '1px solid #f0f0f0' }}>
                                 <Typography variant="h6" color="text.primary" fontWeight="bold">Comparativo de Desempenho</Typography>
                                 <FormControl size="small" sx={{ minWidth: 220 }}>
@@ -345,13 +185,27 @@ export default function JobDetails() {
                                                 width={150} 
                                                 style={{fontSize: '0.8rem', fontWeight: 500, fill: '#444'}} 
                                             />
-                                            <RechartsTooltip cursor={{fill: '#f5f5f5'}} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} formatter={(val, name) => [val, name]} />
+                                            <Tooltip 
+                                                cursor={{fill: '#f5f5f5'}}
+                                                contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                                formatter={(val, name) => [val, name]} 
+                                            />
                                             <Legend verticalAlign="top" height={40} iconType="circle" />
                                             
-                                            <Bar dataKey="triagem" name="Triagem" fill="#90caf9" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="triagem" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/></Bar>
-                                            <Bar dataKey="cultura" name="Fit Cultural" fill="#a5d6a7" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="cultura" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/></Bar>
-                                            <Bar dataKey="tecnico" name="Técnico" fill="#ffcc80" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="tecnico" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/></Bar>
-                                            <Bar dataKey="total" name="Média Geral" fill="#4caf50" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="total" position="right" style={{fontSize:'0.8rem', fontWeight:'bold', fill:'#2e7d32'}} /></Bar>
+                                            <Bar dataKey="triagem" name="Triagem" fill="#90caf9" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="triagem" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
+                                            </Bar>
+                                            <Bar dataKey="cultura" name="Fit Cultural" fill="#a5d6a7" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="cultura" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
+                                            </Bar>
+                                            <Bar dataKey="tecnico" name="Técnico" fill="#ffcc80" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="tecnico" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
+                                            </Bar>
+                                            
+                                            {/* BARRA DE MÉDIA GERAL DESTACADA */}
+                                            <Bar dataKey="total" name="Média Geral" fill="#4caf50" barSize={20} radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey="total" position="right" style={{fontSize:'0.8rem', fontWeight:'bold', fill:'#2e7d32'}} />
+                                            </Bar>
                                             
                                             <ReferenceLine x={5} stroke="red" strokeDasharray="3 3" />
                                         </BarChart>
@@ -388,28 +242,18 @@ export default function JobDetails() {
 
             {tabValue === 2 && (
                 <Box p={3} sx={{ bgcolor: 'white', borderRadius: 1, boxShadow: 1 }}>
-                    <Box mb={2} display="flex" justifyContent="flex-end">
-                        <Button startIcon={<ContentCopyIcon/>} onClick={()=>setIsCopyModalOpen(true)} variant="outlined" size="small">Copiar de outra Vaga</Button>
-                    </Box>
-
-                    <Grid container spacing={4}>
-                        <Grid item xs={12} md={7}>
-                            <ParametersSection title="1. Triagem (Requisitos Básicos)" criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} />
-                            <ParametersSection title="2. Fit Cultural (Comportamental)" criteria={parameters?.cultura || []} onCriteriaChange={(c) => setParameters({...parameters, cultura: c})} />
-                            <ParametersSection title="3. Teste Técnico (Hard Skills)" criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} />
-                        </Grid>
-                        <Grid item xs={12} md={5}>
-                            {/* SEÇÃO DA RÉGUA DE NOTAS - RESTAURADA E FUNCIONAL */}
-                            <GradeScaleSection 
-                                notas={parameters?.notas || []} 
-                                onNotasChange={(n) => setParameters({...parameters, notas: n})} 
-                            />
-                        </Grid>
-                    </Grid>
-
-                    <Box display="flex" justifyContent="flex-end" mt={3} pt={3} borderTop={1} borderColor="divider">
-                        <Button variant="contained" color="primary" onClick={handleSaveParameters} size="large" startIcon={<Save size={18}/>}>
-                            Salvar Configurações
+                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>1. Triagem</Typography><ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} /></Paper>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>2. Fit Cultural</Typography><ParametersSection criteria={parameters?.cultura || []} onCriteriaChange={(c) => setParameters({...parameters, cultura: c})} /></Paper>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>3. Teste Técnico</Typography><ParametersSection criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} /></Paper>
+                    <Box display="flex" justifyContent="flex-end">
+                        <Button 
+                            variant="contained" 
+                            color="primary" 
+                            onClick={handleSaveParameters}
+                            disabled={saving}
+                            startIcon={<SaveIcon />} 
+                        >
+                            {saving ? 'Salvando...' : 'Salvar Configurações'}
                         </Button>
                     </Box>
                 </Box>
