@@ -9,8 +9,12 @@ import {
     FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert
 } from '@mui/material';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList } from 'recharts';
-// CORREÇÃO: Adicionado Save as SaveIcon
-import { Delete as DeleteIcon, ContentCopy as ContentCopyIcon, Save as SaveIcon } from '@mui/icons-material';
+import { 
+    Delete as DeleteIcon, 
+    ContentCopy as ContentCopyIcon, 
+    Save as SaveIcon,
+    Add as AddIcon // Necessário para adicionar itens
+} from '@mui/icons-material';
 import { processEvaluation } from '../utils/evaluationLogic';
 
 // --- COMPONENTES AUXILIARES ---
@@ -24,12 +28,76 @@ const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   return ( <Modal open={open} onClose={onClose}><Box sx={modalStyle}><Typography variant="h6">Copiar de Vaga</Typography><FormControl fullWidth margin="normal"><InputLabel>Vaga</InputLabel><Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga">{jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}</Select></FormControl><Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}><Button onClick={onClose}>Cancelar</Button><Button onClick={handleConfirm} variant="contained" disabled={!selectedJobId}>Copiar</Button></Box></Box></Modal> );
 };
 
+// Componente para Critérios (Triagem, Cultura, Técnico)
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
   const handleChange = (i, f, v) => { const n = [...criteria]; n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; onCriteriaChange(n); };
   const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
   return (
-    <Box sx={{mt:2}}>{criteria.map((c, i) => <Box key={i} display="flex" gap={2} mb={1}><TextField value={c.name} onChange={e=>handleChange(i,'name',e.target.value)} fullWidth size="small" label="Critério" /><TextField type="number" value={c.weight} onChange={e=>handleChange(i,'weight',e.target.value)} sx={{width:100}} size="small" label="Peso %" /><IconButton onClick={()=>onCriteriaChange(criteria.filter((_,idx)=>idx!==i))} color="error"><DeleteIcon/></IconButton></Box>)}<Button onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small">Adicionar</Button><Typography color={total===100?'green':'red'} variant="caption" display="block" sx={{mt:1, fontWeight:'bold'}}>Total: {total}%</Typography></Box>
+    <Box sx={{mt:2}}>
+        {criteria.map((c, i) => (
+            <Box key={i} display="flex" gap={2} mb={1}>
+                <TextField value={c.name} onChange={e=>handleChange(i,'name',e.target.value)} fullWidth size="small" label="Critério" />
+                <TextField type="number" value={c.weight} onChange={e=>handleChange(i,'weight',e.target.value)} sx={{width:100}} size="small" label="Peso %" />
+                <IconButton onClick={()=>onCriteriaChange(criteria.filter((_,idx)=>idx!==i))} color="error"><DeleteIcon/></IconButton>
+            </Box>
+        ))}
+        <Button onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small" startIcon={<AddIcon />}>Adicionar</Button>
+        <Typography color={total===100?'green':'red'} variant="caption" display="block" sx={{mt:1, fontWeight:'bold'}}>Total: {total}%</Typography>
+    </Box>
   );
+};
+
+// Componente para a Régua de Notas (NOVO)
+const RatingScaleSection = ({ notes = [], onNotesChange }) => {
+    const handleChange = (i, field, value) => {
+        const newNotes = [...notes];
+        newNotes[i] = { ...newNotes[i], [field]: field === 'valor' ? Number(value) : value };
+        onNotesChange(newNotes);
+    };
+
+    const handleAdd = () => {
+        const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
+        onNotesChange([...notes, { id, nome: 'Nova Nota', valor: 0 }]);
+    };
+
+    const handleRemove = (i) => {
+        onNotesChange(notes.filter((_, idx) => idx !== i));
+    };
+
+    return (
+        <Box sx={{ mt: 2 }}>
+            {notes.map((n, i) => (
+                <Box key={n.id || i} display="flex" gap={2} mb={1} alignItems="center">
+                    <TextField
+                        value={n.nome}
+                        onChange={(e) => handleChange(i, 'nome', e.target.value)}
+                        fullWidth
+                        size="small"
+                        label="Nome do Nível (Ex: Supera)"
+                    />
+                    <TextField
+                        type="number"
+                        value={n.valor}
+                        onChange={(e) => handleChange(i, 'valor', e.target.value)}
+                        sx={{ width: 120 }}
+                        size="small"
+                        label="Valor (0-100)"
+                    />
+                    <IconButton onClick={() => handleRemove(i)} color="error">
+                        <DeleteIcon />
+                    </IconButton>
+                </Box>
+            ))}
+            <Button onClick={handleAdd} variant="outlined" size="small" startIcon={<AddIcon />}>
+                Adicionar Nível
+            </Button>
+            {notes.length < 2 && (
+                <Typography color="warning.main" variant="caption" display="block" sx={{ mt: 1 }}>
+                    Recomendado ter pelo menos 2 níveis (Mínimo e Máximo).
+                </Typography>
+            )}
+        </Box>
+    );
 };
 
 export default function JobDetails() {
@@ -37,7 +105,7 @@ export default function JobDetails() {
   const [job, setJob] = useState(null);
   const [parameters, setParameters] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false); // Estado para feedback visual de salvamento
+  const [saving, setSaving] = useState(false);
   const [tabValue, setTabValue] = useState(0);
   const [applicants, setApplicants] = useState([]);
   const [allEvaluations, setAllEvaluations] = useState([]);
@@ -52,7 +120,17 @@ export default function JobDetails() {
       try {
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         setJob(jobData);
-        setParameters(jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] });
+        // Garante que 'notas' exista mesmo se vier null do banco
+        setParameters(jobData.parameters || { 
+            triagem: [], 
+            cultura: [], 
+            tecnico: [], 
+            notas: [
+                {id: '1', nome: 'Abaixo', valor: 0},
+                {id: '2', nome: 'Atende', valor: 50},
+                {id: '3', nome: 'Supera', valor: 100}
+            ] 
+        });
 
         const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', jobId);
         setApplicants(appsData || []);
@@ -156,7 +234,6 @@ export default function JobDetails() {
                 <Grid container spacing={3}>
                     <Grid item xs={12} md={8}>
                         <Paper sx={{ p: 3, height: '600px', display: 'flex', flexDirection: 'column' }} elevation={3}>
-                            {/* CABEÇALHO DO GRÁFICO MELHORADO */}
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, pb: 2, borderBottom: '1px solid #f0f0f0' }}>
                                 <Typography variant="h6" color="text.primary" fontWeight="bold">Comparativo de Desempenho</Typography>
                                 <FormControl size="small" sx={{ minWidth: 220 }}>
@@ -167,7 +244,6 @@ export default function JobDetails() {
                                     </Select>
                                 </FormControl>
                             </Box>
-                            
                             {processedData.chartData.some(d => d.total > 0) ? (
                                 <Box sx={{ flex: 1, width: '100%', minHeight: 0 }}>
                                     <ResponsiveContainer width="100%" height="100%">
@@ -202,11 +278,9 @@ export default function JobDetails() {
                                                 <LabelList dataKey="tecnico" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
                                             </Bar>
                                             
-                                            {/* BARRA DE MÉDIA GERAL DESTACADA */}
                                             <Bar dataKey="total" name="Média Geral" fill="#4caf50" barSize={20} radius={[0, 4, 4, 0]}>
                                                 <LabelList dataKey="total" position="right" style={{fontSize:'0.8rem', fontWeight:'bold', fill:'#2e7d32'}} />
                                             </Bar>
-                                            
                                             <ReferenceLine x={5} stroke="red" strokeDasharray="3 3" />
                                         </BarChart>
                                     </ResponsiveContainer>
@@ -242,9 +316,31 @@ export default function JobDetails() {
 
             {tabValue === 2 && (
                 <Box p={3} sx={{ bgcolor: 'white', borderRadius: 1, boxShadow: 1 }}>
-                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>1. Triagem</Typography><ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} /></Paper>
-                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>2. Fit Cultural</Typography><ParametersSection criteria={parameters?.cultura || []} onCriteriaChange={(c) => setParameters({...parameters, cultura: c})} /></Paper>
-                    <Paper variant="outlined" sx={{p:3, mb:3}}><Typography variant="subtitle1" fontWeight="bold" gutterBottom>3. Teste Técnico</Typography><ParametersSection criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} /></Paper>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}>
+                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>1. Triagem</Typography>
+                        <ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} />
+                    </Paper>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}>
+                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>2. Fit Cultural</Typography>
+                        <ParametersSection criteria={parameters?.cultura || []} onCriteriaChange={(c) => setParameters({...parameters, cultura: c})} />
+                    </Paper>
+                    <Paper variant="outlined" sx={{p:3, mb:3}}>
+                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>3. Teste Técnico</Typography>
+                        <ParametersSection criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} />
+                    </Paper>
+                    
+                    {/* AQUI ESTÁ A RÉGUA DE NOTAS QUE FALTAVA */}
+                    <Paper variant="outlined" sx={{p:3, mb:3, borderColor: 'orange'}}>
+                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom color="orange">4. Régua de Notas</Typography>
+                        <Typography variant="caption" color="text.secondary" gutterBottom>
+                            Defina os nomes e valores (0 a 100) que aparecerão nas opções de avaliação.
+                        </Typography>
+                        <RatingScaleSection 
+                            notes={parameters?.notas || []} 
+                            onNotesChange={(n) => setParameters({...parameters, notas: n})} 
+                        />
+                    </Paper>
+
                     <Box display="flex" justifyContent="flex-end">
                         <Button 
                             variant="contained" 
