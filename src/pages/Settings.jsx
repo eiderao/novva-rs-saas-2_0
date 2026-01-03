@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-import { Building, Users, ArrowLeft, Shield, Plus, Trash2, Mail, Lock, AlertCircle } from 'lucide-react';
+import { Building, Users, ArrowLeft, Shield, Plus, Trash2, Mail, Lock, AlertCircle, Briefcase, Crown } from 'lucide-react';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -13,7 +13,8 @@ export default function Settings() {
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
 
   // Estados para Novo Usuário
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'recruiter', isAdmin: false });
+  // ADICIONADO: campo 'role' (Cargo) iniciado vazio
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: '', isAdmin: false });
   const [isAddingUser, setIsAddingUser] = useState(false);
 
   useEffect(() => {
@@ -26,12 +27,12 @@ export default function Settings() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return navigate('/login');
 
-      // 1. Pega perfil do usuário logado diretamente
+      // 1. Pega perfil do usuário logado
       const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', session.user.id).single();
       setCurrentUserProfile(profile);
 
       if (profile?.tenantId) {
-        // 2. Busca EMPRESA diretamente (Leitura)
+        // 2. Busca EMPRESA
         const { data: tenantData } = await supabase
             .from('tenants')
             .select('*')
@@ -39,7 +40,7 @@ export default function Settings() {
             .single();
         setTenant(tenantData);
 
-        // 3. Busca EQUIPE diretamente (Leitura)
+        // 3. Busca EQUIPE
         const { data: teamData } = await supabase
             .from('user_profiles')
             .select('*')
@@ -55,11 +56,10 @@ export default function Settings() {
 
   const handleAddUser = async (e) => {
     e.preventDefault();
-    if (!newUser.name || !newUser.email || !newUser.password) return alert("Preencha todos os campos.");
+    if (!newUser.name || !newUser.email || !newUser.password) return alert("Preencha os campos obrigatórios.");
 
     const { data: { session } } = await supabase.auth.getSession();
     
-    // Tenta usar a API Serverless (Produção)
     try {
       const res = await fetch('/api/admin', {
         method: 'POST',
@@ -70,7 +70,9 @@ export default function Settings() {
         body: JSON.stringify({
             action: 'createUser',
             tenantId: tenant.id,
-            ...newUser
+            ...newUser,
+            // Garante que se o cargo estiver vazio, envia um padrão
+            role: newUser.role || (newUser.isAdmin ? 'Administrador' : 'Recrutador') 
         })
       });
 
@@ -79,12 +81,12 @@ export default function Settings() {
 
       alert("Usuário adicionado com sucesso!");
       setIsAddingUser(false);
-      setNewUser({ name: '', email: '', password: '', role: 'recruiter', isAdmin: false });
+      setNewUser({ name: '', email: '', password: '', role: '', isAdmin: false });
       fetchData();
       
     } catch (err) {
       console.error(err);
-      alert("Erro ao criar usuário: " + err.message + "\n\nNota: Em localhost, a criação de usuários depende da Vercel Functions rodando. Se estiver testando localmente, suba para a Vercel.");
+      alert("Erro ao criar usuário: " + err.message);
     }
   };
 
@@ -191,24 +193,43 @@ export default function Settings() {
                     <form onSubmit={handleAddUser}>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
                             <div>
-                                <label className="block text-xs font-bold text-blue-700 mb-1">Nome Completo</label>
+                                <label className="block text-xs font-bold text-blue-700 mb-1">Nome Completo *</label>
                                 <input required className="w-full border border-blue-200 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
                                     value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-blue-700 mb-1">E-mail Corporativo</label>
+                                <label className="block text-xs font-bold text-blue-700 mb-1">E-mail Corporativo *</label>
                                 <input required type="email" className="w-full border border-blue-200 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
                                     value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
                             </div>
+                            {/* NOVO CAMPO: CARGO */}
                             <div>
-                                <label className="block text-xs font-bold text-blue-700 mb-1">Senha Inicial</label>
+                                <label className="block text-xs font-bold text-blue-700 mb-1">Cargo / Função (Ex: Recrutador)</label>
+                                <div className="relative">
+                                    <Briefcase className="absolute left-3 top-2.5 text-blue-300 w-4 h-4" />
+                                    <input 
+                                        className="w-full border border-blue-200 p-2.5 pl-9 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
+                                        value={newUser.role} 
+                                        onChange={e => setNewUser({...newUser, role: e.target.value})} 
+                                        placeholder="Ex: Gerente de RH"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-blue-700 mb-1">Senha Inicial *</label>
                                 <input required type="password" className="w-full border border-blue-200 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
                                     value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
                             </div>
-                            <div className="flex items-center h-full pt-6">
-                                <label className="flex items-center gap-3 cursor-pointer bg-white px-4 py-2 rounded-lg border border-blue-200 w-full hover:bg-blue-50 transition">
-                                    <input type="checkbox" className="w-5 h-5 text-blue-600 rounded" checked={newUser.isAdmin} onChange={e => setNewUser({...newUser, isAdmin: e.target.checked})} />
-                                    <span className="text-sm font-medium text-blue-900">Dar acesso de Administrador?</span>
+                            <div className="flex items-center h-full pt-6 md:col-span-2">
+                                <label className={`flex items-center gap-3 cursor-pointer px-4 py-3 rounded-lg border w-full transition ${newUser.isAdmin ? 'bg-purple-50 border-purple-200' : 'bg-white border-blue-200 hover:bg-blue-50'}`}>
+                                    <input type="checkbox" className="w-5 h-5 text-purple-600 rounded" checked={newUser.isAdmin} onChange={e => setNewUser({...newUser, isAdmin: e.target.checked})} />
+                                    <div>
+                                        <span className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                                            {newUser.isAdmin ? <Crown size={14} className="text-purple-600"/> : null} 
+                                            Conceder acesso de Administrador?
+                                        </span>
+                                        <span className="text-xs text-gray-500 block">Administradores podem gerenciar configurações e remover usuários.</span>
+                                    </div>
                                 </label>
                             </div>
                         </div>
@@ -226,7 +247,8 @@ export default function Settings() {
                         <tr>
                             <th className="p-5 font-semibold text-slate-600 text-sm uppercase tracking-wide">Nome</th>
                             <th className="p-5 font-semibold text-slate-600 text-sm uppercase tracking-wide">Email</th>
-                            <th className="p-5 font-semibold text-slate-600 text-sm uppercase tracking-wide">Função</th>
+                            <th className="p-5 font-semibold text-slate-600 text-sm uppercase tracking-wide">Cargo</th>
+                            <th className="p-5 font-semibold text-slate-600 text-sm uppercase tracking-wide">Permissão</th>
                             <th className="p-5 font-semibold text-slate-600 text-sm uppercase tracking-wide text-right">Ações</th>
                         </tr>
                     </thead>
@@ -235,6 +257,7 @@ export default function Settings() {
                             <tr key={user.id} className="hover:bg-slate-50 transition-colors">
                                 <td className="p-5 font-medium text-slate-900">{user.name || 'Sem nome'}</td>
                                 <td className="p-5 text-slate-600 flex items-center gap-2"><Mail size={16} className="text-slate-400"/> {user.email}</td>
+                                <td className="p-5 text-slate-700 font-medium">{user.role}</td>
                                 <td className="p-5">
                                     <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ${user.isAdmin ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                                         {user.isAdmin ? 'Admin' : 'Membro'}

@@ -1,3 +1,4 @@
+// api/admin.js (VERSÃO RESTAURADA E CORRIGIDA)
 import { createClient } from '@supabase/supabase-js';
 
 // Função auxiliar de segurança e validação
@@ -22,12 +23,18 @@ async function validateAdmin(request) {
     .eq('id', user.id)
     .single();
 
+  // --- LINHAS RESTAURADAS (Acesso Super Admin Hardcoded) ---
   if (profileError || !userData) {
       if (user.email === 'eider@novvaempresa.com.br') { 
-          return { supabaseAdmin, requesterProfile: { is_admin_system: true, id: user.id }, requesterId: user.id };
+          return { 
+              supabaseAdmin, 
+              requesterProfile: { is_admin_system: true, id: user.id }, 
+              requesterId: user.id 
+          };
       }
       throw new Error('Perfil de usuário não encontrado.');
   }
+  // ---------------------------------------------------------
   
   return { supabaseAdmin, requesterProfile: userData, requesterId: user.id };
 }
@@ -213,7 +220,7 @@ export default async function handler(request, response) {
       // ---------------------------------------------------------------
 
       case 'createUser': {
-        const { email, password, name, isAdmin, tenantId } = request.body;
+        const { email, password, name, role, isAdmin, tenantId } = request.body;
         
         if (!isSuperAdmin && requesterProfile.tenantId !== tenantId) {
             return response.status(403).json({ error: 'Não autorizado para esta empresa.' });
@@ -224,23 +231,42 @@ export default async function handler(request, response) {
         });
         if (aErr) throw aErr;
 
-        const userRole = isAdmin ? 'admin' : 'recruiter';
+        // CORREÇÃO CRÍTICA: Prioriza o cargo (role) enviado, senão usa fallback
+        const finalRole = role || (isAdmin ? 'Administrador' : 'Recrutador');
 
         const { error: pErr } = await supabaseAdmin.from('user_profiles').insert({
             id: authUser.user.id, 
             name, 
             email, 
-            role: userRole, 
+            role: finalRole, // AQUI ESTÁ A CORREÇÃO
             tenantId, 
             active: true, 
-            is_admin_system: false
+            is_admin_system: false,
+            isAdmin: isAdmin || false // Mantém a flag de permissão
         });
+        
         if (pErr) {
             await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
             throw pErr;
         }
 
         return response.status(201).json({ message: 'Usuário criado.' });
+      }
+
+      case 'updateUser': {
+        // Caso simples usado pelo Settings.jsx (não admin) para atualizar dados básicos
+        const { userId, name, role, isAdmin } = request.body;
+        if (!userId) return response.status(400).json({ error: 'ID obrigatório.' });
+
+        const { data: updatedUser, error } = await supabaseAdmin
+          .from('user_profiles') // Verifique se sua tabela é 'users' ou 'user_profiles'. Mantive 'user_profiles' conforme padrão V2
+          .update({ name, role, isAdmin })
+          .eq('id', userId)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        return response.status(200).json({ message: 'Usuário atualizado!', updatedUser });
       }
 
       case 'deleteUser': {
