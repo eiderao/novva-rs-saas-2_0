@@ -2,12 +2,12 @@
 -- PostgreSQL database dump
 --
 
-\restrict NB1AMQBUDfbtCIdelXq5UzLaTssR7sYbeNUHqkFy1dSXjuf48bGQUcjmXXRY7ZF
+\restrict 9n85L6dW6CYA0zN91g5DgpNWB16yl0Ug3hdeEQyLJTss6qG0iM2naCOKCBNYcGw
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.0
 
--- Started on 2026-01-04 10:42:52
+-- Started on 2026-01-04 15:44:51
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -3954,9 +3954,8 @@ ALTER TABLE ONLY auth.refresh_tokens ALTER COLUMN id SET DEFAULT nextval('auth.r
 -- Data for Name: identities; Type: TABLE DATA; Schema: auth; Owner: supabase_auth_admin
 --
 
-INSERT INTO auth.identities VALUES ('631e295b-b7e9-4d8a-9d05-79898cef103f', '631e295b-b7e9-4d8a-9d05-79898cef103f', '{"sub": "631e295b-b7e9-4d8a-9d05-79898cef103f", "email": "eider@novvaempresa.com.br", "email_verified": false, "phone_verified": false}', 'email', '2025-12-19 11:53:04.762229+00', '2025-12-19 11:53:04.762296+00', '2025-12-19 11:53:04.762296+00', DEFAULT, '65504b38-12f5-4743-9a63-34ee59b94c56');
-INSERT INTO auth.identities VALUES ('844decb8-a0f0-4a74-ab02-ab1ba0001c5b', '844decb8-a0f0-4a74-ab02-ab1ba0001c5b', '{"sub": "844decb8-a0f0-4a74-ab02-ab1ba0001c5b", "email": "eider.arantes.oliveira@gmail.com", "email_verified": false, "phone_verified": false}', 'email', '2025-12-19 11:53:29.830876+00', '2025-12-19 11:53:29.830949+00', '2025-12-19 11:53:29.830949+00', DEFAULT, '599274b9-5bbb-466f-91b4-43f593917d99');
-INSERT INTO auth.identities VALUES ('e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', '{"sub": "e7dacb55-defb-4eee-b8ec-6d22a7cd67cb", "email": "emilia@serhumanobr.com.br", "email_verified": true, "phone_verified": false}', 'email', '2026-01-02 19:21:22.434404+00', '2026-01-02 19:21:22.435962+00', '2026-01-02 19:21:22.435962+00', DEFAULT, '9ae3fd09-0526-40b3-b90e-73b1d78c5080');
+INSERT INTO auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at, id) VALUES ('631e295b-b7e9-4d8a-9d05-79898cef103f', '631e295b-b7e9-4d8a-9d05-79898cef103f', '{"sub": "631e295b-b7e9-4d8a-9d05-79898cef103f", "email": "eider@novvaempresa.com.br", "email_verified": false, "phone_verified": false}', 'email', '2025-12-19 11:53:04.762229+00', '2025-12-19 11:53:04.762296+00', '2025-12-19 11:53:04.762296+00', '65504b38-12f5-4743-9a63-34ee59b94c56');
+INSERT INTO auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at, id) VALUES ('e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', '{"sub": "e7dacb55-defb-4eee-b8ec-6d22a7cd67cb", "email": "emilia@serhumanobr.com.br", "email_verified": true, "phone_verified": false}', 'email', '2026-01-02 19:21:22.434404+00', '2026-01-02 19:21:22.435962+00', '2026-01-02 19:21:22.435962+00', '9ae3fd09-0526-40b3-b90e-73b1d78c5080');
 
 
 --
@@ -3973,7 +3972,7 @@ INSERT INTO auth.identities VALUES ('e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', 'e7d
 -- Data for Name: mfa_amr_claims; Type: TABLE DATA; Schema: auth; Owner: supabase_auth_admin
 --
 
-INSERT INTO auth.mfa_amr_claims VALUES ('a6d340d0-5e73-4550-8cf7-4ad808462f34', '2026-01-04 13:30:18.798774+00', '2026-01-04 13:30:18.798774+00', 'password', '2830e2e1-3719-45fe-9619-ce11c49a3374');
+INSERT INTO auth.mfa_amr_claims (session_id, created_at, updated_at, authentication_method, id) VALUES ('cd538032-1493-4133-921f-8eac82f5ee45', '2026-01-04 18:28:37.990963+00', '2026-01-04 18:28:37.990963+00', 'password', '915c6600-54ef-49e3-bb32-547baf43fcb3');
 
 
 --
@@ -4030,7 +4029,7 @@ INSERT INTO auth.mfa_amr_claims VALUES ('a6d340d0-5e73-4550-8cf7-4ad808462f34', 
 -- Data for Name: one_time_tokens; Type: TABLE DATA; Schema: auth; Owner: supabase_auth_admin
 --
 
-INSERT INTO auth.one_time_tokens VALUES ('059a440f-3146-4697-898e-4d04b79e7ee0', '631e295b-b7e9-4d8a-9d05-79898cef103f', 'recovery_token', 'c036d2399be60156fe727c4952a6a1aa119c2c478ebecf8c107fc604', 'eider@novvaempresa.com.br', '2025-12-19 12:13:28.337693', '2025-12-19 12:13:28.337693');
+INSERT INTO auth.one_time_tokens (id, user_id, token_type, token_hash, relates_to, created_at, updated_at) VALUES ('059a440f-3146-4697-898e-4d04b79e7ee0', '631e295b-b7e9-4d8a-9d05-79898cef103f', 'recovery_token', 'c036d2399be60156fe727c4952a6a1aa119c2c478ebecf8c107fc604', 'eider@novvaempresa.com.br', '2025-12-19 12:13:28.337693', '2025-12-19 12:13:28.337693');
 
 
 --
@@ -4039,7 +4038,7 @@ INSERT INTO auth.one_time_tokens VALUES ('059a440f-3146-4697-898e-4d04b79e7ee0',
 -- Data for Name: refresh_tokens; Type: TABLE DATA; Schema: auth; Owner: supabase_auth_admin
 --
 
-INSERT INTO auth.refresh_tokens VALUES ('00000000-0000-0000-0000-000000000000', 163, '5kqyjf3hnxbn', 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', false, '2026-01-04 13:30:18.775887+00', '2026-01-04 13:30:18.775887+00', NULL, 'a6d340d0-5e73-4550-8cf7-4ad808462f34');
+INSERT INTO auth.refresh_tokens (instance_id, id, token, user_id, revoked, created_at, updated_at, parent, session_id) VALUES ('00000000-0000-0000-0000-000000000000', 178, '5t7sekj4s4yt', '631e295b-b7e9-4d8a-9d05-79898cef103f', false, '2026-01-04 18:28:37.982108+00', '2026-01-04 18:28:37.982108+00', NULL, 'cd538032-1493-4133-921f-8eac82f5ee45');
 
 
 --
@@ -4064,78 +4063,78 @@ INSERT INTO auth.refresh_tokens VALUES ('00000000-0000-0000-0000-000000000000', 
 -- Data for Name: schema_migrations; Type: TABLE DATA; Schema: auth; Owner: supabase_auth_admin
 --
 
-INSERT INTO auth.schema_migrations VALUES ('20171026211738');
-INSERT INTO auth.schema_migrations VALUES ('20171026211808');
-INSERT INTO auth.schema_migrations VALUES ('20171026211834');
-INSERT INTO auth.schema_migrations VALUES ('20180103212743');
-INSERT INTO auth.schema_migrations VALUES ('20180108183307');
-INSERT INTO auth.schema_migrations VALUES ('20180119214651');
-INSERT INTO auth.schema_migrations VALUES ('20180125194653');
-INSERT INTO auth.schema_migrations VALUES ('00');
-INSERT INTO auth.schema_migrations VALUES ('20210710035447');
-INSERT INTO auth.schema_migrations VALUES ('20210722035447');
-INSERT INTO auth.schema_migrations VALUES ('20210730183235');
-INSERT INTO auth.schema_migrations VALUES ('20210909172000');
-INSERT INTO auth.schema_migrations VALUES ('20210927181326');
-INSERT INTO auth.schema_migrations VALUES ('20211122151130');
-INSERT INTO auth.schema_migrations VALUES ('20211124214934');
-INSERT INTO auth.schema_migrations VALUES ('20211202183645');
-INSERT INTO auth.schema_migrations VALUES ('20220114185221');
-INSERT INTO auth.schema_migrations VALUES ('20220114185340');
-INSERT INTO auth.schema_migrations VALUES ('20220224000811');
-INSERT INTO auth.schema_migrations VALUES ('20220323170000');
-INSERT INTO auth.schema_migrations VALUES ('20220429102000');
-INSERT INTO auth.schema_migrations VALUES ('20220531120530');
-INSERT INTO auth.schema_migrations VALUES ('20220614074223');
-INSERT INTO auth.schema_migrations VALUES ('20220811173540');
-INSERT INTO auth.schema_migrations VALUES ('20221003041349');
-INSERT INTO auth.schema_migrations VALUES ('20221003041400');
-INSERT INTO auth.schema_migrations VALUES ('20221011041400');
-INSERT INTO auth.schema_migrations VALUES ('20221020193600');
-INSERT INTO auth.schema_migrations VALUES ('20221021073300');
-INSERT INTO auth.schema_migrations VALUES ('20221021082433');
-INSERT INTO auth.schema_migrations VALUES ('20221027105023');
-INSERT INTO auth.schema_migrations VALUES ('20221114143122');
-INSERT INTO auth.schema_migrations VALUES ('20221114143410');
-INSERT INTO auth.schema_migrations VALUES ('20221125140132');
-INSERT INTO auth.schema_migrations VALUES ('20221208132122');
-INSERT INTO auth.schema_migrations VALUES ('20221215195500');
-INSERT INTO auth.schema_migrations VALUES ('20221215195800');
-INSERT INTO auth.schema_migrations VALUES ('20221215195900');
-INSERT INTO auth.schema_migrations VALUES ('20230116124310');
-INSERT INTO auth.schema_migrations VALUES ('20230116124412');
-INSERT INTO auth.schema_migrations VALUES ('20230131181311');
-INSERT INTO auth.schema_migrations VALUES ('20230322519590');
-INSERT INTO auth.schema_migrations VALUES ('20230402418590');
-INSERT INTO auth.schema_migrations VALUES ('20230411005111');
-INSERT INTO auth.schema_migrations VALUES ('20230508135423');
-INSERT INTO auth.schema_migrations VALUES ('20230523124323');
-INSERT INTO auth.schema_migrations VALUES ('20230818113222');
-INSERT INTO auth.schema_migrations VALUES ('20230914180801');
-INSERT INTO auth.schema_migrations VALUES ('20231027141322');
-INSERT INTO auth.schema_migrations VALUES ('20231114161723');
-INSERT INTO auth.schema_migrations VALUES ('20231117164230');
-INSERT INTO auth.schema_migrations VALUES ('20240115144230');
-INSERT INTO auth.schema_migrations VALUES ('20240214120130');
-INSERT INTO auth.schema_migrations VALUES ('20240306115329');
-INSERT INTO auth.schema_migrations VALUES ('20240314092811');
-INSERT INTO auth.schema_migrations VALUES ('20240427152123');
-INSERT INTO auth.schema_migrations VALUES ('20240612123726');
-INSERT INTO auth.schema_migrations VALUES ('20240729123726');
-INSERT INTO auth.schema_migrations VALUES ('20240802193726');
-INSERT INTO auth.schema_migrations VALUES ('20240806073726');
-INSERT INTO auth.schema_migrations VALUES ('20241009103726');
-INSERT INTO auth.schema_migrations VALUES ('20250717082212');
-INSERT INTO auth.schema_migrations VALUES ('20250731150234');
-INSERT INTO auth.schema_migrations VALUES ('20250804100000');
-INSERT INTO auth.schema_migrations VALUES ('20250901200500');
-INSERT INTO auth.schema_migrations VALUES ('20250903112500');
-INSERT INTO auth.schema_migrations VALUES ('20250904133000');
-INSERT INTO auth.schema_migrations VALUES ('20250925093508');
-INSERT INTO auth.schema_migrations VALUES ('20251007112900');
-INSERT INTO auth.schema_migrations VALUES ('20251104100000');
-INSERT INTO auth.schema_migrations VALUES ('20251111201300');
-INSERT INTO auth.schema_migrations VALUES ('20251201000000');
+INSERT INTO auth.schema_migrations (version) VALUES ('20171026211738');
+INSERT INTO auth.schema_migrations (version) VALUES ('20171026211808');
+INSERT INTO auth.schema_migrations (version) VALUES ('20171026211834');
+INSERT INTO auth.schema_migrations (version) VALUES ('20180103212743');
+INSERT INTO auth.schema_migrations (version) VALUES ('20180108183307');
+INSERT INTO auth.schema_migrations (version) VALUES ('20180119214651');
+INSERT INTO auth.schema_migrations (version) VALUES ('20180125194653');
+INSERT INTO auth.schema_migrations (version) VALUES ('00');
+INSERT INTO auth.schema_migrations (version) VALUES ('20210710035447');
+INSERT INTO auth.schema_migrations (version) VALUES ('20210722035447');
+INSERT INTO auth.schema_migrations (version) VALUES ('20210730183235');
+INSERT INTO auth.schema_migrations (version) VALUES ('20210909172000');
+INSERT INTO auth.schema_migrations (version) VALUES ('20210927181326');
+INSERT INTO auth.schema_migrations (version) VALUES ('20211122151130');
+INSERT INTO auth.schema_migrations (version) VALUES ('20211124214934');
+INSERT INTO auth.schema_migrations (version) VALUES ('20211202183645');
+INSERT INTO auth.schema_migrations (version) VALUES ('20220114185221');
+INSERT INTO auth.schema_migrations (version) VALUES ('20220114185340');
+INSERT INTO auth.schema_migrations (version) VALUES ('20220224000811');
+INSERT INTO auth.schema_migrations (version) VALUES ('20220323170000');
+INSERT INTO auth.schema_migrations (version) VALUES ('20220429102000');
+INSERT INTO auth.schema_migrations (version) VALUES ('20220531120530');
+INSERT INTO auth.schema_migrations (version) VALUES ('20220614074223');
+INSERT INTO auth.schema_migrations (version) VALUES ('20220811173540');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221003041349');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221003041400');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221011041400');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221020193600');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221021073300');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221021082433');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221027105023');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221114143122');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221114143410');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221125140132');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221208132122');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221215195500');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221215195800');
+INSERT INTO auth.schema_migrations (version) VALUES ('20221215195900');
+INSERT INTO auth.schema_migrations (version) VALUES ('20230116124310');
+INSERT INTO auth.schema_migrations (version) VALUES ('20230116124412');
+INSERT INTO auth.schema_migrations (version) VALUES ('20230131181311');
+INSERT INTO auth.schema_migrations (version) VALUES ('20230322519590');
+INSERT INTO auth.schema_migrations (version) VALUES ('20230402418590');
+INSERT INTO auth.schema_migrations (version) VALUES ('20230411005111');
+INSERT INTO auth.schema_migrations (version) VALUES ('20230508135423');
+INSERT INTO auth.schema_migrations (version) VALUES ('20230523124323');
+INSERT INTO auth.schema_migrations (version) VALUES ('20230818113222');
+INSERT INTO auth.schema_migrations (version) VALUES ('20230914180801');
+INSERT INTO auth.schema_migrations (version) VALUES ('20231027141322');
+INSERT INTO auth.schema_migrations (version) VALUES ('20231114161723');
+INSERT INTO auth.schema_migrations (version) VALUES ('20231117164230');
+INSERT INTO auth.schema_migrations (version) VALUES ('20240115144230');
+INSERT INTO auth.schema_migrations (version) VALUES ('20240214120130');
+INSERT INTO auth.schema_migrations (version) VALUES ('20240306115329');
+INSERT INTO auth.schema_migrations (version) VALUES ('20240314092811');
+INSERT INTO auth.schema_migrations (version) VALUES ('20240427152123');
+INSERT INTO auth.schema_migrations (version) VALUES ('20240612123726');
+INSERT INTO auth.schema_migrations (version) VALUES ('20240729123726');
+INSERT INTO auth.schema_migrations (version) VALUES ('20240802193726');
+INSERT INTO auth.schema_migrations (version) VALUES ('20240806073726');
+INSERT INTO auth.schema_migrations (version) VALUES ('20241009103726');
+INSERT INTO auth.schema_migrations (version) VALUES ('20250717082212');
+INSERT INTO auth.schema_migrations (version) VALUES ('20250731150234');
+INSERT INTO auth.schema_migrations (version) VALUES ('20250804100000');
+INSERT INTO auth.schema_migrations (version) VALUES ('20250901200500');
+INSERT INTO auth.schema_migrations (version) VALUES ('20250903112500');
+INSERT INTO auth.schema_migrations (version) VALUES ('20250904133000');
+INSERT INTO auth.schema_migrations (version) VALUES ('20250925093508');
+INSERT INTO auth.schema_migrations (version) VALUES ('20251007112900');
+INSERT INTO auth.schema_migrations (version) VALUES ('20251104100000');
+INSERT INTO auth.schema_migrations (version) VALUES ('20251111201300');
+INSERT INTO auth.schema_migrations (version) VALUES ('20251201000000');
 
 
 --
@@ -4144,7 +4143,7 @@ INSERT INTO auth.schema_migrations VALUES ('20251201000000');
 -- Data for Name: sessions; Type: TABLE DATA; Schema: auth; Owner: supabase_auth_admin
 --
 
-INSERT INTO auth.sessions VALUES ('a6d340d0-5e73-4550-8cf7-4ad808462f34', 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', '2026-01-04 13:30:18.731342+00', '2026-01-04 13:30:18.731342+00', NULL, 'aal1', NULL, NULL, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36', '189.37.78.15', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO auth.sessions (id, user_id, created_at, updated_at, factor_id, aal, not_after, refreshed_at, user_agent, ip, tag, oauth_client_id, refresh_token_hmac_key, refresh_token_counter, scopes) VALUES ('cd538032-1493-4133-921f-8eac82f5ee45', '631e295b-b7e9-4d8a-9d05-79898cef103f', '2026-01-04 18:28:37.971517+00', '2026-01-04 18:28:37.971517+00', NULL, 'aal1', NULL, NULL, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36', '189.37.78.15', NULL, NULL, NULL, NULL, NULL);
 
 
 --
@@ -4169,9 +4168,8 @@ INSERT INTO auth.sessions VALUES ('a6d340d0-5e73-4550-8cf7-4ad808462f34', 'e7dac
 -- Data for Name: users; Type: TABLE DATA; Schema: auth; Owner: supabase_auth_admin
 --
 
-INSERT INTO auth.users VALUES ('00000000-0000-0000-0000-000000000000', '844decb8-a0f0-4a74-ab02-ab1ba0001c5b', 'authenticated', 'authenticated', 'eider.arantes.oliveira@gmail.com', '$2a$10$7VXkRqEYRkcnNlULQzfepusDOtKCfz2r5D9KH9U4qdHZOuNXYKbWK', '2025-12-19 11:53:29.836814+00', NULL, '', NULL, '', NULL, '', '', NULL, '2026-01-02 15:14:53.861161+00', '{"provider": "email", "providers": ["email"]}', '{"email_verified": true}', NULL, '2025-12-19 11:53:29.825701+00', '2026-01-02 16:42:39.099514+00', NULL, NULL, '', '', NULL, DEFAULT, '', 0, NULL, '', NULL, false, NULL, false);
-INSERT INTO auth.users VALUES ('00000000-0000-0000-0000-000000000000', '631e295b-b7e9-4d8a-9d05-79898cef103f', 'authenticated', 'authenticated', 'eider@novvaempresa.com.br', '$2a$10$YIXVVuj213iSuHEKlqGP5.l2hmAsRy4RkmVFGotTGnt0TkXemGX4O', '2025-12-19 11:53:04.790031+00', NULL, '', NULL, 'c036d2399be60156fe727c4952a6a1aa119c2c478ebecf8c107fc604', '2025-12-19 12:13:26.491536+00', '', '', NULL, '2026-01-04 13:30:06.948792+00', '{"provider": "email", "providers": ["email"]}', '{"email_verified": true}', NULL, '2025-12-19 11:53:04.67957+00', '2026-01-04 13:30:06.993231+00', NULL, NULL, '', '', NULL, DEFAULT, '', 0, NULL, '', NULL, false, NULL, false);
-INSERT INTO auth.users VALUES ('00000000-0000-0000-0000-000000000000', 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', 'authenticated', 'authenticated', 'emilia@serhumanobr.com.br', '$2a$10$pyNFKLOMJ8AoA.g8SROyj.hnsdDpC4v8q8iZ.uCY7EGdUJd2J7vDy', '2026-01-02 19:24:08.336641+00', NULL, '', NULL, '', NULL, '', '', NULL, '2026-01-04 13:30:18.725866+00', '{"provider": "email", "providers": ["email"]}', '{"name": "Emília Ferrari", "email_verified": true}', NULL, '2026-01-02 19:21:22.423824+00', '2026-01-04 13:30:18.796005+00', NULL, NULL, '', '', NULL, DEFAULT, '', 0, NULL, '', NULL, false, NULL, false);
+INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, invited_at, confirmation_token, confirmation_sent_at, recovery_token, recovery_sent_at, email_change_token_new, email_change, email_change_sent_at, last_sign_in_at, raw_app_meta_data, raw_user_meta_data, is_super_admin, created_at, updated_at, phone, phone_confirmed_at, phone_change, phone_change_token, phone_change_sent_at, email_change_token_current, email_change_confirm_status, banned_until, reauthentication_token, reauthentication_sent_at, is_sso_user, deleted_at, is_anonymous) VALUES ('00000000-0000-0000-0000-000000000000', 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', 'authenticated', 'authenticated', 'emilia@serhumanobr.com.br', '$2a$10$pyNFKLOMJ8AoA.g8SROyj.hnsdDpC4v8q8iZ.uCY7EGdUJd2J7vDy', '2026-01-02 19:24:08.336641+00', NULL, '', NULL, '', NULL, '', '', NULL, '2026-01-04 18:20:19.240565+00', '{"provider": "email", "providers": ["email"]}', '{"name": "Emília Ferrari", "email_verified": true}', NULL, '2026-01-02 19:21:22.423824+00', '2026-01-04 18:20:19.250144+00', NULL, NULL, '', '', NULL, '', 0, NULL, '', NULL, false, NULL, false);
+INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, invited_at, confirmation_token, confirmation_sent_at, recovery_token, recovery_sent_at, email_change_token_new, email_change, email_change_sent_at, last_sign_in_at, raw_app_meta_data, raw_user_meta_data, is_super_admin, created_at, updated_at, phone, phone_confirmed_at, phone_change, phone_change_token, phone_change_sent_at, email_change_token_current, email_change_confirm_status, banned_until, reauthentication_token, reauthentication_sent_at, is_sso_user, deleted_at, is_anonymous) VALUES ('00000000-0000-0000-0000-000000000000', '631e295b-b7e9-4d8a-9d05-79898cef103f', 'authenticated', 'authenticated', 'eider@novvaempresa.com.br', '$2a$10$YIXVVuj213iSuHEKlqGP5.l2hmAsRy4RkmVFGotTGnt0TkXemGX4O', '2025-12-19 11:53:04.790031+00', NULL, '', NULL, 'c036d2399be60156fe727c4952a6a1aa119c2c478ebecf8c107fc604', '2025-12-19 12:13:26.491536+00', '', '', NULL, '2026-01-04 18:28:37.970744+00', '{"provider": "email", "providers": ["email"]}', '{"email_verified": true}', NULL, '2025-12-19 11:53:04.67957+00', '2026-01-04 18:28:37.989534+00', NULL, NULL, '', '', NULL, '', 0, NULL, '', NULL, false, NULL, false);
 
 
 --
@@ -4180,12 +4178,12 @@ INSERT INTO auth.users VALUES ('00000000-0000-0000-0000-000000000000', 'e7dacb55
 -- Data for Name: applications; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-INSERT INTO public.applications VALUES (1, '2025-12-19 14:55:29.599431+00', 1, NULL, NULL, NULL, NULL, 'new', NULL, NULL, NULL, '{}', 0.00, false, NULL, '4a96d442-8386-4b68-827d-ce586713171a', '{"city": "Uberlândia", "name": "José da Silva Souza", "email": "teste@teste.com.br", "jobId": "1", "phone": "34999999999", "state": "MG", "course": "Engenharia", "source": "LinkedIn", "birthDate": "1991-07-10T03:00:00.000Z", "motivation": "gosto da empresa", "institution": "USP", "englishLevel": "fluente", "hasGraduated": "sim", "spanishLevel": "basico", "preferredName": "Zé", "completionYear": "2011"}', 'teste_teste_com_br_1766156128277.pdf', false, NULL);
-INSERT INTO public.applications VALUES (2, '2025-12-22 14:34:34.690985+00', 2, NULL, NULL, NULL, NULL, 'new', NULL, NULL, NULL, '{}', 0.00, false, NULL, '72fccae5-ba96-45b6-b6e6-9a022a24f2f4', '{"city": "Uberlândia", "name": "Maria Joana Cruz", "email": "eider@novvaempresa.com.br", "jobId": "2", "phone": "34999999999", "state": "MG", "course": "Engenharia", "birthDate": "1991-07-10", "motivation": "Sei lá", "institution": "USP", "englishLevel": "fluente", "hasGraduated": "sim", "spanishLevel": "basico", "githubProfile": "https://github.com/eiderao", "preferredName": "Maju", "completionYear": "2011", "linkedinProfile": "www.linkedin.com/in/eider-arantes-de-oliveira-11051a2"}', 'eider_novvaempresa_com_br_1766414073143.pdf', false, NULL);
-INSERT INTO public.applications VALUES (4, '2025-12-23 16:15:06.327267+00', 9, NULL, NULL, NULL, NULL, 'new', NULL, NULL, NULL, '{}', 0.00, false, NULL, '59abc2e1-edd9-4406-8337-e30cdb3d5cb2', '{"education": {"date": "2009", "level": "superior", "course": "Engenharia", "period": "", "status": "completo", "institution": "UFU"}, "applied_at": "2025-12-23T16:15:05.203Z", "motivation": "Cultura da empresa me atrai"}', NULL, false, NULL);
-INSERT INTO public.applications VALUES (3, '2025-12-22 19:14:32.049282+00', 9, NULL, NULL, NULL, NULL, 'new', NULL, NULL, NULL, '{}', 7.77, false, NULL, '4a96d442-8386-4b68-827d-ce586713171a', '{"motivation": "Quero muito essa vaga!"}', NULL, true, '2025-12-25 19:33:46.578+00');
-INSERT INTO public.applications VALUES (6, '2026-01-02 20:01:29.910007+00', 10, NULL, NULL, NULL, NULL, 'new', NULL, NULL, NULL, '{}', 0.00, false, NULL, '1aa28238-b81d-4ba2-ae1d-4cad9f03c8b2', '{"education": {"date": "2011", "level": "pos", "course": "Engenharia Elétrica", "period": "", "status": "completo", "institution": "UFU"}, "applied_at": "2026-01-02T20:01:27.481Z", "motivation": "Porque eu me identifico com os valores da empresa"}', NULL, false, NULL);
-INSERT INTO public.applications VALUES (5, '2025-12-23 16:19:20.10397+00', 9, NULL, NULL, NULL, NULL, 'new', NULL, NULL, NULL, '{}', 0.00, false, NULL, '432b5301-686e-429a-92c2-517eb221f611', '{"education": {"date": "2012", "level": "pos", "course": "Engenharia de Produção", "period": "", "status": "completo", "institution": "Unicamp"}, "applied_at": "2025-12-23T16:19:19.010Z", "motivation": "Sei não"}', NULL, false, NULL);
+INSERT INTO public.applications (id, created_at, "jobId", name, email, phone, linkedin, status, "tenantId", form_data, resume_url, evaluation, score_general, is_hired, hired_at, "candidateId", "formData", "resumeUrl", "isHired", "hiredAt") VALUES (1, '2025-12-19 14:55:29.599431+00', 1, NULL, NULL, NULL, NULL, 'new', NULL, NULL, NULL, '{}', 0.00, false, NULL, '4a96d442-8386-4b68-827d-ce586713171a', '{"city": "Uberlândia", "name": "José da Silva Souza", "email": "teste@teste.com.br", "jobId": "1", "phone": "34999999999", "state": "MG", "course": "Engenharia", "source": "LinkedIn", "birthDate": "1991-07-10T03:00:00.000Z", "motivation": "gosto da empresa", "institution": "USP", "englishLevel": "fluente", "hasGraduated": "sim", "spanishLevel": "basico", "preferredName": "Zé", "completionYear": "2011"}', 'teste_teste_com_br_1766156128277.pdf', false, NULL);
+INSERT INTO public.applications (id, created_at, "jobId", name, email, phone, linkedin, status, "tenantId", form_data, resume_url, evaluation, score_general, is_hired, hired_at, "candidateId", "formData", "resumeUrl", "isHired", "hiredAt") VALUES (2, '2025-12-22 14:34:34.690985+00', 2, NULL, NULL, NULL, NULL, 'new', NULL, NULL, NULL, '{}', 0.00, false, NULL, '72fccae5-ba96-45b6-b6e6-9a022a24f2f4', '{"city": "Uberlândia", "name": "Maria Joana Cruz", "email": "eider@novvaempresa.com.br", "jobId": "2", "phone": "34999999999", "state": "MG", "course": "Engenharia", "birthDate": "1991-07-10", "motivation": "Sei lá", "institution": "USP", "englishLevel": "fluente", "hasGraduated": "sim", "spanishLevel": "basico", "githubProfile": "https://github.com/eiderao", "preferredName": "Maju", "completionYear": "2011", "linkedinProfile": "www.linkedin.com/in/eider-arantes-de-oliveira-11051a2"}', 'eider_novvaempresa_com_br_1766414073143.pdf', false, NULL);
+INSERT INTO public.applications (id, created_at, "jobId", name, email, phone, linkedin, status, "tenantId", form_data, resume_url, evaluation, score_general, is_hired, hired_at, "candidateId", "formData", "resumeUrl", "isHired", "hiredAt") VALUES (4, '2025-12-23 16:15:06.327267+00', 9, NULL, NULL, NULL, NULL, 'new', NULL, NULL, NULL, '{}', 0.00, false, NULL, '59abc2e1-edd9-4406-8337-e30cdb3d5cb2', '{"education": {"date": "2009", "level": "superior", "course": "Engenharia", "period": "", "status": "completo", "institution": "UFU"}, "applied_at": "2025-12-23T16:15:05.203Z", "motivation": "Cultura da empresa me atrai"}', NULL, false, NULL);
+INSERT INTO public.applications (id, created_at, "jobId", name, email, phone, linkedin, status, "tenantId", form_data, resume_url, evaluation, score_general, is_hired, hired_at, "candidateId", "formData", "resumeUrl", "isHired", "hiredAt") VALUES (3, '2025-12-22 19:14:32.049282+00', 9, NULL, NULL, NULL, NULL, 'new', NULL, NULL, NULL, '{}', 7.77, false, NULL, '4a96d442-8386-4b68-827d-ce586713171a', '{"motivation": "Quero muito essa vaga!"}', NULL, true, '2025-12-25 19:33:46.578+00');
+INSERT INTO public.applications (id, created_at, "jobId", name, email, phone, linkedin, status, "tenantId", form_data, resume_url, evaluation, score_general, is_hired, hired_at, "candidateId", "formData", "resumeUrl", "isHired", "hiredAt") VALUES (6, '2026-01-02 20:01:29.910007+00', 10, NULL, NULL, NULL, NULL, 'new', NULL, NULL, NULL, '{}', 0.00, false, NULL, '1aa28238-b81d-4ba2-ae1d-4cad9f03c8b2', '{"education": {"date": "2011", "level": "pos", "course": "Engenharia Elétrica", "period": "", "status": "completo", "institution": "UFU"}, "applied_at": "2026-01-02T20:01:27.481Z", "motivation": "Porque eu me identifico com os valores da empresa"}', NULL, false, NULL);
+INSERT INTO public.applications (id, created_at, "jobId", name, email, phone, linkedin, status, "tenantId", form_data, resume_url, evaluation, score_general, is_hired, hired_at, "candidateId", "formData", "resumeUrl", "isHired", "hiredAt") VALUES (5, '2025-12-23 16:19:20.10397+00', 9, NULL, NULL, NULL, NULL, 'new', NULL, NULL, NULL, '{}', 0.00, false, NULL, '432b5301-686e-429a-92c2-517eb221f611', '{"education": {"date": "2012", "level": "pos", "course": "Engenharia de Produção", "period": "", "status": "completo", "institution": "Unicamp"}, "applied_at": "2025-12-23T16:19:19.010Z", "motivation": "Sei não"}', NULL, false, NULL);
 
 
 --
@@ -4194,12 +4192,12 @@ INSERT INTO public.applications VALUES (5, '2025-12-23 16:19:20.10397+00', 9, NU
 -- Data for Name: candidates; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-INSERT INTO public.candidates VALUES ('4a96d442-8386-4b68-827d-ce586713171a', 'José da Silva Souza', 'teste@teste.com.br', NULL, NULL, NULL, NULL, NULL, NULL, '2025-12-19 14:51:01.164798+00', '2025-12-19 14:51:01.164798+00');
-INSERT INTO public.candidates VALUES ('72fccae5-ba96-45b6-b6e6-9a022a24f2f4', 'Maria Joana Cruz', 'eider@novvaempresa.com.br', NULL, NULL, NULL, NULL, NULL, NULL, '2025-12-22 14:34:34.482581+00', '2025-12-22 14:34:34.482581+00');
-INSERT INTO public.candidates VALUES ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'João da Silva', 'joao@teste.com', NULL, 'São Paulo', NULL, NULL, NULL, NULL, '2025-12-22 19:04:29.13381+00', '2025-12-22 19:04:29.13381+00');
-INSERT INTO public.candidates VALUES ('59abc2e1-edd9-4406-8337-e30cdb3d5cb2', 'Caio A Oliveira', 'caio@gmail.com', '34999999999', 'Uberlândia ', 'MG', '', '', 'https://drive.google.com/drive/u/0/folders/0BxnNN9l-rudtbFRqX05YS1RLak0', '2025-12-23 16:15:06.165156+00', '2025-12-23 16:15:04.808+00');
-INSERT INTO public.candidates VALUES ('432b5301-686e-429a-92c2-517eb221f611', 'Alexandre o Grande', 'alebig@hotmail.com', '11999999999', 'São Paulo', 'SP', '', '', 'https://rqffrviggegfmxtktnee.supabase.co/storage/v1/object/public/resumes/1766506758246_z3hjoe4y8.pdf', '2025-12-23 16:19:20.051698+00', '2025-12-23 16:19:18.915+00');
-INSERT INTO public.candidates VALUES ('1aa28238-b81d-4ba2-ae1d-4cad9f03c8b2', 'José da Silva Jr', 'dasilvajr@gmail.com', '11995955959', 'São Paulo', 'SP', 'www.linkedin.com/in/eider-arantes-de-oliveira-11051a2', 'https://github.com/eiderao', 'https://rqffrviggegfmxtktnee.supabase.co/storage/v1/object/public/resumes/1767384086358_h64zuz3ko.pdf', '2026-01-02 20:01:29.722569+00', '2026-01-02 20:01:27.197+00');
+INSERT INTO public.candidates (id, name, email, phone, city, state, linkedin_profile, github_profile, resume_url, created_at, updated_at) VALUES ('4a96d442-8386-4b68-827d-ce586713171a', 'José da Silva Souza', 'teste@teste.com.br', NULL, NULL, NULL, NULL, NULL, NULL, '2025-12-19 14:51:01.164798+00', '2025-12-19 14:51:01.164798+00');
+INSERT INTO public.candidates (id, name, email, phone, city, state, linkedin_profile, github_profile, resume_url, created_at, updated_at) VALUES ('72fccae5-ba96-45b6-b6e6-9a022a24f2f4', 'Maria Joana Cruz', 'eider@novvaempresa.com.br', NULL, NULL, NULL, NULL, NULL, NULL, '2025-12-22 14:34:34.482581+00', '2025-12-22 14:34:34.482581+00');
+INSERT INTO public.candidates (id, name, email, phone, city, state, linkedin_profile, github_profile, resume_url, created_at, updated_at) VALUES ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'João da Silva', 'joao@teste.com', NULL, 'São Paulo', NULL, NULL, NULL, NULL, '2025-12-22 19:04:29.13381+00', '2025-12-22 19:04:29.13381+00');
+INSERT INTO public.candidates (id, name, email, phone, city, state, linkedin_profile, github_profile, resume_url, created_at, updated_at) VALUES ('59abc2e1-edd9-4406-8337-e30cdb3d5cb2', 'Caio A Oliveira', 'caio@gmail.com', '34999999999', 'Uberlândia ', 'MG', '', '', 'https://drive.google.com/drive/u/0/folders/0BxnNN9l-rudtbFRqX05YS1RLak0', '2025-12-23 16:15:06.165156+00', '2025-12-23 16:15:04.808+00');
+INSERT INTO public.candidates (id, name, email, phone, city, state, linkedin_profile, github_profile, resume_url, created_at, updated_at) VALUES ('432b5301-686e-429a-92c2-517eb221f611', 'Alexandre o Grande', 'alebig@hotmail.com', '11999999999', 'São Paulo', 'SP', '', '', 'https://rqffrviggegfmxtktnee.supabase.co/storage/v1/object/public/resumes/1766506758246_z3hjoe4y8.pdf', '2025-12-23 16:19:20.051698+00', '2025-12-23 16:19:18.915+00');
+INSERT INTO public.candidates (id, name, email, phone, city, state, linkedin_profile, github_profile, resume_url, created_at, updated_at) VALUES ('1aa28238-b81d-4ba2-ae1d-4cad9f03c8b2', 'José da Silva Jr', 'dasilvajr@gmail.com', '11995955959', 'São Paulo', 'SP', 'www.linkedin.com/in/eider-arantes-de-oliveira-11051a2', 'https://github.com/eiderao', 'https://rqffrviggegfmxtktnee.supabase.co/storage/v1/object/public/resumes/1767384086358_h64zuz3ko.pdf', '2026-01-02 20:01:29.722569+00', '2026-01-02 20:01:27.197+00');
 
 
 --
@@ -4208,10 +4206,10 @@ INSERT INTO public.candidates VALUES ('1aa28238-b81d-4ba2-ae1d-4cad9f03c8b2', 'J
 -- Data for Name: company_departments; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-INSERT INTO public.company_departments VALUES (1, '2025-12-22 18:57:10.916709+00', 'Comercial', '279945a9-f523-4eb0-80f1-cd56c1f8c582');
-INSERT INTO public.company_departments VALUES (2, '2025-12-22 19:01:19.715377+00', 'TI', '279945a9-f523-4eb0-80f1-cd56c1f8c582');
-INSERT INTO public.company_departments VALUES (3, '2025-12-24 14:44:20.091941+00', 'Marketing', '279945a9-f523-4eb0-80f1-cd56c1f8c582');
-INSERT INTO public.company_departments VALUES (4, '2026-01-02 19:29:58.305037+00', 'TI', '673dc932-ed3a-4d32-98c7-6fc621b4e21b');
+INSERT INTO public.company_departments (id, created_at, name, "tenantId") VALUES (1, '2025-12-22 18:57:10.916709+00', 'Comercial', '279945a9-f523-4eb0-80f1-cd56c1f8c582');
+INSERT INTO public.company_departments (id, created_at, name, "tenantId") VALUES (2, '2025-12-22 19:01:19.715377+00', 'TI', '279945a9-f523-4eb0-80f1-cd56c1f8c582');
+INSERT INTO public.company_departments (id, created_at, name, "tenantId") VALUES (3, '2025-12-24 14:44:20.091941+00', 'Marketing', '279945a9-f523-4eb0-80f1-cd56c1f8c582');
+INSERT INTO public.company_departments (id, created_at, name, "tenantId") VALUES (4, '2026-01-02 19:29:58.305037+00', 'TI', '673dc932-ed3a-4d32-98c7-6fc621b4e21b');
 
 
 --
@@ -4228,13 +4226,13 @@ INSERT INTO public.company_departments VALUES (4, '2026-01-02 19:29:58.305037+00
 -- Data for Name: evaluations; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-INSERT INTO public.evaluations VALUES ('158963bb-fb89-4f50-a2c2-4aba0a07dbee', 3, '844decb8-a0f0-4a74-ab02-ab1ba0001c5b', '{"cultura": {}, "tecnico": {"Organização e Método": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Capacidade de otimização": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Compreensão do escopo da demanda": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Capacidade de resolução de problemas": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Capacidade de estruturar dados de forma eficaz": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1"}, "triagem": {}, "updated_at": "2025-12-25T19:30:37.500Z", "pillar_scores": {"total": 9, "cultura": null, "tecnico": 9, "triagem": null, "pillarsEvaluated": 1}, "evaluator_name": "eider.arantes.oliveira@gmail.com", "anotacoes_gerais": "O candidato passou pelo teste técnico, mas não sabe estruturar dados muito bem."}', 'O candidato passou pelo teste técnico, mas não sabe estruturar dados muito bem.', 9.00, '2025-12-24 14:40:11.605+00');
-INSERT INTO public.evaluations VALUES ('c7b148a5-9652-46cf-8c2f-ef70258f24d4', 4, '631e295b-b7e9-4d8a-9d05-79898cef103f', '{"cultura": {}, "tecnico": {}, "triagem": {"Línguas": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Escolaridade": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Habilidade hard": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Habilidade soft": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Experiência Geral": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Experiência Específica": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Qualificação exigível": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Qualificação desejável": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1"}, "updated_at": "2025-12-26T03:24:37.258Z", "pillar_scores": {"total": 9, "cultura": 0, "tecnico": 0, "triagem": 9}, "evaluator_name": "eider@novvaempresa.com.br", "anotacoes_gerais": ""}', '', 9.00, '2025-12-24 19:38:06.651764+00');
-INSERT INTO public.evaluations VALUES ('cafd5801-798e-4475-ad02-18b26d2f1300', 3, '631e295b-b7e9-4d8a-9d05-79898cef103f', '{"cultura": {"Não há tempo a perder": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Transparência é essencial": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Colaborar mais do que competir": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "A busca pelo melhor nunca termina": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "O Cliente é a nossa razão de existir": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68"}, "tecnico": {"Organização e Método": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Capacidade de otimização": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Compreensão do escopo da demanda": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Capacidade de resolução de problemas": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Capacidade de estruturar dados de forma eficaz": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68"}, "triagem": {"Línguas": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Escolaridade": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Habilidade hard": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Habilidade soft": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Experiência Geral": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Experiência Específica": "5140db51-b042-45b2-a5ab-0a99e2982f4b", "Qualificação exigível": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Qualificação desejável": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1"}, "updated_at": "2026-01-02T17:34:23.306Z", "pillar_scores": {"total": 6.541666666666667, "cultura": 6, "tecnico": 7, "triagem": 6.625}, "evaluator_name": "eider@novvaempresa.com.br", "anotacoes_gerais": "Candidato mediano\nNão fala muito\nQuer trabalhar remoto\nNão tem perfil comunicativo"}', 'Candidato mediano
+INSERT INTO public.evaluations (id, application_id, evaluator_id, scores, notes, final_score, created_at) VALUES ('158963bb-fb89-4f50-a2c2-4aba0a07dbee', 3, '844decb8-a0f0-4a74-ab02-ab1ba0001c5b', '{"cultura": {}, "tecnico": {"Organização e Método": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Capacidade de otimização": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Compreensão do escopo da demanda": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Capacidade de resolução de problemas": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Capacidade de estruturar dados de forma eficaz": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1"}, "triagem": {}, "updated_at": "2025-12-25T19:30:37.500Z", "pillar_scores": {"total": 9, "cultura": null, "tecnico": 9, "triagem": null, "pillarsEvaluated": 1}, "evaluator_name": "eider.arantes.oliveira@gmail.com", "anotacoes_gerais": "O candidato passou pelo teste técnico, mas não sabe estruturar dados muito bem."}', 'O candidato passou pelo teste técnico, mas não sabe estruturar dados muito bem.', 9.00, '2025-12-24 14:40:11.605+00');
+INSERT INTO public.evaluations (id, application_id, evaluator_id, scores, notes, final_score, created_at) VALUES ('c7b148a5-9652-46cf-8c2f-ef70258f24d4', 4, '631e295b-b7e9-4d8a-9d05-79898cef103f', '{"cultura": {}, "tecnico": {}, "triagem": {"Línguas": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Escolaridade": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Habilidade hard": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Habilidade soft": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Experiência Geral": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Experiência Específica": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Qualificação exigível": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Qualificação desejável": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1"}, "updated_at": "2025-12-26T03:24:37.258Z", "pillar_scores": {"total": 9, "cultura": 0, "tecnico": 0, "triagem": 9}, "evaluator_name": "eider@novvaempresa.com.br", "anotacoes_gerais": ""}', '', 9.00, '2025-12-24 19:38:06.651764+00');
+INSERT INTO public.evaluations (id, application_id, evaluator_id, scores, notes, final_score, created_at) VALUES ('cafd5801-798e-4475-ad02-18b26d2f1300', 3, '631e295b-b7e9-4d8a-9d05-79898cef103f', '{"cultura": {"Não há tempo a perder": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Transparência é essencial": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Colaborar mais do que competir": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "A busca pelo melhor nunca termina": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "O Cliente é a nossa razão de existir": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68"}, "tecnico": {"Organização e Método": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Capacidade de otimização": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Compreensão do escopo da demanda": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Capacidade de resolução de problemas": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Capacidade de estruturar dados de forma eficaz": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68"}, "triagem": {"Línguas": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Escolaridade": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Habilidade hard": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Habilidade soft": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Experiência Geral": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "Experiência Específica": "5140db51-b042-45b2-a5ab-0a99e2982f4b", "Qualificação exigível": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "Qualificação desejável": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1"}, "updated_at": "2026-01-02T17:34:23.306Z", "pillar_scores": {"total": 6.541666666666667, "cultura": 6, "tecnico": 7, "triagem": 6.625}, "evaluator_name": "eider@novvaempresa.com.br", "anotacoes_gerais": "Candidato mediano\nNão fala muito\nQuer trabalhar remoto\nNão tem perfil comunicativo"}', 'Candidato mediano
 Não fala muito
 Quer trabalhar remoto
 Não tem perfil comunicativo', 6.54, '2025-12-24 14:40:44.473+00');
-INSERT INTO public.evaluations VALUES ('418ea288-a6f0-4ad6-8cd6-8acf5b0ffebb', 6, 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', '{"cultura": {"Não há tempo a perder": "2", "Transparência é essencial": "2", "Colaborar mais do que competir": "2", "A busca pelo melhor nunca termina": "3", "O Cliente é a nossa razão de existir (o usuário também)": "2"}, "tecnico": {"Compreensão do escopo da demanda": "2", "Capacidade de otimização de código": "3", "Capacidade de resolução de problemas": "2", "Conhecimento de frameworks de back end": "2", "Conhecimento de frameworks de front end": "3"}, "triagem": {"Línguas": "1", "Escolaridade": "2", "Habilidade Hard": "3", "Habilidade Soft": "3", "Experiência Geral": "2", "Experiência Específica": "1", "Qualificação Exigível": "2", "Qualificação Desejável": "3"}, "updated_at": "2026-01-03T01:27:59.670Z", "pillar_scores": {"total": 6.041666666666667, "cultura": 6, "tecnico": 7, "triagem": 5.125}, "evaluator_name": "emilia@serhumanobr.com.br", "anotacoes_gerais": "Júnior, como gosta de ser chamado, tem boas qualificações desejáveis, como Java Script, React, Node, LLM e Estatística Avançada.\nSe adaptaria bem à cultura da empresa e tem um senso de urgência muito aguçado. É perfeccionista e gosta das coisas bem feitas da primeira vez."}', 'Júnior, como gosta de ser chamado, tem boas qualificações desejáveis, como Java Script, React, Node, LLM e Estatística Avançada.
+INSERT INTO public.evaluations (id, application_id, evaluator_id, scores, notes, final_score, created_at) VALUES ('418ea288-a6f0-4ad6-8cd6-8acf5b0ffebb', 6, 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', '{"cultura": {"Não há tempo a perder": "2", "Transparência é essencial": "2", "Colaborar mais do que competir": "2", "A busca pelo melhor nunca termina": "3", "O Cliente é a nossa razão de existir (o usuário também)": "2"}, "tecnico": {"Compreensão do escopo da demanda": "2", "Capacidade de otimização de código": "3", "Capacidade de resolução de problemas": "2", "Conhecimento de frameworks de back end": "2", "Conhecimento de frameworks de front end": "3"}, "triagem": {"Línguas": "1", "Escolaridade": "2", "Habilidade Hard": "3", "Habilidade Soft": "3", "Experiência Geral": "2", "Experiência Específica": "1", "Qualificação Exigível": "2", "Qualificação Desejável": "3"}, "updated_at": "2026-01-03T01:27:59.670Z", "pillar_scores": {"total": 6.041666666666667, "cultura": 6, "tecnico": 7, "triagem": 5.125}, "evaluator_name": "emilia@serhumanobr.com.br", "anotacoes_gerais": "Júnior, como gosta de ser chamado, tem boas qualificações desejáveis, como Java Script, React, Node, LLM e Estatística Avançada.\nSe adaptaria bem à cultura da empresa e tem um senso de urgência muito aguçado. É perfeccionista e gosta das coisas bem feitas da primeira vez."}', 'Júnior, como gosta de ser chamado, tem boas qualificações desejáveis, como Java Script, React, Node, LLM e Estatística Avançada.
 Se adaptaria bem à cultura da empresa e tem um senso de urgência muito aguçado. É perfeccionista e gosta das coisas bem feitas da primeira vez.', 6.04, '2026-01-02 20:17:06.663157+00');
 
 
@@ -4244,13 +4242,13 @@ Se adaptaria bem à cultura da empresa e tem um senso de urgência muito aguçad
 -- Data for Name: jobs; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-INSERT INTO public.jobs VALUES (1, '2025-12-19 14:01:10.217987+00', 'Desenvolvedor Full Stack', 'active', '279945a9-f523-4eb0-80f1-cd56c1f8c582', '{"notas": [], "cultura": [{"name": "O Cliente é nossa razão de existir", "weight": 20}, {"name": "Transparência é essencial", "weight": 20}, {"name": "Colaborar é celebrar junto", "weight": 20}, {"name": "A busca pelo melhor nunca termina", "weight": 20}, {"name": "Não há tempo a perder", "weight": 20}], "tecnico": [], "triagem": [{"name": "Escolaridade", "weight": 10}, {"name": "Qualificação Exigida", "weight": 10}, {"name": "Qualificação Desejável", "weight": 10}, {"name": "Experiência Geral", "weight": 10}, {"name": "Experiência Específica", "weight": 10}, {"name": "Habilidade Hard", "weight": 10}, {"name": "Habilidade Soft", "weight": 10}, {"name": "Línguas", "weight": 30}], "técnico": [{"name": "Entendimento da demanda", "weight": 20}, {"name": "Capacidade de resolução de problemas", "weight": 20}, {"name": "Organização e Método", "weight": 20}, {"name": "Capacidade de estruturar dados de forma clara e eficaz", "weight": 20}, {"name": "Habilidade de otimização", "weight": 20}]}', NULL, NULL, NULL, 'CLT', 'Híbrido', NULL);
-INSERT INTO public.jobs VALUES (2, '2025-12-22 13:59:55.830367+00', 'Analista de Marketing Sr. - Vaga Teste', 'active', '279945a9-f523-4eb0-80f1-cd56c1f8c582', '{"cultura": [], "tecnico": [], "triagem": [{"id": "0fac2a90-37aa-46dd-ae9d-4e4eaabff1f7", "text": "Qualificação", "weight": 1}]}', NULL, '', '', 'CLT', 'Híbrido', NULL);
-INSERT INTO public.jobs VALUES (9, '2025-12-22 19:02:41.84766+00', 'Cientista de Dados', 'active', '279945a9-f523-4eb0-80f1-cd56c1f8c582', '{"notas": [{"id": "5140db51-b042-45b2-a5ab-0a99e2982f4b", "nome": "Abaixo", "valor": 0}, {"id": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "nome": "Atende", "valor": "5"}, {"id": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "nome": "Supera", "valor": "10"}], "cultura": [{"name": "O Cliente é a nossa razão de existir", "weight": "20"}, {"name": "Transparência é essencial", "weight": "20"}, {"name": "Colaborar mais do que competir", "weight": "20"}, {"name": "A busca pelo melhor nunca termina", "weight": "20"}, {"name": "Não há tempo a perder", "weight": "20"}], "tecnico": [{"name": "Compreensão do escopo da demanda", "weight": "20"}, {"name": "Capacidade de resolução de problemas", "weight": "20"}, {"name": "Organização e Método", "weight": "20"}, {"name": "Capacidade de estruturar dados de forma eficaz", "weight": "20"}, {"name": "Capacidade de otimização", "weight": "20"}], "triagem": [{"name": "Escolaridade", "weight": "10"}, {"name": "Qualificação exigível", "weight": "12.5"}, {"name": "Qualificação desejável", "weight": "10"}, {"name": "Experiência Geral", "weight": "20"}, {"name": "Experiência Específica", "weight": "12.5"}, {"name": "Habilidade hard", "weight": "10"}, {"name": "Habilidade soft", "weight": "10"}, {"name": "Línguas", "weight": "15"}]}', NULL, 'Profissional com capacidade para desenvolver sistemas utilizando machine learning e manipular grandes bases de dados (bigdata)', 'Estatístico
+INSERT INTO public.jobs (id, created_at, title, status, "tenantId", parameters, "createdBy", description, requirements, type, location_type, company_department_id) VALUES (1, '2025-12-19 14:01:10.217987+00', 'Desenvolvedor Full Stack', 'active', '279945a9-f523-4eb0-80f1-cd56c1f8c582', '{"notas": [], "cultura": [{"name": "O Cliente é nossa razão de existir", "weight": 20}, {"name": "Transparência é essencial", "weight": 20}, {"name": "Colaborar é celebrar junto", "weight": 20}, {"name": "A busca pelo melhor nunca termina", "weight": 20}, {"name": "Não há tempo a perder", "weight": 20}], "tecnico": [], "triagem": [{"name": "Escolaridade", "weight": 10}, {"name": "Qualificação Exigida", "weight": 10}, {"name": "Qualificação Desejável", "weight": 10}, {"name": "Experiência Geral", "weight": 10}, {"name": "Experiência Específica", "weight": 10}, {"name": "Habilidade Hard", "weight": 10}, {"name": "Habilidade Soft", "weight": 10}, {"name": "Línguas", "weight": 30}], "técnico": [{"name": "Entendimento da demanda", "weight": 20}, {"name": "Capacidade de resolução de problemas", "weight": 20}, {"name": "Organização e Método", "weight": 20}, {"name": "Capacidade de estruturar dados de forma clara e eficaz", "weight": 20}, {"name": "Habilidade de otimização", "weight": 20}]}', NULL, NULL, NULL, 'CLT', 'Híbrido', NULL);
+INSERT INTO public.jobs (id, created_at, title, status, "tenantId", parameters, "createdBy", description, requirements, type, location_type, company_department_id) VALUES (2, '2025-12-22 13:59:55.830367+00', 'Analista de Marketing Sr. - Vaga Teste', 'active', '279945a9-f523-4eb0-80f1-cd56c1f8c582', '{"cultura": [], "tecnico": [], "triagem": [{"id": "0fac2a90-37aa-46dd-ae9d-4e4eaabff1f7", "text": "Qualificação", "weight": 1}]}', NULL, '', '', 'CLT', 'Híbrido', NULL);
+INSERT INTO public.jobs (id, created_at, title, status, "tenantId", parameters, "createdBy", description, requirements, type, location_type, company_department_id) VALUES (9, '2025-12-22 19:02:41.84766+00', 'Cientista de Dados', 'active', '279945a9-f523-4eb0-80f1-cd56c1f8c582', '{"notas": [{"id": "5140db51-b042-45b2-a5ab-0a99e2982f4b", "nome": "Abaixo", "valor": 0}, {"id": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68", "nome": "Atende", "valor": "5"}, {"id": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1", "nome": "Supera", "valor": "10"}], "cultura": [{"name": "O Cliente é a nossa razão de existir", "weight": "20"}, {"name": "Transparência é essencial", "weight": "20"}, {"name": "Colaborar mais do que competir", "weight": "20"}, {"name": "A busca pelo melhor nunca termina", "weight": "20"}, {"name": "Não há tempo a perder", "weight": "20"}], "tecnico": [{"name": "Compreensão do escopo da demanda", "weight": "20"}, {"name": "Capacidade de resolução de problemas", "weight": "20"}, {"name": "Organização e Método", "weight": "20"}, {"name": "Capacidade de estruturar dados de forma eficaz", "weight": "20"}, {"name": "Capacidade de otimização", "weight": "20"}], "triagem": [{"name": "Escolaridade", "weight": "10"}, {"name": "Qualificação exigível", "weight": "12.5"}, {"name": "Qualificação desejável", "weight": "10"}, {"name": "Experiência Geral", "weight": "20"}, {"name": "Experiência Específica", "weight": "12.5"}, {"name": "Habilidade hard", "weight": "10"}, {"name": "Habilidade soft", "weight": "10"}, {"name": "Línguas", "weight": "15"}]}', NULL, 'Profissional com capacidade para desenvolver sistemas utilizando machine learning e manipular grandes bases de dados (bigdata)', 'Estatístico
 Desenvolvedor Python', 'PJ', 'Remoto', 2);
-INSERT INTO public.jobs VALUES (8, '2025-12-22 18:58:32.518032+00', 'Executivo de Contas', 'inactive', '279945a9-f523-4eb0-80f1-cd56c1f8c582', '{"notas": [], "cultura": [], "tecnico": [], "triagem": []}', NULL, 'Profissional para atender a clientes B2B de Alto Valor e Alto Potencial na Matriz de Segmentação.', 'Senioridade na área comercial 
+INSERT INTO public.jobs (id, created_at, title, status, "tenantId", parameters, "createdBy", description, requirements, type, location_type, company_department_id) VALUES (8, '2025-12-22 18:58:32.518032+00', 'Executivo de Contas', 'inactive', '279945a9-f523-4eb0-80f1-cd56c1f8c582', '{"notas": [], "cultura": [], "tecnico": [], "triagem": []}', NULL, 'Profissional para atender a clientes B2B de Alto Valor e Alto Potencial na Matriz de Segmentação.', 'Senioridade na área comercial 
 Habilidades de relacionamento com clientes', 'CLT', 'Híbrido', 1);
-INSERT INTO public.jobs VALUES (10, '2026-01-02 19:30:00.747243+00', 'Vaga Teste - Desenvolvedor Full Stack Sr.', 'active', '673dc932-ed3a-4d32-98c7-6fc621b4e21b', '{"notas": [{"id": "1", "nome": "Abaixo", "valor": 0}, {"id": "2", "nome": "Atende", "valor": 5}, {"id": "3", "nome": "Supera", "valor": 10}], "cultura": [{"name": "O Cliente é a nossa razão de existir (o usuário também)", "weight": 20}, {"name": "Transparência é essencial", "weight": 20}, {"name": "Colaborar mais do que competir", "weight": 20}, {"name": "A busca pelo melhor nunca termina", "weight": 20}, {"name": "Não há tempo a perder", "weight": 20}], "tecnico": [{"name": "Compreensão do escopo da demanda", "weight": 10}, {"name": "Capacidade de resolução de problemas", "weight": 20}, {"name": "Conhecimento de frameworks de front end", "weight": 30}, {"name": "Conhecimento de frameworks de back end", "weight": 30}, {"name": "Capacidade de otimização de código", "weight": 10}], "triagem": [{"name": "Escolaridade", "weight": 10}, {"name": "Qualificação Exigível", "weight": 12.5}, {"name": "Qualificação Desejável", "weight": 10}, {"name": "Experiência Geral", "weight": 20}, {"name": "Experiência Específica", "weight": 12.5}, {"name": "Habilidade Hard", "weight": 10}, {"name": "Habilidade Soft", "weight": 10}, {"name": "Línguas", "weight": 15}]}', NULL, 'Vaga de um Desenvolvedor Full Stack Sr. para a área de TI, inserida para servir de base didática', 'Conhecimento e principalmente experiência técnica em desenvolvimento de front e back end de sistemas para web (SaaS) multi-usuários e multi-tenant', 'CLT', 'Remoto', 4);
+INSERT INTO public.jobs (id, created_at, title, status, "tenantId", parameters, "createdBy", description, requirements, type, location_type, company_department_id) VALUES (10, '2026-01-02 19:30:00.747243+00', 'Vaga Teste - Desenvolvedor Full Stack Sr.', 'active', '673dc932-ed3a-4d32-98c7-6fc621b4e21b', '{"notas": [{"id": "1", "nome": "Abaixo", "valor": 0}, {"id": "2", "nome": "Atende", "valor": 5}, {"id": "3", "nome": "Supera", "valor": 10}], "cultura": [{"name": "O Cliente é a nossa razão de existir (o usuário também)", "weight": 20}, {"name": "Transparência é essencial", "weight": 20}, {"name": "Colaborar mais do que competir", "weight": 20}, {"name": "A busca pelo melhor nunca termina", "weight": 20}, {"name": "Não há tempo a perder", "weight": 20}], "tecnico": [{"name": "Compreensão do escopo da demanda", "weight": 10}, {"name": "Capacidade de resolução de problemas", "weight": 20}, {"name": "Conhecimento de frameworks de front end", "weight": 30}, {"name": "Conhecimento de frameworks de back end", "weight": 30}, {"name": "Capacidade de otimização de código", "weight": 10}], "triagem": [{"name": "Escolaridade", "weight": 10}, {"name": "Qualificação Exigível", "weight": 12.5}, {"name": "Qualificação Desejável", "weight": 10}, {"name": "Experiência Geral", "weight": 20}, {"name": "Experiência Específica", "weight": 12.5}, {"name": "Habilidade Hard", "weight": 10}, {"name": "Habilidade Soft", "weight": 10}, {"name": "Línguas", "weight": 15}]}', NULL, 'Vaga de um Desenvolvedor Full Stack Sr. para a área de TI, inserida para servir de base didática', 'Conhecimento e principalmente experiência técnica em desenvolvimento de front e back end de sistemas para web (SaaS) multi-usuários e multi-tenant', 'CLT', 'Remoto', 4);
 
 
 --
@@ -4259,10 +4257,10 @@ INSERT INTO public.jobs VALUES (10, '2026-01-02 19:30:00.747243+00', 'Vaga Teste
 -- Data for Name: plans; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-INSERT INTO public.plans VALUES ('basico', 'Plano Básico', 99.00, 1, 10, 10);
-INSERT INTO public.plans VALUES ('freemium', 'Plano Freemium', 0.00, 1, 5, 3);
-INSERT INTO public.plans VALUES ('intermediario', 'Plano Intermediário', 149.00, 5, 30, -1);
-INSERT INTO public.plans VALUES ('premium', 'Plano Premium', 229.00, -1, -1, -1);
+INSERT INTO public.plans (id, name, price, user_limit, job_limit, candidate_limit) VALUES ('basico', 'Plano Básico', 99.00, 1, 10, 10);
+INSERT INTO public.plans (id, name, price, user_limit, job_limit, candidate_limit) VALUES ('freemium', 'Plano Freemium', 0.00, 1, 5, 3);
+INSERT INTO public.plans (id, name, price, user_limit, job_limit, candidate_limit) VALUES ('intermediario', 'Plano Intermediário', 149.00, 5, 30, -1);
+INSERT INTO public.plans (id, name, price, user_limit, job_limit, candidate_limit) VALUES ('premium', 'Plano Premium', 229.00, -1, -1, -1);
 
 
 --
@@ -4271,8 +4269,8 @@ INSERT INTO public.plans VALUES ('premium', 'Plano Premium', 229.00, -1, -1, -1)
 -- Data for Name: tenants; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-INSERT INTO public.tenants VALUES ('279945a9-f523-4eb0-80f1-cd56c1f8c582', 'Novva - Desenvolvimento Empresarial', '26.424.282/0001-48', 'premium', '2025-12-19 13:07:51.150663+00');
-INSERT INTO public.tenants VALUES ('673dc932-ed3a-4d32-98c7-6fc621b4e21b', 'Ser Humano Consult', '17.515.566/0001-59', 'freemium', '2026-01-02 19:21:22.118098+00');
+INSERT INTO public.tenants (id, "companyName", cnpj, "planId", created_at) VALUES ('279945a9-f523-4eb0-80f1-cd56c1f8c582', 'Novva - Desenvolvimento Empresarial', '26.424.282/0001-48', 'premium', '2025-12-19 13:07:51.150663+00');
+INSERT INTO public.tenants (id, "companyName", cnpj, "planId", created_at) VALUES ('673dc932-ed3a-4d32-98c7-6fc621b4e21b', 'Ser Humano Consult', '17.515.566/0001-59', 'freemium', '2026-01-02 19:21:22.118098+00');
 
 
 --
@@ -4281,8 +4279,8 @@ INSERT INTO public.tenants VALUES ('673dc932-ed3a-4d32-98c7-6fc621b4e21b', 'Ser 
 -- Data for Name: user_profiles; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-INSERT INTO public.user_profiles VALUES ('631e295b-b7e9-4d8a-9d05-79898cef103f', '279945a9-f523-4eb0-80f1-cd56c1f8c582', 'eider.arantes.oliveira', 'eider@novvaempresa.com.br', 'rh', true, '2025-12-22 19:18:59.355871+00', true);
-INSERT INTO public.user_profiles VALUES ('e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', '673dc932-ed3a-4d32-98c7-6fc621b4e21b', 'Emília Ferrari', 'emilia@serhumanobr.com.br', 'admin', false, '2026-01-02 19:21:22.891906+00', true);
+INSERT INTO public.user_profiles (id, "tenantId", name, email, role, is_admin_system, created_at, active) VALUES ('e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', '673dc932-ed3a-4d32-98c7-6fc621b4e21b', 'Emília Ferrari', 'emilia@serhumanobr.com.br', 'admin', false, '2026-01-02 19:21:22.891906+00', true);
+INSERT INTO public.user_profiles (id, "tenantId", name, email, role, is_admin_system, created_at, active) VALUES ('631e295b-b7e9-4d8a-9d05-79898cef103f', '279945a9-f523-4eb0-80f1-cd56c1f8c582', 'eider.arantes.oliveira', 'eider@novvaempresa.com.br', 'rh', true, '2025-12-22 19:18:59.355871+00', true);
 
 
 --
@@ -4291,8 +4289,8 @@ INSERT INTO public.user_profiles VALUES ('e7dacb55-defb-4eee-b8ec-6d22a7cd67cb',
 -- Data for Name: user_tenants; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-INSERT INTO public.user_tenants VALUES ('30f302d9-3b42-45df-aa3a-23f2cc437d12', '631e295b-b7e9-4d8a-9d05-79898cef103f', '279945a9-f523-4eb0-80f1-cd56c1f8c582', 'rh', '2026-01-04 13:12:50.222378+00');
-INSERT INTO public.user_tenants VALUES ('2ad145e4-04e5-4112-956d-c2b36fde1836', 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', '673dc932-ed3a-4d32-98c7-6fc621b4e21b', 'admin', '2026-01-04 13:12:50.222378+00');
+INSERT INTO public.user_tenants (id, user_id, tenant_id, role, created_at) VALUES ('30f302d9-3b42-45df-aa3a-23f2cc437d12', '631e295b-b7e9-4d8a-9d05-79898cef103f', '279945a9-f523-4eb0-80f1-cd56c1f8c582', 'rh', '2026-01-04 13:12:50.222378+00');
+INSERT INTO public.user_tenants (id, user_id, tenant_id, role, created_at) VALUES ('00385d76-f256-4764-a3d6-7a9b9af6ce4c', 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', '279945a9-f523-4eb0-80f1-cd56c1f8c582', 'Consultora de RH', '2026-01-04 18:29:19.656088+00');
 
 
 --
@@ -4301,8 +4299,7 @@ INSERT INTO public.user_tenants VALUES ('2ad145e4-04e5-4112-956d-c2b36fde1836', 
 -- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-INSERT INTO public.users VALUES ('631e295b-b7e9-4d8a-9d05-79898cef103f', 'eider@novvaempresa.com.br', '279945a9-f523-4eb0-80f1-cd56c1f8c582', true, 'recruiter', 'active', 'Usuário teste 1 (eider@novvaempresa)');
-INSERT INTO public.users VALUES ('844decb8-a0f0-4a74-ab02-ab1ba0001c5b', 'eider.arantes.oliveira@gmail.com', '279945a9-f523-4eb0-80f1-cd56c1f8c582', true, 'recruiter', 'active', 'Usuário teste 2 (eider.arantes.oliveira@gmail.com)');
+INSERT INTO public.users (id, email, "tenantId", "isAdmin", role, status, name) VALUES ('631e295b-b7e9-4d8a-9d05-79898cef103f', 'eider@novvaempresa.com.br', '279945a9-f523-4eb0-80f1-cd56c1f8c582', true, 'recruiter', 'active', 'Usuário teste 1 (eider@novvaempresa)');
 
 
 --
@@ -4311,71 +4308,71 @@ INSERT INTO public.users VALUES ('844decb8-a0f0-4a74-ab02-ab1ba0001c5b', 'eider.
 -- Data for Name: schema_migrations; Type: TABLE DATA; Schema: realtime; Owner: supabase_admin
 --
 
-INSERT INTO realtime.schema_migrations VALUES (20211116024918, '2025-12-18 17:54:09');
-INSERT INTO realtime.schema_migrations VALUES (20211116045059, '2025-12-18 17:54:14');
-INSERT INTO realtime.schema_migrations VALUES (20211116050929, '2025-12-18 17:54:18');
-INSERT INTO realtime.schema_migrations VALUES (20211116051442, '2025-12-18 17:54:21');
-INSERT INTO realtime.schema_migrations VALUES (20211116212300, '2025-12-18 17:54:25');
-INSERT INTO realtime.schema_migrations VALUES (20211116213355, '2025-12-18 17:54:29');
-INSERT INTO realtime.schema_migrations VALUES (20211116213934, '2025-12-18 17:54:32');
-INSERT INTO realtime.schema_migrations VALUES (20211116214523, '2025-12-18 17:54:37');
-INSERT INTO realtime.schema_migrations VALUES (20211122062447, '2025-12-18 17:54:40');
-INSERT INTO realtime.schema_migrations VALUES (20211124070109, '2025-12-18 17:54:43');
-INSERT INTO realtime.schema_migrations VALUES (20211202204204, '2025-12-18 17:54:47');
-INSERT INTO realtime.schema_migrations VALUES (20211202204605, '2025-12-18 17:54:50');
-INSERT INTO realtime.schema_migrations VALUES (20211210212804, '2025-12-18 17:55:01');
-INSERT INTO realtime.schema_migrations VALUES (20211228014915, '2025-12-18 17:55:04');
-INSERT INTO realtime.schema_migrations VALUES (20220107221237, '2025-12-18 17:55:08');
-INSERT INTO realtime.schema_migrations VALUES (20220228202821, '2025-12-18 17:55:11');
-INSERT INTO realtime.schema_migrations VALUES (20220312004840, '2025-12-18 17:55:15');
-INSERT INTO realtime.schema_migrations VALUES (20220603231003, '2025-12-18 17:55:20');
-INSERT INTO realtime.schema_migrations VALUES (20220603232444, '2025-12-18 17:55:23');
-INSERT INTO realtime.schema_migrations VALUES (20220615214548, '2025-12-18 17:55:27');
-INSERT INTO realtime.schema_migrations VALUES (20220712093339, '2025-12-18 17:55:31');
-INSERT INTO realtime.schema_migrations VALUES (20220908172859, '2025-12-18 17:55:34');
-INSERT INTO realtime.schema_migrations VALUES (20220916233421, '2025-12-18 17:55:38');
-INSERT INTO realtime.schema_migrations VALUES (20230119133233, '2025-12-18 17:55:41');
-INSERT INTO realtime.schema_migrations VALUES (20230128025114, '2025-12-18 17:55:46');
-INSERT INTO realtime.schema_migrations VALUES (20230128025212, '2025-12-18 17:55:49');
-INSERT INTO realtime.schema_migrations VALUES (20230227211149, '2025-12-18 17:55:53');
-INSERT INTO realtime.schema_migrations VALUES (20230228184745, '2025-12-18 17:55:56');
-INSERT INTO realtime.schema_migrations VALUES (20230308225145, '2025-12-18 17:55:59');
-INSERT INTO realtime.schema_migrations VALUES (20230328144023, '2025-12-18 17:56:03');
-INSERT INTO realtime.schema_migrations VALUES (20231018144023, '2025-12-18 17:56:07');
-INSERT INTO realtime.schema_migrations VALUES (20231204144023, '2025-12-18 17:56:12');
-INSERT INTO realtime.schema_migrations VALUES (20231204144024, '2025-12-18 17:56:16');
-INSERT INTO realtime.schema_migrations VALUES (20231204144025, '2025-12-18 17:56:19');
-INSERT INTO realtime.schema_migrations VALUES (20240108234812, '2025-12-18 17:56:23');
-INSERT INTO realtime.schema_migrations VALUES (20240109165339, '2025-12-18 17:56:26');
-INSERT INTO realtime.schema_migrations VALUES (20240227174441, '2025-12-18 17:56:32');
-INSERT INTO realtime.schema_migrations VALUES (20240311171622, '2025-12-18 17:56:37');
-INSERT INTO realtime.schema_migrations VALUES (20240321100241, '2025-12-18 17:56:44');
-INSERT INTO realtime.schema_migrations VALUES (20240401105812, '2025-12-18 17:56:54');
-INSERT INTO realtime.schema_migrations VALUES (20240418121054, '2025-12-18 17:56:59');
-INSERT INTO realtime.schema_migrations VALUES (20240523004032, '2025-12-18 17:57:11');
-INSERT INTO realtime.schema_migrations VALUES (20240618124746, '2025-12-18 17:57:14');
-INSERT INTO realtime.schema_migrations VALUES (20240801235015, '2025-12-18 17:57:18');
-INSERT INTO realtime.schema_migrations VALUES (20240805133720, '2025-12-18 17:57:21');
-INSERT INTO realtime.schema_migrations VALUES (20240827160934, '2025-12-18 17:57:24');
-INSERT INTO realtime.schema_migrations VALUES (20240919163303, '2025-12-18 17:57:29');
-INSERT INTO realtime.schema_migrations VALUES (20240919163305, '2025-12-18 17:57:32');
-INSERT INTO realtime.schema_migrations VALUES (20241019105805, '2025-12-18 17:57:36');
-INSERT INTO realtime.schema_migrations VALUES (20241030150047, '2025-12-18 17:57:48');
-INSERT INTO realtime.schema_migrations VALUES (20241108114728, '2025-12-18 17:57:53');
-INSERT INTO realtime.schema_migrations VALUES (20241121104152, '2025-12-18 17:57:56');
-INSERT INTO realtime.schema_migrations VALUES (20241130184212, '2025-12-18 17:58:00');
-INSERT INTO realtime.schema_migrations VALUES (20241220035512, '2025-12-18 17:58:04');
-INSERT INTO realtime.schema_migrations VALUES (20241220123912, '2025-12-18 17:58:07');
-INSERT INTO realtime.schema_migrations VALUES (20241224161212, '2025-12-18 17:58:10');
-INSERT INTO realtime.schema_migrations VALUES (20250107150512, '2025-12-18 17:58:14');
-INSERT INTO realtime.schema_migrations VALUES (20250110162412, '2025-12-18 17:58:17');
-INSERT INTO realtime.schema_migrations VALUES (20250123174212, '2025-12-18 17:58:20');
-INSERT INTO realtime.schema_migrations VALUES (20250128220012, '2025-12-18 17:58:24');
-INSERT INTO realtime.schema_migrations VALUES (20250506224012, '2025-12-18 17:58:27');
-INSERT INTO realtime.schema_migrations VALUES (20250523164012, '2025-12-18 17:58:30');
-INSERT INTO realtime.schema_migrations VALUES (20250714121412, '2025-12-18 17:58:34');
-INSERT INTO realtime.schema_migrations VALUES (20250905041441, '2025-12-18 17:58:37');
-INSERT INTO realtime.schema_migrations VALUES (20251103001201, '2025-12-18 17:58:40');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211116024918, '2025-12-18 17:54:09');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211116045059, '2025-12-18 17:54:14');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211116050929, '2025-12-18 17:54:18');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211116051442, '2025-12-18 17:54:21');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211116212300, '2025-12-18 17:54:25');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211116213355, '2025-12-18 17:54:29');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211116213934, '2025-12-18 17:54:32');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211116214523, '2025-12-18 17:54:37');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211122062447, '2025-12-18 17:54:40');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211124070109, '2025-12-18 17:54:43');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211202204204, '2025-12-18 17:54:47');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211202204605, '2025-12-18 17:54:50');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211210212804, '2025-12-18 17:55:01');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20211228014915, '2025-12-18 17:55:04');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20220107221237, '2025-12-18 17:55:08');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20220228202821, '2025-12-18 17:55:11');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20220312004840, '2025-12-18 17:55:15');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20220603231003, '2025-12-18 17:55:20');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20220603232444, '2025-12-18 17:55:23');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20220615214548, '2025-12-18 17:55:27');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20220712093339, '2025-12-18 17:55:31');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20220908172859, '2025-12-18 17:55:34');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20220916233421, '2025-12-18 17:55:38');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20230119133233, '2025-12-18 17:55:41');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20230128025114, '2025-12-18 17:55:46');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20230128025212, '2025-12-18 17:55:49');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20230227211149, '2025-12-18 17:55:53');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20230228184745, '2025-12-18 17:55:56');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20230308225145, '2025-12-18 17:55:59');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20230328144023, '2025-12-18 17:56:03');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20231018144023, '2025-12-18 17:56:07');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20231204144023, '2025-12-18 17:56:12');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20231204144024, '2025-12-18 17:56:16');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20231204144025, '2025-12-18 17:56:19');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240108234812, '2025-12-18 17:56:23');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240109165339, '2025-12-18 17:56:26');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240227174441, '2025-12-18 17:56:32');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240311171622, '2025-12-18 17:56:37');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240321100241, '2025-12-18 17:56:44');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240401105812, '2025-12-18 17:56:54');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240418121054, '2025-12-18 17:56:59');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240523004032, '2025-12-18 17:57:11');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240618124746, '2025-12-18 17:57:14');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240801235015, '2025-12-18 17:57:18');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240805133720, '2025-12-18 17:57:21');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240827160934, '2025-12-18 17:57:24');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240919163303, '2025-12-18 17:57:29');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20240919163305, '2025-12-18 17:57:32');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20241019105805, '2025-12-18 17:57:36');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20241030150047, '2025-12-18 17:57:48');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20241108114728, '2025-12-18 17:57:53');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20241121104152, '2025-12-18 17:57:56');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20241130184212, '2025-12-18 17:58:00');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20241220035512, '2025-12-18 17:58:04');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20241220123912, '2025-12-18 17:58:07');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20241224161212, '2025-12-18 17:58:10');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20250107150512, '2025-12-18 17:58:14');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20250110162412, '2025-12-18 17:58:17');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20250123174212, '2025-12-18 17:58:20');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20250128220012, '2025-12-18 17:58:24');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20250506224012, '2025-12-18 17:58:27');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20250523164012, '2025-12-18 17:58:30');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20250714121412, '2025-12-18 17:58:34');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20250905041441, '2025-12-18 17:58:37');
+INSERT INTO realtime.schema_migrations (version, inserted_at) VALUES (20251103001201, '2025-12-18 17:58:40');
 
 
 --
@@ -4392,7 +4389,7 @@ INSERT INTO realtime.schema_migrations VALUES (20251103001201, '2025-12-18 17:58
 -- Data for Name: buckets; Type: TABLE DATA; Schema: storage; Owner: supabase_storage_admin
 --
 
-INSERT INTO storage.buckets VALUES ('resumes', 'resumes', NULL, '2025-12-19 14:37:52.698031+00', '2025-12-19 14:37:52.698031+00', true, false, NULL, NULL, NULL, 'STANDARD');
+INSERT INTO storage.buckets (id, name, owner, created_at, updated_at, public, avif_autodetection, file_size_limit, allowed_mime_types, owner_id, type) VALUES ('resumes', 'resumes', NULL, '2025-12-19 14:37:52.698031+00', '2025-12-19 14:37:52.698031+00', true, false, NULL, NULL, NULL, 'STANDARD');
 
 
 --
@@ -4417,56 +4414,56 @@ INSERT INTO storage.buckets VALUES ('resumes', 'resumes', NULL, '2025-12-19 14:3
 -- Data for Name: migrations; Type: TABLE DATA; Schema: storage; Owner: supabase_storage_admin
 --
 
-INSERT INTO storage.migrations VALUES (0, 'create-migrations-table', 'e18db593bcde2aca2a408c4d1100f6abba2195df', '2025-12-18 17:54:04.682167');
-INSERT INTO storage.migrations VALUES (1, 'initialmigration', '6ab16121fbaa08bbd11b712d05f358f9b555d777', '2025-12-18 17:54:04.703664');
-INSERT INTO storage.migrations VALUES (2, 'storage-schema', '5c7968fd083fcea04050c1b7f6253c9771b99011', '2025-12-18 17:54:04.718953');
-INSERT INTO storage.migrations VALUES (3, 'pathtoken-column', '2cb1b0004b817b29d5b0a971af16bafeede4b70d', '2025-12-18 17:54:04.752545');
-INSERT INTO storage.migrations VALUES (4, 'add-migrations-rls', '427c5b63fe1c5937495d9c635c263ee7a5905058', '2025-12-18 17:54:04.815833');
-INSERT INTO storage.migrations VALUES (5, 'add-size-functions', '79e081a1455b63666c1294a440f8ad4b1e6a7f84', '2025-12-18 17:54:04.827918');
-INSERT INTO storage.migrations VALUES (6, 'change-column-name-in-get-size', 'f93f62afdf6613ee5e7e815b30d02dc990201044', '2025-12-18 17:54:04.848369');
-INSERT INTO storage.migrations VALUES (7, 'add-rls-to-buckets', 'e7e7f86adbc51049f341dfe8d30256c1abca17aa', '2025-12-18 17:54:04.865985');
-INSERT INTO storage.migrations VALUES (8, 'add-public-to-buckets', 'fd670db39ed65f9d08b01db09d6202503ca2bab3', '2025-12-18 17:54:04.882889');
-INSERT INTO storage.migrations VALUES (9, 'fix-search-function', '3a0af29f42e35a4d101c259ed955b67e1bee6825', '2025-12-18 17:54:04.904158');
-INSERT INTO storage.migrations VALUES (10, 'search-files-search-function', '68dc14822daad0ffac3746a502234f486182ef6e', '2025-12-18 17:54:04.917237');
-INSERT INTO storage.migrations VALUES (11, 'add-trigger-to-auto-update-updated_at-column', '7425bdb14366d1739fa8a18c83100636d74dcaa2', '2025-12-18 17:54:04.939311');
-INSERT INTO storage.migrations VALUES (12, 'add-automatic-avif-detection-flag', '8e92e1266eb29518b6a4c5313ab8f29dd0d08df9', '2025-12-18 17:54:04.955776');
-INSERT INTO storage.migrations VALUES (13, 'add-bucket-custom-limits', 'cce962054138135cd9a8c4bcd531598684b25e7d', '2025-12-18 17:54:05.01623');
-INSERT INTO storage.migrations VALUES (14, 'use-bytes-for-max-size', '941c41b346f9802b411f06f30e972ad4744dad27', '2025-12-18 17:54:05.094651');
-INSERT INTO storage.migrations VALUES (15, 'add-can-insert-object-function', '934146bc38ead475f4ef4b555c524ee5d66799e5', '2025-12-18 17:54:05.121283');
-INSERT INTO storage.migrations VALUES (16, 'add-version', '76debf38d3fd07dcfc747ca49096457d95b1221b', '2025-12-18 17:54:05.131454');
-INSERT INTO storage.migrations VALUES (17, 'drop-owner-foreign-key', 'f1cbb288f1b7a4c1eb8c38504b80ae2a0153d101', '2025-12-18 17:54:05.143621');
-INSERT INTO storage.migrations VALUES (18, 'add_owner_id_column_deprecate_owner', 'e7a511b379110b08e2f214be852c35414749fe66', '2025-12-18 17:54:05.173811');
-INSERT INTO storage.migrations VALUES (19, 'alter-default-value-objects-id', '02e5e22a78626187e00d173dc45f58fa66a4f043', '2025-12-18 17:54:05.186561');
-INSERT INTO storage.migrations VALUES (20, 'list-objects-with-delimiter', 'cd694ae708e51ba82bf012bba00caf4f3b6393b7', '2025-12-18 17:54:05.204635');
-INSERT INTO storage.migrations VALUES (21, 's3-multipart-uploads', '8c804d4a566c40cd1e4cc5b3725a664a9303657f', '2025-12-18 17:54:05.216415');
-INSERT INTO storage.migrations VALUES (22, 's3-multipart-uploads-big-ints', '9737dc258d2397953c9953d9b86920b8be0cdb73', '2025-12-18 17:54:05.235414');
-INSERT INTO storage.migrations VALUES (23, 'optimize-search-function', '9d7e604cddc4b56a5422dc68c9313f4a1b6f132c', '2025-12-18 17:54:05.256745');
-INSERT INTO storage.migrations VALUES (24, 'operation-function', '8312e37c2bf9e76bbe841aa5fda889206d2bf8aa', '2025-12-18 17:54:05.268844');
-INSERT INTO storage.migrations VALUES (25, 'custom-metadata', 'd974c6057c3db1c1f847afa0e291e6165693b990', '2025-12-18 17:54:05.294059');
-INSERT INTO storage.migrations VALUES (26, 'objects-prefixes', 'ef3f7871121cdc47a65308e6702519e853422ae2', '2025-12-18 17:54:05.303806');
-INSERT INTO storage.migrations VALUES (27, 'search-v2', '33b8f2a7ae53105f028e13e9fcda9dc4f356b4a2', '2025-12-18 17:54:05.356947');
-INSERT INTO storage.migrations VALUES (28, 'object-bucket-name-sorting', 'ba85ec41b62c6a30a3f136788227ee47f311c436', '2025-12-18 17:54:05.415378');
-INSERT INTO storage.migrations VALUES (29, 'create-prefixes', 'a7b1a22c0dc3ab630e3055bfec7ce7d2045c5b7b', '2025-12-18 17:54:05.422696');
-INSERT INTO storage.migrations VALUES (30, 'update-object-levels', '6c6f6cc9430d570f26284a24cf7b210599032db7', '2025-12-18 17:54:05.432877');
-INSERT INTO storage.migrations VALUES (31, 'objects-level-index', '33f1fef7ec7fea08bb892222f4f0f5d79bab5eb8', '2025-12-18 17:54:05.52018');
-INSERT INTO storage.migrations VALUES (32, 'backward-compatible-index-on-objects', '2d51eeb437a96868b36fcdfb1ddefdf13bef1647', '2025-12-18 17:54:05.529763');
-INSERT INTO storage.migrations VALUES (33, 'backward-compatible-index-on-prefixes', 'fe473390e1b8c407434c0e470655945b110507bf', '2025-12-18 17:54:05.54217');
-INSERT INTO storage.migrations VALUES (34, 'optimize-search-function-v1', '82b0e469a00e8ebce495e29bfa70a0797f7ebd2c', '2025-12-18 17:54:05.545097');
-INSERT INTO storage.migrations VALUES (35, 'add-insert-trigger-prefixes', '63bb9fd05deb3dc5e9fa66c83e82b152f0caf589', '2025-12-18 17:54:05.558531');
-INSERT INTO storage.migrations VALUES (36, 'optimise-existing-functions', '81cf92eb0c36612865a18016a38496c530443899', '2025-12-18 17:54:05.572947');
-INSERT INTO storage.migrations VALUES (37, 'add-bucket-name-length-trigger', '3944135b4e3e8b22d6d4cbb568fe3b0b51df15c1', '2025-12-18 17:54:05.591375');
-INSERT INTO storage.migrations VALUES (38, 'iceberg-catalog-flag-on-buckets', '19a8bd89d5dfa69af7f222a46c726b7c41e462c5', '2025-12-18 17:54:05.601404');
-INSERT INTO storage.migrations VALUES (39, 'add-search-v2-sort-support', '39cf7d1e6bf515f4b02e41237aba845a7b492853', '2025-12-18 17:54:05.616957');
-INSERT INTO storage.migrations VALUES (40, 'fix-prefix-race-conditions-optimized', 'fd02297e1c67df25a9fc110bf8c8a9af7fb06d1f', '2025-12-18 17:54:05.633276');
-INSERT INTO storage.migrations VALUES (41, 'add-object-level-update-trigger', '44c22478bf01744b2129efc480cd2edc9a7d60e9', '2025-12-18 17:54:05.649687');
-INSERT INTO storage.migrations VALUES (42, 'rollback-prefix-triggers', 'f2ab4f526ab7f979541082992593938c05ee4b47', '2025-12-18 17:54:05.669149');
-INSERT INTO storage.migrations VALUES (43, 'fix-object-level', 'ab837ad8f1c7d00cc0b7310e989a23388ff29fc6', '2025-12-18 17:54:05.680581');
-INSERT INTO storage.migrations VALUES (44, 'vector-bucket-type', '99c20c0ffd52bb1ff1f32fb992f3b351e3ef8fb3', '2025-12-18 17:54:05.691574');
-INSERT INTO storage.migrations VALUES (45, 'vector-buckets', '049e27196d77a7cb76497a85afae669d8b230953', '2025-12-18 17:54:05.708885');
-INSERT INTO storage.migrations VALUES (46, 'buckets-objects-grants', 'fedeb96d60fefd8e02ab3ded9fbde05632f84aed', '2025-12-18 17:54:05.727158');
-INSERT INTO storage.migrations VALUES (47, 'iceberg-table-metadata', '649df56855c24d8b36dd4cc1aeb8251aa9ad42c2', '2025-12-18 17:54:05.738011');
-INSERT INTO storage.migrations VALUES (48, 'iceberg-catalog-ids', '2666dff93346e5d04e0a878416be1d5fec345d6f', '2025-12-18 17:54:05.748994');
-INSERT INTO storage.migrations VALUES (49, 'buckets-objects-grants-postgres', '072b1195d0d5a2f888af6b2302a1938dd94b8b3d', '2025-12-19 11:39:57.704824');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (0, 'create-migrations-table', 'e18db593bcde2aca2a408c4d1100f6abba2195df', '2025-12-18 17:54:04.682167');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (1, 'initialmigration', '6ab16121fbaa08bbd11b712d05f358f9b555d777', '2025-12-18 17:54:04.703664');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (2, 'storage-schema', '5c7968fd083fcea04050c1b7f6253c9771b99011', '2025-12-18 17:54:04.718953');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (3, 'pathtoken-column', '2cb1b0004b817b29d5b0a971af16bafeede4b70d', '2025-12-18 17:54:04.752545');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (4, 'add-migrations-rls', '427c5b63fe1c5937495d9c635c263ee7a5905058', '2025-12-18 17:54:04.815833');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (5, 'add-size-functions', '79e081a1455b63666c1294a440f8ad4b1e6a7f84', '2025-12-18 17:54:04.827918');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (6, 'change-column-name-in-get-size', 'f93f62afdf6613ee5e7e815b30d02dc990201044', '2025-12-18 17:54:04.848369');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (7, 'add-rls-to-buckets', 'e7e7f86adbc51049f341dfe8d30256c1abca17aa', '2025-12-18 17:54:04.865985');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (8, 'add-public-to-buckets', 'fd670db39ed65f9d08b01db09d6202503ca2bab3', '2025-12-18 17:54:04.882889');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (9, 'fix-search-function', '3a0af29f42e35a4d101c259ed955b67e1bee6825', '2025-12-18 17:54:04.904158');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (10, 'search-files-search-function', '68dc14822daad0ffac3746a502234f486182ef6e', '2025-12-18 17:54:04.917237');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (11, 'add-trigger-to-auto-update-updated_at-column', '7425bdb14366d1739fa8a18c83100636d74dcaa2', '2025-12-18 17:54:04.939311');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (12, 'add-automatic-avif-detection-flag', '8e92e1266eb29518b6a4c5313ab8f29dd0d08df9', '2025-12-18 17:54:04.955776');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (13, 'add-bucket-custom-limits', 'cce962054138135cd9a8c4bcd531598684b25e7d', '2025-12-18 17:54:05.01623');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (14, 'use-bytes-for-max-size', '941c41b346f9802b411f06f30e972ad4744dad27', '2025-12-18 17:54:05.094651');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (15, 'add-can-insert-object-function', '934146bc38ead475f4ef4b555c524ee5d66799e5', '2025-12-18 17:54:05.121283');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (16, 'add-version', '76debf38d3fd07dcfc747ca49096457d95b1221b', '2025-12-18 17:54:05.131454');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (17, 'drop-owner-foreign-key', 'f1cbb288f1b7a4c1eb8c38504b80ae2a0153d101', '2025-12-18 17:54:05.143621');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (18, 'add_owner_id_column_deprecate_owner', 'e7a511b379110b08e2f214be852c35414749fe66', '2025-12-18 17:54:05.173811');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (19, 'alter-default-value-objects-id', '02e5e22a78626187e00d173dc45f58fa66a4f043', '2025-12-18 17:54:05.186561');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (20, 'list-objects-with-delimiter', 'cd694ae708e51ba82bf012bba00caf4f3b6393b7', '2025-12-18 17:54:05.204635');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (21, 's3-multipart-uploads', '8c804d4a566c40cd1e4cc5b3725a664a9303657f', '2025-12-18 17:54:05.216415');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (22, 's3-multipart-uploads-big-ints', '9737dc258d2397953c9953d9b86920b8be0cdb73', '2025-12-18 17:54:05.235414');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (23, 'optimize-search-function', '9d7e604cddc4b56a5422dc68c9313f4a1b6f132c', '2025-12-18 17:54:05.256745');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (24, 'operation-function', '8312e37c2bf9e76bbe841aa5fda889206d2bf8aa', '2025-12-18 17:54:05.268844');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (25, 'custom-metadata', 'd974c6057c3db1c1f847afa0e291e6165693b990', '2025-12-18 17:54:05.294059');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (26, 'objects-prefixes', 'ef3f7871121cdc47a65308e6702519e853422ae2', '2025-12-18 17:54:05.303806');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (27, 'search-v2', '33b8f2a7ae53105f028e13e9fcda9dc4f356b4a2', '2025-12-18 17:54:05.356947');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (28, 'object-bucket-name-sorting', 'ba85ec41b62c6a30a3f136788227ee47f311c436', '2025-12-18 17:54:05.415378');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (29, 'create-prefixes', 'a7b1a22c0dc3ab630e3055bfec7ce7d2045c5b7b', '2025-12-18 17:54:05.422696');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (30, 'update-object-levels', '6c6f6cc9430d570f26284a24cf7b210599032db7', '2025-12-18 17:54:05.432877');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (31, 'objects-level-index', '33f1fef7ec7fea08bb892222f4f0f5d79bab5eb8', '2025-12-18 17:54:05.52018');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (32, 'backward-compatible-index-on-objects', '2d51eeb437a96868b36fcdfb1ddefdf13bef1647', '2025-12-18 17:54:05.529763');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (33, 'backward-compatible-index-on-prefixes', 'fe473390e1b8c407434c0e470655945b110507bf', '2025-12-18 17:54:05.54217');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (34, 'optimize-search-function-v1', '82b0e469a00e8ebce495e29bfa70a0797f7ebd2c', '2025-12-18 17:54:05.545097');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (35, 'add-insert-trigger-prefixes', '63bb9fd05deb3dc5e9fa66c83e82b152f0caf589', '2025-12-18 17:54:05.558531');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (36, 'optimise-existing-functions', '81cf92eb0c36612865a18016a38496c530443899', '2025-12-18 17:54:05.572947');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (37, 'add-bucket-name-length-trigger', '3944135b4e3e8b22d6d4cbb568fe3b0b51df15c1', '2025-12-18 17:54:05.591375');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (38, 'iceberg-catalog-flag-on-buckets', '19a8bd89d5dfa69af7f222a46c726b7c41e462c5', '2025-12-18 17:54:05.601404');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (39, 'add-search-v2-sort-support', '39cf7d1e6bf515f4b02e41237aba845a7b492853', '2025-12-18 17:54:05.616957');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (40, 'fix-prefix-race-conditions-optimized', 'fd02297e1c67df25a9fc110bf8c8a9af7fb06d1f', '2025-12-18 17:54:05.633276');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (41, 'add-object-level-update-trigger', '44c22478bf01744b2129efc480cd2edc9a7d60e9', '2025-12-18 17:54:05.649687');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (42, 'rollback-prefix-triggers', 'f2ab4f526ab7f979541082992593938c05ee4b47', '2025-12-18 17:54:05.669149');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (43, 'fix-object-level', 'ab837ad8f1c7d00cc0b7310e989a23388ff29fc6', '2025-12-18 17:54:05.680581');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (44, 'vector-bucket-type', '99c20c0ffd52bb1ff1f32fb992f3b351e3ef8fb3', '2025-12-18 17:54:05.691574');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (45, 'vector-buckets', '049e27196d77a7cb76497a85afae669d8b230953', '2025-12-18 17:54:05.708885');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (46, 'buckets-objects-grants', 'fedeb96d60fefd8e02ab3ded9fbde05632f84aed', '2025-12-18 17:54:05.727158');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (47, 'iceberg-table-metadata', '649df56855c24d8b36dd4cc1aeb8251aa9ad42c2', '2025-12-18 17:54:05.738011');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (48, 'iceberg-catalog-ids', '2666dff93346e5d04e0a878416be1d5fec345d6f', '2025-12-18 17:54:05.748994');
+INSERT INTO storage.migrations (id, name, hash, executed_at) VALUES (49, 'buckets-objects-grants-postgres', '072b1195d0d5a2f888af6b2302a1938dd94b8b3d', '2025-12-19 11:39:57.704824');
 
 
 --
@@ -4475,13 +4472,13 @@ INSERT INTO storage.migrations VALUES (49, 'buckets-objects-grants-postgres', '0
 -- Data for Name: objects; Type: TABLE DATA; Schema: storage; Owner: supabase_storage_admin
 --
 
-INSERT INTO storage.objects VALUES ('f3ff287d-c45d-4099-a1e4-c86eceba1e64', 'resumes', 'teste_teste_com_br_1766155240539.pdf', NULL, '2025-12-19 14:40:41.209505+00', '2025-12-19 14:40:41.209505+00', '2025-12-19 14:40:41.209505+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2025-12-19T14:40:42.000Z", "contentLength": 368155, "httpStatusCode": 200}', DEFAULT, '13012aa2-7f95-46f0-b0ab-3dcf67f9a5f3', NULL, '{}', 1);
-INSERT INTO storage.objects VALUES ('9ef5c925-4c14-403a-84e9-6bd852f1adc6', 'resumes', 'teste_teste_com_br_1766155860050.pdf', NULL, '2025-12-19 14:51:00.758037+00', '2025-12-19 14:51:00.758037+00', '2025-12-19 14:51:00.758037+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2025-12-19T14:51:01.000Z", "contentLength": 368155, "httpStatusCode": 200}', DEFAULT, '5dad6d6a-9a53-43d1-9eaa-447b088b8e3d', NULL, '{}', 1);
-INSERT INTO storage.objects VALUES ('2f95b50a-3208-4dfb-9c93-b402e861a7a8', 'resumes', 'teste_teste_com_br_1766155945615.pdf', NULL, '2025-12-19 14:52:26.363347+00', '2025-12-19 14:52:26.363347+00', '2025-12-19 14:52:26.363347+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2025-12-19T14:52:27.000Z", "contentLength": 368155, "httpStatusCode": 200}', DEFAULT, '9927b3d6-4ef5-4248-b538-079a63cce8bd', NULL, '{}', 1);
-INSERT INTO storage.objects VALUES ('0a160c0f-ad05-41a6-aab7-a16e8b2b84d1', 'resumes', 'teste_teste_com_br_1766156128277.pdf', NULL, '2025-12-19 14:55:29.198336+00', '2025-12-19 14:55:29.198336+00', '2025-12-19 14:55:29.198336+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2025-12-19T14:55:30.000Z", "contentLength": 368155, "httpStatusCode": 200}', DEFAULT, 'f392a57f-0003-4775-a3f8-671a9588c014', NULL, '{}', 1);
-INSERT INTO storage.objects VALUES ('b5ff3313-af89-458d-b881-b15ecd668961', 'resumes', 'eider_novvaempresa_com_br_1766414073143.pdf', NULL, '2025-12-22 14:34:34.119649+00', '2025-12-22 14:34:34.119649+00', '2025-12-22 14:34:34.119649+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2025-12-22T14:34:35.000Z", "contentLength": 368155, "httpStatusCode": 200}', DEFAULT, '2ca9c6ac-442f-4302-a2d5-b4270d799e5e', NULL, '{}', 1);
-INSERT INTO storage.objects VALUES ('be75d55d-975c-4ad7-80d6-947210344c4f', 'resumes', '1766506758246_z3hjoe4y8.pdf', '631e295b-b7e9-4d8a-9d05-79898cef103f', '2025-12-23 16:19:19.925318+00', '2025-12-23 16:19:19.925318+00', '2025-12-23 16:19:19.925318+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2025-12-23T16:19:20.000Z", "contentLength": 368155, "httpStatusCode": 200}', DEFAULT, '3e05b649-796c-4c89-9089-6a8136d3e900', '631e295b-b7e9-4d8a-9d05-79898cef103f', '{}', 1);
-INSERT INTO storage.objects VALUES ('8e375699-bbfd-4ed9-8428-e613e4f093cd', 'resumes', '1767384086358_h64zuz3ko.pdf', 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', '2026-01-02 20:01:29.447288+00', '2026-01-02 20:01:29.447288+00', '2026-01-02 20:01:29.447288+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2026-01-02T20:01:30.000Z", "contentLength": 368155, "httpStatusCode": 200}', DEFAULT, 'db10a1b3-7818-437b-b0d0-0056299b50b2', 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', '{}', 1);
+INSERT INTO storage.objects (id, bucket_id, name, owner, created_at, updated_at, last_accessed_at, metadata, version, owner_id, user_metadata, level) VALUES ('f3ff287d-c45d-4099-a1e4-c86eceba1e64', 'resumes', 'teste_teste_com_br_1766155240539.pdf', NULL, '2025-12-19 14:40:41.209505+00', '2025-12-19 14:40:41.209505+00', '2025-12-19 14:40:41.209505+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2025-12-19T14:40:42.000Z", "contentLength": 368155, "httpStatusCode": 200}', '13012aa2-7f95-46f0-b0ab-3dcf67f9a5f3', NULL, '{}', 1);
+INSERT INTO storage.objects (id, bucket_id, name, owner, created_at, updated_at, last_accessed_at, metadata, version, owner_id, user_metadata, level) VALUES ('9ef5c925-4c14-403a-84e9-6bd852f1adc6', 'resumes', 'teste_teste_com_br_1766155860050.pdf', NULL, '2025-12-19 14:51:00.758037+00', '2025-12-19 14:51:00.758037+00', '2025-12-19 14:51:00.758037+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2025-12-19T14:51:01.000Z", "contentLength": 368155, "httpStatusCode": 200}', '5dad6d6a-9a53-43d1-9eaa-447b088b8e3d', NULL, '{}', 1);
+INSERT INTO storage.objects (id, bucket_id, name, owner, created_at, updated_at, last_accessed_at, metadata, version, owner_id, user_metadata, level) VALUES ('2f95b50a-3208-4dfb-9c93-b402e861a7a8', 'resumes', 'teste_teste_com_br_1766155945615.pdf', NULL, '2025-12-19 14:52:26.363347+00', '2025-12-19 14:52:26.363347+00', '2025-12-19 14:52:26.363347+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2025-12-19T14:52:27.000Z", "contentLength": 368155, "httpStatusCode": 200}', '9927b3d6-4ef5-4248-b538-079a63cce8bd', NULL, '{}', 1);
+INSERT INTO storage.objects (id, bucket_id, name, owner, created_at, updated_at, last_accessed_at, metadata, version, owner_id, user_metadata, level) VALUES ('0a160c0f-ad05-41a6-aab7-a16e8b2b84d1', 'resumes', 'teste_teste_com_br_1766156128277.pdf', NULL, '2025-12-19 14:55:29.198336+00', '2025-12-19 14:55:29.198336+00', '2025-12-19 14:55:29.198336+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2025-12-19T14:55:30.000Z", "contentLength": 368155, "httpStatusCode": 200}', 'f392a57f-0003-4775-a3f8-671a9588c014', NULL, '{}', 1);
+INSERT INTO storage.objects (id, bucket_id, name, owner, created_at, updated_at, last_accessed_at, metadata, version, owner_id, user_metadata, level) VALUES ('b5ff3313-af89-458d-b881-b15ecd668961', 'resumes', 'eider_novvaempresa_com_br_1766414073143.pdf', NULL, '2025-12-22 14:34:34.119649+00', '2025-12-22 14:34:34.119649+00', '2025-12-22 14:34:34.119649+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2025-12-22T14:34:35.000Z", "contentLength": 368155, "httpStatusCode": 200}', '2ca9c6ac-442f-4302-a2d5-b4270d799e5e', NULL, '{}', 1);
+INSERT INTO storage.objects (id, bucket_id, name, owner, created_at, updated_at, last_accessed_at, metadata, version, owner_id, user_metadata, level) VALUES ('be75d55d-975c-4ad7-80d6-947210344c4f', 'resumes', '1766506758246_z3hjoe4y8.pdf', '631e295b-b7e9-4d8a-9d05-79898cef103f', '2025-12-23 16:19:19.925318+00', '2025-12-23 16:19:19.925318+00', '2025-12-23 16:19:19.925318+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2025-12-23T16:19:20.000Z", "contentLength": 368155, "httpStatusCode": 200}', '3e05b649-796c-4c89-9089-6a8136d3e900', '631e295b-b7e9-4d8a-9d05-79898cef103f', '{}', 1);
+INSERT INTO storage.objects (id, bucket_id, name, owner, created_at, updated_at, last_accessed_at, metadata, version, owner_id, user_metadata, level) VALUES ('8e375699-bbfd-4ed9-8428-e613e4f093cd', 'resumes', '1767384086358_h64zuz3ko.pdf', 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', '2026-01-02 20:01:29.447288+00', '2026-01-02 20:01:29.447288+00', '2026-01-02 20:01:29.447288+00', '{"eTag": "\"f2c5ce99696626aece13b50f5f857bb8\"", "size": 368155, "mimetype": "application/pdf", "cacheControl": "max-age=3600", "lastModified": "2026-01-02T20:01:30.000Z", "contentLength": 368155, "httpStatusCode": 200}', 'db10a1b3-7818-437b-b0d0-0056299b50b2', 'e7dacb55-defb-4eee-b8ec-6d22a7cd67cb', '{}', 1);
 
 
 --
@@ -4530,7 +4527,7 @@ INSERT INTO storage.objects VALUES ('8e375699-bbfd-4ed9-8428-e613e4f093cd', 'res
 -- Name: refresh_tokens_id_seq; Type: SEQUENCE SET; Schema: auth; Owner: supabase_auth_admin
 --
 
-SELECT pg_catalog.setval('auth.refresh_tokens_id_seq', 163, true);
+SELECT pg_catalog.setval('auth.refresh_tokens_id_seq', 178, true);
 
 
 --
@@ -5894,12 +5891,12 @@ ALTER TABLE ONLY public.tenants
 
 
 --
--- TOC entry 4058 (class 2606 OID 17771)
+-- TOC entry 4058 (class 2606 OID 34317)
 -- Name: user_profiles user_profiles_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.user_profiles
-    ADD CONSTRAINT user_profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id);
+    ADD CONSTRAINT user_profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE;
 
 
 --
@@ -5921,7 +5918,7 @@ ALTER TABLE ONLY public.user_tenants
 
 
 --
--- TOC entry 4064 (class 2606 OID 34263)
+-- TOC entry 4064 (class 2606 OID 34327)
 -- Name: user_tenants user_tenants_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -5930,12 +5927,12 @@ ALTER TABLE ONLY public.user_tenants
 
 
 --
--- TOC entry 4050 (class 2606 OID 17490)
+-- TOC entry 4050 (class 2606 OID 34322)
 -- Name: users users_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.users
-    ADD CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id);
+    ADD CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE;
 
 
 --
@@ -8474,11 +8471,11 @@ CREATE EVENT TRIGGER pgrst_drop_watch ON sql_drop
 
 ALTER EVENT TRIGGER pgrst_drop_watch OWNER TO supabase_admin;
 
--- Completed on 2026-01-04 10:42:58
+-- Completed on 2026-01-04 15:44:58
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict NB1AMQBUDfbtCIdelXq5UzLaTssR7sYbeNUHqkFy1dSXjuf48bGQUcjmXXRY7ZF
+\unrestrict 9n85L6dW6CYA0zN91g5DgpNWB16yl0Ug3hdeEQyLJTss6qG0iM2naCOKCBNYcGw
 
