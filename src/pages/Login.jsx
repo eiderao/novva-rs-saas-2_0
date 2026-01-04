@@ -1,9 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabase/client';
 import { Link, useNavigate } from 'react-router-dom';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
 import { Loader2, LayoutDashboard } from 'lucide-react';
 
 export default function Login() {
@@ -35,17 +32,14 @@ export default function Login() {
 
       if (countError) {
           console.error("Erro ao verificar tenants:", countError);
-          // Fallback: se der erro, tenta ir pro dashboard direto
           navigate('/'); 
           return;
       }
 
       // 3. Redirecionamento Inteligente
       if (count > 1) {
-          // Se tiver mais de uma empresa, vai para a seleção
           navigate('/select-company');
       } else {
-          // Se tiver 0 ou 1, vai direto para o Dashboard (o sistema assume a única ou cria nova no fluxo de registro)
           navigate('/');
       }
 
@@ -58,7 +52,7 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-lg shadow-sm border">
+      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-lg shadow-sm border border-gray-200">
         <div className="text-center">
           <div className="mx-auto h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 mb-4">
             <LayoutDashboard size={24} />
@@ -70,22 +64,24 @@ export default function Login() {
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="email">E-mail</Label>
-              <Input
+              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="email">E-mail</label>
+              <input
                 id="email"
                 type="email"
                 required
+                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none border-gray-300"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
               />
             </div>
             <div>
-              <Label htmlFor="password">Senha</Label>
-              <Input
+              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="password">Senha</label>
+              <input
                 id="password"
                 type="password"
                 required
+                className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none border-gray-300"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
@@ -99,9 +95,13 @@ export default function Login() {
             </div>
           )}
 
-          <Button type="submit" disabled={loading} className="w-full">
+          <button 
+            type="submit" 
+            disabled={loading} 
+            className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 transition flex justify-center items-center font-medium disabled:opacity-70"
+          >
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Entrar'}
-          </Button>
+          </button>
 
           <div className="text-center text-sm">
             <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">
