@@ -13,7 +13,6 @@ export default function Settings() {
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
 
   // Estados para Novo Usuário
-  // ADICIONADO: campo 'role' (Cargo) iniciado vazio
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: '', isAdmin: false });
   const [isAddingUser, setIsAddingUser] = useState(false);
 
@@ -27,7 +26,7 @@ export default function Settings() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return navigate('/login');
 
-      // 1. Pega perfil do usuário logado
+      // 1. Pega perfil do usuário logado (usando user_profiles)
       const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', session.user.id).single();
       setCurrentUserProfile(profile);
 
@@ -40,7 +39,7 @@ export default function Settings() {
             .single();
         setTenant(tenantData);
 
-        // 3. Busca EQUIPE
+        // 3. Busca EQUIPE (Corrigido para user_profiles)
         const { data: teamData } = await supabase
             .from('user_profiles')
             .select('*')
@@ -71,7 +70,7 @@ export default function Settings() {
             action: 'createUser',
             tenantId: tenant.id,
             ...newUser,
-            // Garante que se o cargo estiver vazio, envia um padrão
+            // Se o cargo estiver vazio, usa um padrão baseado no checkbox de Admin
             role: newUser.role || (newUser.isAdmin ? 'Administrador' : 'Recrutador') 
         })
       });

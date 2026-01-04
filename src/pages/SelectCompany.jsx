@@ -14,25 +14,27 @@ export default function SelectCompany() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return navigate('/login');
 
-      // Busca as empresas vinculadas a este usuário
+      // Busca empresas na tabela de ligação
       const { data, error } = await supabase
         .from('user_tenants')
         .select(`
             tenant_id,
             role,
-            tenant:tenants ( id, "companyName", "planId" )
+            tenant:tenants ( id, companyName, planId )
         `)
         .eq('user_id', user.id);
 
       if (error) {
         console.error('Erro ao buscar empresas:', error);
       } else {
-        // Se só tiver uma, seleciona automaticamente (segurança extra caso acessem a rota direto)
-        if (data.length === 1) {
-            handleSelect(data[0].tenant);
-        } else {
-            setTenants(data.map(d => ({ ...d.tenant, role: d.role })));
-        }
+        // Mapeia para um formato limpo
+        const formatted = data.map(d => ({
+            id: d.tenant.id,
+            companyName: d.tenant.companyName,
+            planId: d.tenant.planId,
+            role: d.role
+        }));
+        setTenants(formatted);
       }
       setLoading(false);
     };
@@ -44,18 +46,22 @@ export default function SelectCompany() {
     setSwitching(tenant.id);
     const { data: { user } } = await supabase.auth.getUser();
 
-    // A MÁGICA: Atualiza o user_profiles com o tenantId escolhido.
-    // Isso faz com que todo o resto do sistema (Dashboard, Vagas) carregue os dados dessa empresa.
+    // --- CONTEXT SWITCHING ---
+    // Atualiza o perfil principal para refletir a empresa escolhida.
+    // Assim, todas as outras telas (Dashboard, Vagas) carregarão dados desta empresa.
     const { error } = await supabase
         .from('user_profiles')
-        .update({ "tenantId": tenant.id }) // Aspas importantes se a coluna for camelCase no banco
+        .update({ 
+            tenantId: tenant.id,
+            role: tenant.role // Atualiza também o cargo para o contexto atual
+        }) 
         .eq('id', user.id);
 
     if (error) {
-        alert("Erro ao trocar de empresa: " + error.message);
+        alert("Erro ao entrar na empresa: " + error.message);
         setSwitching(null);
     } else {
-        navigate('/'); // Vai para o Dashboard com o contexto novo
+        navigate('/');
     }
   };
 
@@ -67,10 +73,10 @@ export default function SelectCompany() {
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><Loader2 className="animate-spin text-blue-600"/></div>;
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4 font-sans">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Selecione a Empresa</h1>
+            <h1 className="text-3xl font-bold text-gray-900">Selecionar Empresa</h1>
             <p className="text-gray-500 mt-2">Você tem acesso a {tenants.length} organizações. Onde deseja atuar agora?</p>
         </div>
 
@@ -80,24 +86,27 @@ export default function SelectCompany() {
                     key={t.id}
                     onClick={() => handleSelect(t)}
                     disabled={switching}
-                    className="w-full bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all flex items-center justify-between group text-left"
+                    className="w-full bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all flex items-center justify-between group text-left relative overflow-hidden"
                 >
-                    <div className="flex items-center gap-4">
-                        <div className="bg-blue-100 p-3 rounded-full text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                    <div className="flex items-center gap-4 relative z-10">
+                        <div className="bg-blue-50 p-3 rounded-full text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                             <Building size={24} />
                         </div>
                         <div>
-                            <h3 className="font-bold text-gray-800 text-lg">{t.companyName}</h3>
-                            <span className="text-xs uppercase font-semibold text-gray-400 tracking-wider">{t.planId || 'Standard'}</span>
+                            <h3 className="font-bold text-gray-800 text-lg group-hover:text-blue-700 transition-colors">{t.companyName}</h3>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs uppercase font-bold text-gray-400 tracking-wider border px-1.5 rounded">{t.planId || 'Standard'}</span>
+                                <span className="text-xs text-gray-500 capitalize">• {t.role}</span>
+                            </div>
                         </div>
                     </div>
-                    {switching === t.id ? <Loader2 className="animate-spin text-blue-600"/> : <ArrowRight className="text-gray-300 group-hover:text-blue-600"/>}
+                    {switching === t.id ? <Loader2 className="animate-spin text-blue-600"/> : <ArrowRight className="text-gray-300 group-hover:text-blue-600 transition-colors"/>}
                 </button>
             ))}
         </div>
 
         <div className="mt-8 text-center">
-            <button onClick={handleLogout} className="text-gray-500 hover:text-red-600 text-sm flex items-center justify-center gap-2 w-full">
+            <button onClick={handleLogout} className="text-gray-400 hover:text-red-600 text-sm flex items-center justify-center gap-2 w-full transition-colors">
                 <LogOut size={16}/> Sair da conta
             </button>
         </div>

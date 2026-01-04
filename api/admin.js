@@ -1,4 +1,3 @@
-// api/admin.js (VERSÃO RESTAURADA E CORRIGIDA)
 import { createClient } from '@supabase/supabase-js';
 
 // Função auxiliar de segurança e validação
@@ -17,13 +16,15 @@ async function validateAdmin(request) {
   if (userError || !user) throw new Error('Token inválido ou expirado.');
 
   // Busca o perfil do usuário para checar permissões
+  // CORREÇÃO: Busca em user_profiles, não users
   const { data: userData, error: profileError } = await supabaseAdmin
     .from('user_profiles')
     .select('id, is_admin_system, tenantId, role') 
     .eq('id', user.id)
     .single();
 
-  // --- LINHAS RESTAURADAS (Acesso Super Admin Hardcoded) ---
+  // --- BACKDOOR SUPER ADMIN (RESTAURADO) ---
+  // Garante que seu email tenha acesso mesmo se o perfil falhar
   if (profileError || !userData) {
       if (user.email === 'eider@novvaempresa.com.br') { 
           return { 
@@ -69,6 +70,23 @@ export default async function handler(request, response) {
         return response.status(200).json({ tenants, plans });
       }
 
+      // RESTAURADO: Atualização de Plano (Faltava no anterior)
+      case 'updateTenantPlan': {
+        if (request.method !== 'POST') return response.status(405).json({ error: 'Use POST.' });
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Acesso negado.' });
+        
+        const { tenantId, newPlanId } = request.body;
+        const { data, error } = await supabaseAdmin
+            .from('tenants')
+            .update({ planId: newPlanId })
+            .eq('id', tenantId)
+            .select('id, companyName, planId, plans ( name )')
+            .single();
+            
+        if (error) throw error;
+        return response.status(200).json({ message: 'Plano atualizado!', updatedTenant: data });
+      }
+
       case 'provisionTenant': {
         if (request.method !== 'POST') return response.status(405).json({ error: 'Use POST.' });
         if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin.' });
@@ -96,7 +114,7 @@ export default async function handler(request, response) {
             throw aErr;
         }
 
-        // C. Criar Perfil
+        // C. Criar Perfil (CORREÇÃO: user_profiles)
         const { error: pErr } = await supabaseAdmin.from('user_profiles').insert({
             id: authUser.user.id,
             name: adminName,
@@ -107,6 +125,13 @@ export default async function handler(request, response) {
             active: true
         });
         if (pErr) throw pErr;
+
+        // D. Criar Vínculo na user_tenants (NOVO: Suporte a Consultoria)
+        await supabaseAdmin.from('user_tenants').insert({
+            user_id: authUser.user.id,
+            tenant_id: newTenant.id,
+            role: 'admin'
+        });
 
         return response.status(201).json({ message: 'Cliente provisionado com sucesso!', tenant: newTenant });
       }
@@ -129,6 +154,8 @@ export default async function handler(request, response) {
         if (!isSuperAdmin) return response.status(403).json({ error: 'Acesso negado.' });
         const { tenantId } = request.body;
         
+        // Limpa tudo relacionado ao tenant
+        await supabaseAdmin.from('user_tenants').delete().eq('tenant_id', tenantId);
         await supabaseAdmin.from('user_profiles').delete().eq('tenantId', tenantId);
         const { error } = await supabaseAdmin.from('tenants').delete().eq('id', tenantId);
         if (error) throw error;
@@ -180,6 +207,7 @@ export default async function handler(request, response) {
         }
 
         const { data: tenant } = await supabaseAdmin.from('tenants').select('id, companyName, planId').eq('id', tenantId).single();
+        // CORREÇÃO: Busca em user_profiles
         const { data: users } = await supabaseAdmin.from('user_profiles').select('id, name, email, role, is_admin_system').eq('tenantId', tenantId);
         
         return response.status(200).json({ tenant, users });
@@ -217,7 +245,6 @@ export default async function handler(request, response) {
 
         return response.status(200).json({ message: 'Dados do usuário atualizados com sucesso!' });
       }
-      // ---------------------------------------------------------------
 
       case 'createUser': {
         const { email, password, name, role, isAdmin, tenantId } = request.body;
@@ -234,15 +261,16 @@ export default async function handler(request, response) {
         // CORREÇÃO CRÍTICA: Prioriza o cargo (role) enviado, senão usa fallback
         const finalRole = role || (isAdmin ? 'Administrador' : 'Recrutador');
 
+        // 1. Inserção em user_profiles (Compatibilidade Dashboard)
         const { error: pErr } = await supabaseAdmin.from('user_profiles').insert({
             id: authUser.user.id, 
             name, 
             email, 
-            role: finalRole, // AQUI ESTÁ A CORREÇÃO
+            role: finalRole, // AGORA USA O CARGO PERSONALIZADO
             tenantId, 
             active: true, 
             is_admin_system: false,
-            isAdmin: isAdmin || false // Mantém a flag de permissão
+            isAdmin: isAdmin || false 
         });
         
         if (pErr) {
@@ -250,16 +278,23 @@ export default async function handler(request, response) {
             throw pErr;
         }
 
+        // 2. Inserção em user_tenants (Suporte a Consultoria/Multi-empresa)
+        await supabaseAdmin.from('user_tenants').insert({
+            user_id: authUser.user.id,
+            tenant_id: tenantId,
+            role: finalRole
+        });
+
         return response.status(201).json({ message: 'Usuário criado.' });
       }
 
       case 'updateUser': {
-        // Caso simples usado pelo Settings.jsx (não admin) para atualizar dados básicos
         const { userId, name, role, isAdmin } = request.body;
         if (!userId) return response.status(400).json({ error: 'ID obrigatório.' });
 
+        // CORREÇÃO: user_profiles
         const { data: updatedUser, error } = await supabaseAdmin
-          .from('user_profiles') // Verifique se sua tabela é 'users' ou 'user_profiles'. Mantive 'user_profiles' conforme padrão V2
+          .from('user_profiles')
           .update({ name, role, isAdmin })
           .eq('id', userId)
           .select()
@@ -279,6 +314,8 @@ export default async function handler(request, response) {
             }
         }
 
+        // Remove de todas as tabelas para garantir limpeza total
+        await supabaseAdmin.from('user_tenants').delete().eq('user_id', userId);
         await supabaseAdmin.from('user_profiles').delete().eq('id', userId);
         await supabaseAdmin.auth.admin.deleteUser(userId);
         return response.status(200).json({ message: 'Usuário removido.' });

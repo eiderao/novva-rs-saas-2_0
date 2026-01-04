@@ -7,9 +7,9 @@ import Dashboard from './pages/Dashboard';
 import JobDetails from './pages/JobDetails';
 import ApplicationDetails from './pages/ApplicationDetails';
 import Settings from './pages/Settings';
-import ApplyJob from './pages/ApplyJob'; // NOVO IMPORT
+import ApplyJob from './pages/ApplyJob';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
-import SelectCompany from './pages/SelectCompany';
+import SelectCompany from './pages/SelectCompany'; // NOVO IMPORT
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -33,20 +33,23 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* ROTAS PÚBLICAS (Candidatos) */}
+        {/* ROTAS PÚBLICAS */}
         <Route path="/apply/:jobId" element={<ApplyJob />} />
 
         {/* ROTAS DE AUTENTICAÇÃO */}
         <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
         <Route path="/register" element={!session ? <Register /> : <Navigate to="/" />} />
         
-        {/* ROTAS PROTEGIDAS (Admin/Recrutador) */}
+        {/* ROTAS PROTEGIDAS */}
         <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" />} />
+        
+        {/* ROTA DE SELEÇÃO DE EMPRESA (NOVA) */}
+        <Route path="/select-company" element={session ? <SelectCompany /> : <Navigate to="/login" />} />
+
         <Route path="/jobs/:jobId" element={session ? <JobDetails /> : <Navigate to="/login" />} />
         <Route path="/applications/:appId" element={session ? <ApplicationDetails /> : <Navigate to="/login" />} />
         <Route path="/settings" element={session ? <Settings /> : <Navigate to="/login" />} />
         <Route path="/admin/super" element={session ? <SuperAdminDashboard /> : <Navigate to="/login" />} />
-        <Route path="/select-company" element={session ? <SelectCompany /> : <Navigate to="/login" />} />
       </Routes>
     </BrowserRouter>
   );
