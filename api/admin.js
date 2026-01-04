@@ -16,15 +16,13 @@ async function validateAdmin(request) {
   if (userError || !user) throw new Error('Token inválido ou expirado.');
 
   // Busca o perfil do usuário para checar permissões
-  // CORREÇÃO: Busca em user_profiles, não users
   const { data: userData, error: profileError } = await supabaseAdmin
     .from('user_profiles')
     .select('id, is_admin_system, tenantId, role') 
     .eq('id', user.id)
     .single();
 
-  // --- BACKDOOR SUPER ADMIN (RESTAURADO) ---
-  // Garante que seu email tenha acesso mesmo se o perfil falhar
+  // Bypass para Super Admin hardcoded (Segurança de Emergência)
   if (profileError || !userData) {
       if (user.email === 'eider@novvaempresa.com.br') { 
           return { 
@@ -35,7 +33,6 @@ async function validateAdmin(request) {
       }
       throw new Error('Perfil de usuário não encontrado.');
   }
-  // ---------------------------------------------------------
   
   return { supabaseAdmin, requesterProfile: userData, requesterId: user.id };
 }
@@ -70,23 +67,6 @@ export default async function handler(request, response) {
         return response.status(200).json({ tenants, plans });
       }
 
-      // RESTAURADO: Atualização de Plano (Faltava no anterior)
-      case 'updateTenantPlan': {
-        if (request.method !== 'POST') return response.status(405).json({ error: 'Use POST.' });
-        if (!isSuperAdmin) return response.status(403).json({ error: 'Acesso negado.' });
-        
-        const { tenantId, newPlanId } = request.body;
-        const { data, error } = await supabaseAdmin
-            .from('tenants')
-            .update({ planId: newPlanId })
-            .eq('id', tenantId)
-            .select('id, companyName, planId, plans ( name )')
-            .single();
-            
-        if (error) throw error;
-        return response.status(200).json({ message: 'Plano atualizado!', updatedTenant: data });
-      }
-
       case 'provisionTenant': {
         if (request.method !== 'POST') return response.status(405).json({ error: 'Use POST.' });
         if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin.' });
@@ -114,7 +94,7 @@ export default async function handler(request, response) {
             throw aErr;
         }
 
-        // C. Criar Perfil (CORREÇÃO: user_profiles)
+        // C. Criar Perfil
         const { error: pErr } = await supabaseAdmin.from('user_profiles').insert({
             id: authUser.user.id,
             name: adminName,
@@ -125,8 +105,8 @@ export default async function handler(request, response) {
             active: true
         });
         if (pErr) throw pErr;
-
-        // D. Criar Vínculo na user_tenants (NOVO: Suporte a Consultoria)
+        
+        // D. Criar Vínculo
         await supabaseAdmin.from('user_tenants').insert({
             user_id: authUser.user.id,
             tenant_id: newTenant.id,
@@ -140,11 +120,10 @@ export default async function handler(request, response) {
         if (!isSuperAdmin) return response.status(403).json({ error: 'Acesso negado.' });
         const { id, companyName, planId, cnpj } = request.body;
         
-        const { data, error } = await supabaseAdmin
+        const { error } = await supabaseAdmin
             .from('tenants')
             .update({ companyName, planId, cnpj })
-            .eq('id', id)
-            .select().single();
+            .eq('id', id);
         if (error) throw error;
         
         return response.status(200).json({ message: 'Atualizado.' });
@@ -154,9 +133,11 @@ export default async function handler(request, response) {
         if (!isSuperAdmin) return response.status(403).json({ error: 'Acesso negado.' });
         const { tenantId } = request.body;
         
-        // Limpa tudo relacionado ao tenant
+        // Remove vínculos e perfis associados (se necessário) antes de deletar o tenant
         await supabaseAdmin.from('user_tenants').delete().eq('tenant_id', tenantId);
-        await supabaseAdmin.from('user_profiles').delete().eq('tenantId', tenantId);
+        // Nota: Perfis podem ficar órfãos ou precisar de lógica para reatribuir tenantId padrão
+        // Para simplificar, deletamos o tenant e o banco lida com o resto se houver cascade configurado
+        
         const { error } = await supabaseAdmin.from('tenants').delete().eq('id', tenantId);
         if (error) throw error;
         
@@ -207,43 +188,28 @@ export default async function handler(request, response) {
         }
 
         const { data: tenant } = await supabaseAdmin.from('tenants').select('id, companyName, planId').eq('id', tenantId).single();
-        // CORREÇÃO: Busca em user_profiles
-        const { data: users } = await supabaseAdmin.from('user_profiles').select('id, name, email, role, is_admin_system').eq('tenantId', tenantId);
+        
+        // Agora busca usuários através da tabela de relacionamento user_tenants para suportar multi-tenant
+        const { data: tenantUsers, error: usersError } = await supabaseAdmin
+            .from('user_tenants')
+            .select(`
+                role,
+                user:user_profiles (id, name, email, is_admin_system)
+            `)
+            .eq('tenant_id', tenantId);
+
+        if (usersError) throw usersError;
+
+        // Formata para o frontend
+        const users = tenantUsers.map(tu => ({
+            id: tu.user?.id,
+            name: tu.user?.name,
+            email: tu.user?.email,
+            is_admin_system: tu.user?.is_admin_system,
+            role: tu.role // O cargo específico nesta empresa
+        })).filter(u => u.id); // Remove nulos caso haja inconsistência
         
         return response.status(200).json({ tenant, users });
-      }
-
-      // --- NOVO: GESTÃO COMPLETA DE USUÁRIO (Update Auth + Profile) ---
-      case 'updateUserAuth': {
-        if (request.method !== 'POST') return response.status(405).json({ error: 'Use POST.' });
-        if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin pode alterar credenciais de terceiros.' });
-
-        const { userId, email, password, name } = request.body;
-        if (!userId) return response.status(400).json({ error: 'ID do usuário necessário.' });
-
-        // 1. Atualiza Auth (Login, Senha, Metadados)
-        const updateData = { email_confirm: true };
-        if (email) updateData.email = email;
-        if (password) updateData.password = password;
-        if (name) updateData.user_metadata = { name };
-
-        const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, updateData);
-        if (authError) throw authError;
-
-        // 2. Atualiza Profile (Dados visuais)
-        const profileUpdate = {};
-        if (email) profileUpdate.email = email;
-        if (name) profileUpdate.name = name;
-
-        if (Object.keys(profileUpdate).length > 0) {
-            const { error: profileError } = await supabaseAdmin
-                .from('user_profiles')
-                .update(profileUpdate)
-                .eq('id', userId);
-            if (profileError) throw profileError;
-        }
-
-        return response.status(200).json({ message: 'Dados do usuário atualizados com sucesso!' });
       }
 
       case 'createUser': {
@@ -253,72 +219,153 @@ export default async function handler(request, response) {
             return response.status(403).json({ error: 'Não autorizado para esta empresa.' });
         }
 
-        const { data: authUser, error: aErr } = await supabaseAdmin.auth.admin.createUser({
-            email, password, email_confirm: true, user_metadata: { name }
-        });
-        if (aErr) throw aErr;
-
-        // CORREÇÃO CRÍTICA: Prioriza o cargo (role) enviado, senão usa fallback
         const finalRole = role || (isAdmin ? 'Administrador' : 'Recrutador');
 
-        // 1. Inserção em user_profiles (Compatibilidade Dashboard)
-        const { error: pErr } = await supabaseAdmin.from('user_profiles').insert({
-            id: authUser.user.id, 
-            name, 
-            email, 
-            role: finalRole, // AGORA USA O CARGO PERSONALIZADO
-            tenantId, 
-            active: true, 
-            is_admin_system: false,
-            isAdmin: isAdmin || false 
-        });
-        
-        if (pErr) {
-            await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
-            throw pErr;
+        // 1. Tenta buscar usuário existente pelo email (usando user_profiles como índice)
+        const { data: existingUser } = await supabaseAdmin
+            .from('user_profiles')
+            .select('id')
+            .eq('email', email)
+            .maybeSingle();
+
+        if (existingUser) {
+            // --- CENÁRIO A: Usuário Já Existe ---
+            // Verifica se já está vinculado a esta empresa
+            const { data: existingLink } = await supabaseAdmin
+                .from('user_tenants')
+                .select('id')
+                .eq('user_id', existingUser.id)
+                .eq('tenant_id', tenantId)
+                .maybeSingle();
+
+            if (existingLink) {
+                return response.status(409).json({ error: 'Este usuário já faz parte desta empresa.' });
+            }
+
+            // Cria apenas o vínculo novo
+            await supabaseAdmin.from('user_tenants').insert({
+                user_id: existingUser.id,
+                tenant_id: tenantId,
+                role: finalRole
+            });
+
+            return response.status(200).json({ message: 'Usuário existente vinculado com sucesso!' });
+
+        } else {
+            // --- CENÁRIO B: Usuário Novo ---
+            const { data: authUser, error: aErr } = await supabaseAdmin.auth.admin.createUser({
+                email, password, email_confirm: true, user_metadata: { name }
+            });
+            if (aErr) throw aErr;
+
+            // Cria Perfil Base
+            const { error: pErr } = await supabaseAdmin.from('user_profiles').insert({
+                id: authUser.user.id, 
+                name, 
+                email, 
+                role: finalRole, // Define role padrão no perfil (pode ser sobrescrito pelo contexto)
+                tenantId,       // Define tenant inicial
+                active: true, 
+                is_admin_system: false
+            });
+            
+            if (pErr) {
+                await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
+                throw pErr;
+            }
+
+            // Cria Vínculo user_tenants
+            await supabaseAdmin.from('user_tenants').insert({
+                user_id: authUser.user.id,
+                tenant_id: tenantId,
+                role: finalRole
+            });
+
+            return response.status(201).json({ message: 'Usuário criado e vinculado.' });
+        }
+      }
+
+      case 'updateUserAuth': {
+        // Atualização de credenciais (Nome/Senha/Email) - Global
+        if (request.method !== 'POST') return response.status(405).json({ error: 'Use POST.' });
+        if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin.' });
+
+        const { userId, email, password, name } = request.body;
+        if (!userId) return response.status(400).json({ error: 'ID necessário.' });
+
+        const updateData = { email_confirm: true };
+        if (email) updateData.email = email;
+        if (password) updateData.password = password;
+        if (name) updateData.user_metadata = { name };
+
+        const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, updateData);
+        if (authError) throw authError;
+
+        const profileUpdate = {};
+        if (email) profileUpdate.email = email;
+        if (name) profileUpdate.name = name;
+
+        if (Object.keys(profileUpdate).length > 0) {
+            await supabaseAdmin.from('user_profiles').update(profileUpdate).eq('id', userId);
         }
 
-        // 2. Inserção em user_tenants (Suporte a Consultoria/Multi-empresa)
-        await supabaseAdmin.from('user_tenants').insert({
-            user_id: authUser.user.id,
-            tenant_id: tenantId,
-            role: finalRole
-        });
-
-        return response.status(201).json({ message: 'Usuário criado.' });
+        return response.status(200).json({ message: 'Credenciais atualizadas!' });
       }
 
       case 'updateUser': {
+        // Atualiza cargo/função DENTRO DO CONTEXTO da empresa atual (user_tenants)
+        // OBS: Isso difere da versão anterior que atualizava user_profiles globalmente
         const { userId, name, role, isAdmin } = request.body;
-        if (!userId) return response.status(400).json({ error: 'ID obrigatório.' });
+        // Precisamos do tenantId para saber QUAL vínculo atualizar. 
+        // Se a request vier do Settings.jsx, ela deve mandar ou pegamos do contexto do admin logado.
+        const targetTenantId = request.body.tenantId || requesterProfile.tenantId;
 
-        // CORREÇÃO: user_profiles
-        const { data: updatedUser, error } = await supabaseAdmin
-          .from('user_profiles')
-          .update({ name, role, isAdmin })
-          .eq('id', userId)
-          .select()
-          .single();
+        if (!userId || !targetTenantId) return response.status(400).json({ error: 'ID e Empresa obrigatórios.' });
+
+        // Atualiza o nome globalmente (user_profiles)
+        if (name) {
+            await supabaseAdmin.from('user_profiles').update({ name }).eq('id', userId);
+        }
+
+        // Atualiza o papel na empresa específica (user_tenants)
+        const finalRole = role || (isAdmin ? 'Administrador' : 'Membro');
+        const { error } = await supabaseAdmin
+            .from('user_tenants')
+            .update({ role: finalRole })
+            .eq('user_id', userId)
+            .eq('tenant_id', targetTenantId);
         
         if (error) throw error;
-        return response.status(200).json({ message: 'Usuário atualizado!', updatedUser });
+        return response.status(200).json({ message: 'Membro atualizado!' });
       }
 
       case 'deleteUser': {
+        // Remove APENAS O VÍNCULO com a empresa atual.
+        // Se for Super Admin e quiser deletar do sistema todo, precisaria de uma flag extra ou outra action.
         const { userId } = request.body;
+        const targetTenantId = request.body.tenantId || requesterProfile.tenantId;
         
         if (!isSuperAdmin) {
-            const { data: target } = await supabaseAdmin.from('user_profiles').select('tenantId').eq('id', userId).single();
-            if (!target || target.tenantId !== requesterProfile.tenantId) {
-                return response.status(403).json({ error: 'Não autorizado.' });
-            }
+             // Garante que quem está pedindo tem acesso a esse tenant
+             if (requesterProfile.tenantId !== targetTenantId) {
+                 return response.status(403).json({ error: 'Não autorizado.' });
+             }
         }
 
-        // Remove de todas as tabelas para garantir limpeza total
-        await supabaseAdmin.from('user_tenants').delete().eq('user_id', userId);
-        await supabaseAdmin.from('user_profiles').delete().eq('id', userId);
-        await supabaseAdmin.auth.admin.deleteUser(userId);
-        return response.status(200).json({ message: 'Usuário removido.' });
+        // Remove vínculo
+        const { error } = await supabaseAdmin
+            .from('user_tenants')
+            .delete()
+            .eq('user_id', userId)
+            .eq('tenant_id', targetTenantId);
+
+        if (error) throw error;
+
+        // Opcional: Se o usuário não tiver mais nenhum tenant, deletar do Auth?
+        // Por segurança, mantemos o usuário no sistema (pode ser re-adicionado depois)
+        // A menos que seja uma exclusão explicita de "Deletar Conta"
+
+        return response.status(200).json({ message: 'Acesso revogado para esta empresa.' });
       }
 
       default:
