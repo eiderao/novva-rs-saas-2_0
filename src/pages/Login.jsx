@@ -16,7 +16,7 @@ export default function Login() {
     setError('');
 
     try {
-      // 1. Login no Supabase Auth
+      // 1. Autenticação no Supabase
       const { data: { user }, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -24,26 +24,36 @@ export default function Login() {
 
       if (authError) throw authError;
 
-      // 2. Verifica quantos Tenants o usuário tem
+      // 2. Verifica a quantidade de empresas vinculadas (Lógica de Consultoria)
       const { count, error: countError } = await supabase
         .from('user_tenants')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id);
 
       if (countError) {
-          console.error("Erro ao verificar tenants:", countError);
-          navigate('/'); 
+          console.warn("Erro ao verificar user_tenants. Redirecionando para padrão.", countError);
+          navigate('/'); // Fallback de segurança
           return;
       }
 
-      // 3. Redirecionamento Inteligente
+      // 3. Roteamento Inteligente
       if (count > 1) {
+          // Consultora (Emília) ou Dono de várias empresas -> Tela de Seleção
           navigate('/select-company');
       } else {
+          // Usuário comum (1 empresa) -> Dashboard direto
+          // Garantimos que o profile esteja com o tenantId correto (caso tenha apenas 1)
+          if (count === 1) {
+              const { data: link } = await supabase.from('user_tenants').select('tenant_id').eq('user_id', user.id).single();
+              if (link) {
+                  await supabase.from('user_profiles').update({ tenantId: link.tenant_id }).eq('id', user.id);
+              }
+          }
           navigate('/');
       }
 
     } catch (error) {
+      console.error(error);
       setError('E-mail ou senha incorretos.');
     } finally {
       setLoading(false);
