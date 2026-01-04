@@ -1,4 +1,4 @@
-// api/admin.js (VERSÃO FINAL INTEGRADA)
+// api/admin.js (VERSÃO FINAL COMPLETA E CORRIGIDA)
 import { createClient } from '@supabase/supabase-js';
 
 // Função auxiliar de segurança e validação
@@ -47,7 +47,7 @@ export default async function handler(request, response) {
 
     switch (action) {
       // ======================================================================
-      // 1. GESTÃO DE EMPRESAS (TENANTS)
+      // 1. GESTÃO DE EMPRESAS E DASHBOARD
       // ======================================================================
 
       case 'getTenantsAndPlans': {
@@ -82,37 +82,27 @@ export default async function handler(request, response) {
           .select().single();
         if (tErr) throw tErr;
 
-        // B. Criar Auth User (A Trigger do banco criará o perfil e o vínculo automaticamente baseada nos metadados)
-        const { error: aErr } = await supabaseAdmin.auth.admin.createUser({
+        // B. Criar Auth User
+        // Passamos os metadados para que a Trigger 'handle_new_user' (criada no SQL) faça o trabalho pesado
+        const { data: authUser, error: aErr } = await supabaseAdmin.auth.admin.createUser({
             email: adminEmail,
             password: adminPassword,
             email_confirm: true,
             user_metadata: { 
                 name: adminName,
-                tenant_id: newTenant.id, // Trigger usa isso para vincular
-                role: 'admin'            // Trigger usa isso para definir permissão
+                tenant_id: newTenant.id, 
+                role: 'admin'
             }
         });
 
         if (aErr) {
-            // Se falhar (ex: email já existe), tentamos vincular manualmente
-            if (aErr.message.includes('already been registered')) {
-                 const { data: existing } = await supabaseAdmin.rpc('get_user_id_by_email', { email: adminEmail });
-                 if (existing && existing[0]) {
-                     // Vincula usuário existente ao novo tenant como admin
-                     await supabaseAdmin.from('user_tenants').insert({
-                         user_id: existing[0].id,
-                         tenant_id: newTenant.id,
-                         role: 'admin'
-                     });
-                     // Não retornamos erro, pois o provisionamento "funcionou" (empresa criada e usuário vinculado)
-                 }
-            } else {
-                 // Se for outro erro, faz rollback do tenant
-                 await supabaseAdmin.from('tenants').delete().eq('id', newTenant.id);
-                 throw aErr;
-            }
+            // Se falhar (ex: email já existe), fazemos rollback do tenant
+            await supabaseAdmin.from('tenants').delete().eq('id', newTenant.id);
+            throw aErr;
         }
+        
+        // Nota: Não precisamos criar user_profiles/user_tenants aqui manualmente
+        // porque a Trigger do banco lerá o 'tenant_id' dos metadados e fará isso.
 
         return response.status(201).json({ message: 'Cliente provisionado com sucesso!', tenant: newTenant });
       }
@@ -187,7 +177,7 @@ export default async function handler(request, response) {
 
         const { data: tenant } = await supabaseAdmin.from('tenants').select('id, companyName, planId').eq('id', tenantId).single();
         
-        // Busca usuários vinculados a este tenant na tabela user_tenants
+        // Busca via relacionamento user_tenants (Multi-tenant correto)
         const { data: tenantUsers, error: usersError } = await supabaseAdmin
             .from('user_tenants')
             .select(`
@@ -198,14 +188,14 @@ export default async function handler(request, response) {
 
         if (usersError) throw usersError;
 
-        // Formata resposta
+        // Formata para o frontend
         const users = tenantUsers.map(tu => ({
             id: tu.user?.id,
             name: tu.user?.name,
             email: tu.user?.email,
             is_admin_system: tu.user?.is_admin_system,
-            role: tu.role 
-        })).filter(u => u.id);
+            role: tu.role // O cargo específico nesta empresa
+        })).filter(u => u.id); // Remove nulos caso haja inconsistência
         
         return response.status(200).json({ tenant, users });
       }
@@ -219,20 +209,21 @@ export default async function handler(request, response) {
 
         const finalRole = role || (isAdmin ? 'Administrador' : 'Recrutador');
         
-        // 1. Verifica se usuário já existe no AUTH (Via RPC segura)
+        // 1. Verifica se usuário já existe no AUTH (Via RPC segura 'get_user_id_by_email')
+        // Isso previne o erro "Email already registered"
         const { data: existingUserIDs } = await supabaseAdmin.rpc('get_user_id_by_email', { email });
         
         if (existingUserIDs && existingUserIDs.length > 0) {
             // --- CENÁRIO: Usuário JÁ EXISTE no Auth -> APENAS VINCULA ---
             const userId = existingUserIDs[0].id;
             
-            // Verifica se já está nesta empresa
+            // Verifica se já está nesta empresa para não duplicar
             const { data: existingLink } = await supabaseAdmin.from('user_tenants')
                 .select('id').eq('user_id', userId).eq('tenant_id', tenantId).maybeSingle();
             
             if (existingLink) return response.status(409).json({ error: 'Usuário já está nesta equipe.' });
 
-            // Cria o vínculo novo
+            // Cria o vínculo novo na tabela user_tenants
             const { error: linkErr } = await supabaseAdmin.from('user_tenants').insert({
                 user_id: userId, tenant_id: tenantId, role: finalRole
             });
@@ -241,10 +232,16 @@ export default async function handler(request, response) {
             return response.status(200).json({ message: 'Usuário existente convidado com sucesso!' });
 
         } else {
-            // --- CENÁRIO: Usuário NOVO -> CRIA AUTH (Trigger cria o resto) ---
+            // --- CENÁRIO: Usuário NOVO -> CRIA AUTH ---
+            // Passamos metadados para que a Trigger do banco (handle_new_user)
+            // crie automaticamente o user_profile e o user_tenant correspondente.
             const { error: aErr } = await supabaseAdmin.auth.admin.createUser({
                 email, password, email_confirm: true, 
-                user_metadata: { name, tenant_id: tenantId, role: finalRole } 
+                user_metadata: { 
+                    name, 
+                    tenant_id: tenantId, 
+                    role: finalRole 
+                } 
             });
             
             if (aErr) throw aErr;
@@ -264,7 +261,7 @@ export default async function handler(request, response) {
          const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, updateData);
          if (error) throw error;
          
-         // Atualiza profile visual também
+         // Atualiza profile visual também (backup)
          if (name || email) {
              const profileUpdate = {};
              if(name) profileUpdate.name = name;
@@ -279,10 +276,10 @@ export default async function handler(request, response) {
         const { userId, name, role, isAdmin, tenantId } = request.body;
         const targetTenant = tenantId || requesterProfile.tenantId;
 
-        // Atualiza Perfil (Nome é global)
+        // Atualiza Perfil Global (Nome)
         if (name) await supabaseAdmin.from('user_profiles').update({ name }).eq('id', userId);
 
-        // Atualiza Vínculo (Role é específico do tenant)
+        // Atualiza Vínculo Específico (Role na empresa)
         const finalRole = role || (isAdmin ? 'Administrador' : 'Membro');
         const { error } = await supabaseAdmin.from('user_tenants').update({ role: finalRole })
             .eq('user_id', userId).eq('tenant_id', targetTenant);
@@ -300,13 +297,12 @@ export default async function handler(request, response) {
              if (requesterProfile.tenantId !== targetTenant) return response.status(403).json({ error: 'Não autorizado.' });
         }
 
-        // Remove APENAS o vínculo com este tenant
-        const { error } = await supabaseAdmin.from('user_tenants').delete().eq('user_id', userId).eq('tenant_id', targetTenant);
-        if (error) throw error;
+        // Remove APENAS o vínculo com este tenant (soft delete da empresa)
+        await supabaseAdmin.from('user_tenants').delete().eq('user_id', userId).eq('tenant_id', targetTenant);
 
-        // Se for Super Admin e quiser deletar conta globalmente, teria que ser outra action ou verificar se não há mais vínculos.
-        // Por padrão no escopo multi-tenant, "Remover Usuário" na tela de equipe significa remover daquela equipe.
-
+        // Opcional: Verificar se o usuário não tem mais nenhum vínculo e deletar do Auth?
+        // Por padrão SaaS, mantemos o usuário no Auth a menos que seja uma exclusão explícita de "Deletar Conta".
+        
         return response.status(200).json({ message: 'Acesso revogado.' });
       }
 

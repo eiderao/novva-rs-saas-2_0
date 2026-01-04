@@ -1,4 +1,4 @@
-// api/getApplicationDetails.js (Versão Definitivamente Corrigida)
+// api/getApplicationDetails.js (CORRIGIDO: Aponta para user_profiles)
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(request, response) {
@@ -14,13 +14,19 @@ export default async function handler(request, response) {
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
     if (userError) return response.status(401).json({ error: 'Token inválido.' });
 
-    const { data: userData } = await supabaseAdmin.from('users').select('tenantId').eq('id', user.id).single();
-    if (!userData) return response.status(404).json({ error: 'Perfil de usuário não encontrado.' });
+    // CORREÇÃO: Busca em user_profiles
+    const { data: userData } = await supabaseAdmin
+        .from('user_profiles')
+        .select('tenantId')
+        .eq('id', user.id)
+        .single();
+
+    if (!userData) return response.status(404).json({ error: 'Perfil não encontrado.' });
     const tenantId = userData.tenantId;
 
     const { applicationId } = request.query;
     if (!applicationId) {
-      return response.status(400).json({ error: 'O ID da candidatura é obrigatório.' });
+      return response.status(400).json({ error: 'ID da candidatura obrigatório.' });
     }
 
     const { data: application, error: applicationError } = await supabaseAdmin
@@ -45,13 +51,13 @@ export default async function handler(request, response) {
     }
 
     if (application.job.tenantId !== tenantId) {
-      return response.status(403).json({ error: 'Você não tem permissão para ver esta candidatura.' });
+      return response.status(403).json({ error: 'Sem permissão para esta candidatura.' });
     }
 
     return response.status(200).json({ application });
 
   } catch (error) {
-    console.error("Erro na função getApplicationDetails:", error);
-    return response.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
+    console.error("Erro getApplicationDetails:", error);
+    return response.status(500).json({ error: 'Erro interno.', details: error.message });
   }
 }

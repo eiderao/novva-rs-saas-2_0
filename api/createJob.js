@@ -1,4 +1,4 @@
-// api/createJob.js (Versão V2.0 - Freemium Limit & Full Fields)
+// api/createJob.js (CORRIGIDO: Aponta para user_profiles)
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(request, response) {
@@ -15,7 +15,13 @@ export default async function handler(request, response) {
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
     if (userError) return response.status(401).json({ error: 'Token inválido.' });
     
-    const { data: userData } = await supabaseAdmin.from('users').select('tenantId').eq('id', user.id).single();
+    // CORREÇÃO: Busca em user_profiles
+    const { data: userData } = await supabaseAdmin
+        .from('user_profiles')
+        .select('tenantId')
+        .eq('id', user.id)
+        .single();
+        
     if (!userData) return response.status(404).json({ error: 'Perfil não encontrado.' });
     const tenantId = userData.tenantId;
 
@@ -28,39 +34,32 @@ export default async function handler(request, response) {
     
     if (tenantError) throw tenantError;
 
-    // REGRA 6: Limite de Vagas Ativas apenas (especialmente Freemium)
+    // REGRA: Limite de Vagas Ativas
     const job_limit = tenant.plan.job_limit;
     
-    // Se o limite for diferente de -1 (ilimitado), verificamos
     if (job_limit !== -1) {
       const { count, error: countError } = await supabaseAdmin
         .from('jobs')
         .select('*', { count: 'exact', head: true })
         .eq('tenantId', tenantId)
-        .eq('status', 'active'); // Conta apenas ativas!
+        .eq('status', 'active'); 
 
       if (countError) throw countError;
       
       if (count >= job_limit) {
         return response.status(403).json({ 
-            error: `Limite de ${job_limit} vagas ativas atingido para o plano ${tenant.plan.id}. Arquive ou exclua uma vaga para criar outra.` 
+            error: `Limite de ${job_limit} vagas ativas atingido para o plano ${tenant.plan.id}.` 
         });
       }
     }
 
-    // Recebe todos os campos novos
     const { 
-        title, 
-        description, 
-        requirements, 
-        type, 
-        location_type, 
-        company_department_id 
+        title, description, requirements, type, 
+        location_type, company_department_id 
     } = request.body;
 
     if (!title) return response.status(400).json({ error: 'O título da vaga é obrigatório.' });
     
-    // Prepara objeto de inserção com campos seguros
     const insertData = {
         title,
         tenantId,
@@ -69,11 +68,8 @@ export default async function handler(request, response) {
         requirements: requirements || '',
         type: type || 'CLT',
         location_type: location_type || 'Híbrido',
-        // Inicia com parâmetros padrão se não existirem
         parameters: { 
-            triagem: [], 
-            cultura: [], 
-            tecnico: [], 
+            triagem: [], cultura: [], tecnico: [], 
             notas: [
                 {id: '1', nome: 'Abaixo', valor: 0},
                 {id: '2', nome: 'Atende', valor: 50},
@@ -82,7 +78,6 @@ export default async function handler(request, response) {
         }
     };
 
-    // Só adiciona o departamento se ele vier preenchido
     if (company_department_id) {
         insertData.company_department_id = company_department_id;
     }
