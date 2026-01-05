@@ -46,9 +46,7 @@ export default function Settings() {
             .single();
         setTenant(tenantData);
 
-        // 3. Busca EQUIPE (Multi-tenant seguro)
-        // Busca na tabela de junção user_tenants e faz o join com user_profiles
-        // IMPORTANTE: O join 'user:user_profiles' depende da FK criada no SQL
+        // 3. Busca EQUIPE
         const { data: teamRelations, error: teamError } = await supabase
             .from('user_tenants')
             .select(`
@@ -66,14 +64,13 @@ export default function Settings() {
         const formattedTeam = [];
         if (teamRelations) {
             teamRelations.forEach(item => {
-                // Defesa contra relacionamentos órfãos
                 if (item.user) {
                     formattedTeam.push({
                         id: item.user.id,
                         name: item.user.name,
                         email: item.user.email,
                         is_admin_system: item.user.is_admin_system,
-                        role: item.role, // O cargo específico nesta empresa
+                        role: item.role, 
                         isAdmin: item.role === 'Administrador' || item.role === 'admin'
                     });
                 }
@@ -306,17 +303,23 @@ export default function Settings() {
             {isAddingUser && (
                 <div className="bg-white p-6 rounded-xl border border-blue-100 mb-8 shadow-sm ring-4 ring-blue-50">
                     <h3 className="font-bold mb-6 text-gray-900 flex items-center gap-2 pb-4 border-b"><Plus size={18} className="text-blue-600"/> Cadastrar Novo Membro</h3>
-                    <form onSubmit={handleAddUser}>
+                    
+                    {/* CORREÇÃO AQUI: AUTOCOMPLETE OFF */}
+                    <form onSubmit={handleAddUser} autoComplete="off">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 mb-1.5">Nome Completo *</label>
                                 <input required className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" 
-                                    value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
+                                    value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} 
+                                    autoComplete="off" // Prevenção extra
+                                />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 mb-1.5">E-mail Corporativo *</label>
                                 <input required type="email" className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" 
-                                    value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
+                                    value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} 
+                                    autoComplete="off" // Evita sugestão de email do usuário atual
+                                />
                             </div>
                             {/* NOVO CAMPO: CARGO */}
                             <div>
@@ -334,7 +337,9 @@ export default function Settings() {
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 mb-1.5">Senha Inicial *</label>
                                 <input required type="password" className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" 
-                                    value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
+                                    value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} 
+                                    autoComplete="new-password" // CHAVE MESTRA: Força o navegador a não preencher
+                                />
                             </div>
                             <div className="flex items-center h-full pt-1 md:col-span-2">
                                 <label className={`flex items-center gap-3 cursor-pointer p-4 rounded-lg border w-full transition ${newUser.isAdmin ? 'bg-purple-50 border-purple-200 ring-1 ring-purple-200' : 'bg-gray-50 border-gray-200 hover:border-gray-300'}`}>
@@ -405,7 +410,7 @@ export default function Settings() {
         </div>
       )}
 
-      {/* ABA 3: MEU PERFIL */}
+      {/* ABA 3: MEU PERFIL (NOVO) */}
       {activeTab === 'profile' && (
         <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 max-w-2xl animate-in fade-in slide-in-from-right-2 duration-300">
             <div className="flex items-center gap-4 mb-8 pb-6 border-b">
