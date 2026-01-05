@@ -14,6 +14,51 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
     title: '', description: '', requirements: '', type: 'CLT', location_type: 'Híbrido', company_department_id: ''
   });
 
+  // Critérios da Vaga Exemplo (Fixos)
+  const EXAMPLE_CRITERIA = {
+    "notas": [
+      {
+        "id": "5140db51-b042-45b2-a5ab-0a99e2982f4b",
+        "nome": "Abaixo",
+        "valor": 0
+      },
+      {
+        "id": "789fcdc0-9fb9-4ca0-ae8a-50ccb11b5e68",
+        "nome": "Atende",
+        "valor": "5"
+      },
+      {
+        "id": "e02c63cc-d9e5-448f-8ad3-ae2176eff9e1",
+        "nome": "Supera",
+        "valor": "10"
+      }
+    ],
+    "cultura": [
+      { "name": "O Cliente é a nossa razão de existir", "weight": "20" },
+      { "name": "Transparência é essencial", "weight": "20" },
+      { "name": "Colaborar mais do que competir", "weight": "20" },
+      { "name": "A busca pelo melhor nunca termina", "weight": "20" },
+      { "name": "Não há tempo a perder", "weight": "20" }
+    ],
+    "tecnico": [
+      { "name": "Compreensão do escopo da demanda", "weight": "20" },
+      { "name": "Capacidade de resolução de problemas", "weight": "20" },
+      { "name": "Organização e Método", "weight": "20" },
+      { "name": "Capacidade de estruturar dados de forma eficaz", "weight": "20" },
+      { "name": "Capacidade de otimização", "weight": "20" }
+    ],
+    "triagem": [
+      { "name": "Escolaridade", "weight": "12.5" },
+      { "name": "Qualificação exigível", "weight": "12.5" },
+      { "name": "Qualificação desejável", "weight": "12.5" },
+      { "name": "Experiência Geral", "weight": "12.5" },
+      { "name": "Experiência Específica", "weight": "12.5" },
+      { "name": "Habilidade hard", "weight": "12.5" },
+      { "name": "Habilidade soft", "weight": "12.5" },
+      { "name": "Línguas", "weight": "12.5" }
+    ]
+  };
+
   useEffect(() => {
     if (open) {
       initialize();
@@ -64,14 +109,18 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
     
     let parameters = {}; // Padrão vazio
 
-    // Se escolheu copiar, busca os parâmetros da vaga origem
-    if (copyFromId) {
+    // Verifica a origem dos critérios
+    if (copyFromId === 'EXAMPLE_TEMPLATE') {
+        // Opção Fixa: Vaga Exemplo
+        parameters = EXAMPLE_CRITERIA;
+    } else if (copyFromId) {
+        // Opção Dinâmica: Vaga existente no banco
         const { data } = await supabase.from('jobs').select('parameters').eq('id', copyFromId).single();
         if (data?.parameters) {
             parameters = data.parameters;
         }
     } else {
-        // Parâmetros Default
+        // Parâmetros Default (Zero)
         parameters = {
             triagem: [], cultura: [], tecnico: [],
             notas: [{id:'1',nome:'Abaixo',valor:0}, {id:'2',nome:'Atende',valor:50}, {id:'3',nome:'Supera',valor:100}]
@@ -123,23 +172,32 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
             
             {/* Seletor de Cópia - NOVIDADE */}
-            {previousJobs.length > 0 && (
-                <div className="bg-blue-50 p-3 rounded border border-blue-100 mb-4">
-                    <label className="block text-xs font-bold text-blue-800 mb-1 flex items-center gap-1">
-                        <Copy size={12}/> Copiar critérios de avaliação de:
-                    </label>
-                    <select 
-                        className="w-full border p-2 rounded text-sm bg-white"
-                        value={copyFromId}
-                        onChange={e => setCopyFromId(e.target.value)}
-                    >
-                        <option value="">-- Começar do Zero --</option>
-                        {previousJobs.map(j => (
-                            <option key={j.id} value={j.id}>{j.title}</option>
-                        ))}
-                    </select>
-                </div>
-            )}
+            <div className="bg-blue-50 p-3 rounded border border-blue-100 mb-4">
+                <label className="block text-xs font-bold text-blue-800 mb-1 flex items-center gap-1">
+                    <Copy size={12}/> Copiar critérios de avaliação de:
+                </label>
+                <select 
+                    className="w-full border p-2 rounded text-sm bg-white"
+                    value={copyFromId}
+                    onChange={e => setCopyFromId(e.target.value)}
+                >
+                    <option value="">-- Começar do Zero --</option>
+                    
+                    {/* Opção Fixa de Exemplo */}
+                    <option value="EXAMPLE_TEMPLATE" className="font-bold text-blue-600">
+                        ★ Vaga Exemplo (Modelo Padrão)
+                    </option>
+
+                    {/* Vagas Existentes */}
+                    {previousJobs.length > 0 && (
+                        <optgroup label="Minhas Vagas Anteriores">
+                            {previousJobs.map(j => (
+                                <option key={j.id} value={j.id}>{j.title}</option>
+                            ))}
+                        </optgroup>
+                    )}
+                </select>
+            </div>
 
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Título da Vaga *</label>
