@@ -28,7 +28,6 @@ const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   return ( <Modal open={open} onClose={onClose}><Box sx={modalStyle}><Typography variant="h6">Copiar de Vaga</Typography><FormControl fullWidth margin="normal"><InputLabel>Vaga</InputLabel><Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Vaga">{jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}</Select></FormControl><Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}><Button onClick={onClose}>Cancelar</Button><Button onClick={handleConfirm} variant="contained" disabled={!selectedJobId}>Copiar</Button></Box></Box></Modal> );
 };
 
-// Componente para Critérios (Triagem, Cultura, Técnico)
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
   const handleChange = (i, f, v) => { const n = [...criteria]; n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; onCriteriaChange(n); };
   const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
@@ -47,55 +46,29 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
   );
 };
 
-// Componente para a Régua de Notas
 const RatingScaleSection = ({ notes = [], onNotesChange }) => {
     const handleChange = (i, field, value) => {
         const newNotes = [...notes];
         newNotes[i] = { ...newNotes[i], [field]: field === 'valor' ? Number(value) : value };
         onNotesChange(newNotes);
     };
-
     const handleAdd = () => {
         const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
         onNotesChange([...notes, { id, nome: 'Nova Nota', valor: 0 }]);
     };
-
-    const handleRemove = (i) => {
-        onNotesChange(notes.filter((_, idx) => idx !== i));
-    };
+    const handleRemove = (i) => { onNotesChange(notes.filter((_, idx) => idx !== i)); };
 
     return (
         <Box sx={{ mt: 2 }}>
             {notes.map((n, i) => (
                 <Box key={n.id || i} display="flex" gap={2} mb={1} alignItems="center">
-                    <TextField
-                        value={n.nome}
-                        onChange={(e) => handleChange(i, 'nome', e.target.value)}
-                        fullWidth
-                        size="small"
-                        label="Nome do Nível (Ex: Supera)"
-                    />
-                    <TextField
-                        type="number"
-                        value={n.valor}
-                        onChange={(e) => handleChange(i, 'valor', e.target.value)}
-                        sx={{ width: 120 }}
-                        size="small"
-                        label="Valor (0-100)"
-                    />
-                    <IconButton onClick={() => handleRemove(i)} color="error">
-                        <DeleteIcon />
-                    </IconButton>
+                    <TextField value={n.nome} onChange={(e) => handleChange(i, 'nome', e.target.value)} fullWidth size="small" label="Nome do Nível" />
+                    <TextField type="number" value={n.valor} onChange={(e) => handleChange(i, 'valor', e.target.value)} sx={{ width: 120 }} size="small" label="Valor (0-100)" />
+                    <IconButton onClick={() => handleRemove(i)} color="error"><DeleteIcon /></IconButton>
                 </Box>
             ))}
-            <Button onClick={handleAdd} variant="outlined" size="small" startIcon={<AddIcon />}>
-                Adicionar Nível
-            </Button>
-            {notes.length < 2 && (
-                <Typography color="warning.main" variant="caption" display="block" sx={{ mt: 1 }}>
-                    Recomendado ter pelo menos 2 níveis (Mínimo e Máximo).
-                </Typography>
-            )}
+            <Button onClick={handleAdd} variant="outlined" size="small" startIcon={<AddIcon />}>Adicionar Nível</Button>
+            {notes.length < 2 && <Typography color="warning.main" variant="caption" display="block" sx={{ mt: 1 }}>Recomendado ter pelo menos 2 níveis.</Typography>}
         </Box>
     );
 };
@@ -118,37 +91,39 @@ export default function JobDetails() {
     const fetchAllData = async () => {
       setLoading(true);
       try {
-        const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
-        setJob(jobData);
+        // 1. Busca Dados da Vaga (e o tenantId)
+        const { data: jobData, error: jobError } = await supabase.from('jobs').select('*').eq('id', jobId).single();
+        if (jobError) throw jobError;
         
-        setParameters(jobData.parameters || { 
-            triagem: [], 
-            cultura: [], 
-            tecnico: [], 
-            notas: [
-                {id: '1', nome: 'Abaixo', valor: 0},
-                {id: '2', nome: 'Atende', valor: 50},
-                {id: '3', nome: 'Supera', valor: 100}
-            ] 
-        });
+        setJob(jobData);
+        setParameters(jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] });
 
+        // 2. Busca Candidatos da Vaga
         const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', jobId);
         setApplicants(appsData || []);
 
+        // 3. Busca Avaliações Existentes
         const appIds = (appsData || []).map(a => a.id);
         if (appIds.length > 0) {
             const { data: evalsData } = await supabase.from('evaluations').select('*').in('application_id', appIds);
             setAllEvaluations(evalsData || []);
+        }
 
-            const userIds = [...new Set((evalsData || []).map(e => e.evaluator_id))];
-            if (userIds.length > 0) {
-                [cite_start]// CORREÇÃO AQUI: Mudado de 'users' para 'user_profiles' [cite: 1674]
-                const { data: usersData } = await supabase.from('user_profiles').select('id, name, email').in('id', userIds);
+        // 4. CORREÇÃO: Busca TODA a equipe do Tenant para o Dropdown
+        // Usamos a mesma lógica que funciona na Gestão de Equipe (filtrar user_profiles pelo tenantId da vaga)
+        if (jobData.tenantId) {
+            const { data: teamData } = await supabase
+                .from('user_profiles')
+                .select('id, name, email')
+                .eq('tenantId', jobData.tenantId);
+            
+            if (teamData) {
                 const map = {};
-                usersData?.forEach(u => map[u.id] = u.name || u.email);
+                teamData.forEach(u => map[u.id] = u.name || u.email);
                 setUsersMap(map);
             }
         }
+
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
     fetchAllData();
@@ -157,18 +132,22 @@ export default function JobDetails() {
   const processedData = useMemo(() => {
     if (!parameters) return { chartData: [], evaluators: [] };
 
-    const evaluators = Object.keys(usersMap).map(id => ({ id, name: usersMap[id] || 'Desconhecido' }));
+    // Lista de avaliadores agora contém TODOS os membros da equipe (quem tem nome no mapa)
+    const evaluators = Object.keys(usersMap).map(id => ({ id, name: usersMap[id] }));
 
     const chartData = applicants.map(app => {
-        const appEvals = allEvaluations.filter(e => 
-            String(e.application_id) === String(app.id) && 
-            (evaluatorFilter === 'all' || e.evaluator_id === evaluatorFilter)
-        );
+        const appEvals = allEvaluations.filter(e => String(e.application_id) === String(app.id));
+
+        // Filtra para o cálculo apenas as avaliações do filtro selecionado
+        const evalsToConsider = evaluatorFilter === 'all' 
+            ? appEvals 
+            : appEvals.filter(e => e.evaluator_id === evaluatorFilter);
 
         let sumT = 0, sumC = 0, sumTc = 0, count = 0, sumTotal = 0;
-        appEvals.forEach(ev => {
+        evalsToConsider.forEach(ev => {
             const scores = processEvaluation(ev, parameters);
-            if (scores.total > 0 || scores.triagem > 0 || scores.cultura > 0 || scores.tecnico > 0) {
+            // Considera avaliação válida se tiver alguma nota
+            if (scores.total > 0 || scores.triagem > 0) {
                 sumT += scores.triagem; sumC += scores.cultura; sumTc += scores.tecnico; sumTotal += scores.total; count++;
             }
         });
@@ -204,7 +183,7 @@ export default function JobDetails() {
       setSaving(true);
       await supabase.from('jobs').update({ parameters }).eq('id', jobId);
       setSaving(false);
-      setFeedback({ open: true, message: 'Configurações salvas com sucesso!', severity: 'success' });
+      setFeedback({ open: true, message: 'Configurações salvas!', severity: 'success' });
   };
 
   if (loading) return <Box p={5} display="flex" justifyContent="center"><CircularProgress /></Box>;
@@ -245,7 +224,7 @@ export default function JobDetails() {
                                     </Select>
                                 </FormControl>
                             </Box>
-                            {processedData.chartData.some(d => d.total > 0) ? (
+                            {processedData.chartData.some(d => d.total > 0 || d.count > 0) ? (
                                 <Box sx={{ flex: 1, width: '100%', minHeight: 0 }}>
                                     <ResponsiveContainer width="100%" height="100%">
                                         <BarChart 
@@ -256,34 +235,13 @@ export default function JobDetails() {
                                         >
                                             <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={true} stroke="#eee" />
                                             <XAxis type="number" domain={[0, 10]} ticks={[0, 2, 4, 6, 8, 10]} stroke="#999" />
-                                            <YAxis 
-                                                dataKey="name" 
-                                                type="category" 
-                                                width={150} 
-                                                style={{fontSize: '0.8rem', fontWeight: 500, fill: '#444'}} 
-                                            />
-                                            <Tooltip 
-                                                cursor={{fill: '#f5f5f5'}}
-                                                contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                                                formatter={(val, name) => [val, name]} 
-                                            />
+                                            <YAxis dataKey="name" type="category" width={150} style={{fontSize: '0.8rem', fontWeight: 500, fill: '#444'}} />
+                                            <Tooltip cursor={{fill: '#f5f5f5'}} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} formatter={(val, name) => [val, name]} />
                                             <Legend verticalAlign="top" height={40} iconType="circle" />
-                                            
-                                            <Bar dataKey="triagem" name="Triagem" fill="#90caf9" barSize={20} radius={[0, 4, 4, 0]}>
-                                                <LabelList dataKey="triagem" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
-                                            </Bar>
-                                            <Bar dataKey="cultura" name="Fit Cultural" fill="#a5d6a7" barSize={20} radius={[0, 4, 4, 0]}>
-                                                <LabelList dataKey="cultura" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
-                                            </Bar>
-                                            <Bar dataKey="tecnico" name="Técnico" fill="#ffcc80" barSize={20} radius={[0, 4, 4, 0]}>
-                                                <LabelList dataKey="tecnico" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
-                                            </Bar>
-                                            
-                                            {/* BARRA DE MÉDIA GERAL DESTACADA */}
-                                            <Bar dataKey="total" name="Média Geral" fill="#4caf50" barSize={20} radius={[0, 4, 4, 0]}>
-                                                <LabelList dataKey="total" position="right" style={{fontSize:'0.8rem', fontWeight:'bold', fill:'#2e7d32'}} />
-                                            </Bar>
-                                            
+                                            <Bar dataKey="triagem" name="Triagem" fill="#90caf9" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="triagem" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/></Bar>
+                                            <Bar dataKey="cultura" name="Fit Cultural" fill="#a5d6a7" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="cultura" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/></Bar>
+                                            <Bar dataKey="tecnico" name="Técnico" fill="#ffcc80" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="tecnico" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/></Bar>
+                                            <Bar dataKey="total" name="Média Geral" fill="#4caf50" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="total" position="right" style={{fontSize:'0.8rem', fontWeight:'bold', fill:'#2e7d32'}} /></Bar>
                                             <ReferenceLine x={5} stroke="red" strokeDasharray="3 3" />
                                         </BarChart>
                                     </ResponsiveContainer>
