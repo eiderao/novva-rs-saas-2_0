@@ -79,6 +79,7 @@ export default function JobDetails() {
   const [parameters, setParameters] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
   const [tabValue, setTabValue] = useState(0);
   const [applicants, setApplicants] = useState([]);
   const [allEvaluations, setAllEvaluations] = useState([]);
@@ -91,62 +92,86 @@ export default function JobDetails() {
     const fetchAllData = async () => {
       setLoading(true);
       try {
-        // 1. Busca Dados da Vaga (e o tenantId)
         const { data: jobData, error: jobError } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         if (jobError) throw jobError;
-        
         setJob(jobData);
         setParameters(jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] });
 
-        // 2. Busca Candidatos da Vaga
         const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', jobId);
         setApplicants(appsData || []);
 
-        // 3. Busca Avaliações Existentes
         const appIds = (appsData || []).map(a => a.id);
         if (appIds.length > 0) {
             const { data: evalsData } = await supabase.from('evaluations').select('*').in('application_id', appIds);
             setAllEvaluations(evalsData || []);
         }
 
-        // 4. CORREÇÃO: Busca TODA a equipe do Tenant para o Dropdown
-        // Usamos a mesma lógica que funciona na Gestão de Equipe (filtrar user_profiles pelo tenantId da vaga)
+        // Busca TODA a equipe do Tenant para o Dropdown
         if (jobData.tenantId) {
-            const { data: teamData } = await supabase
-                .from('user_profiles')
-                .select('id, name, email')
-                .eq('tenantId', jobData.tenantId);
-            
-            if (teamData) {
+            const { data: teamData, error: teamError } = await supabase
+                .from('user_tenants')
+                .select('user:user_profiles(id, name, email)')
+                .eq('tenant_id', jobData.tenantId);
+
+            if (!teamError && teamData) {
                 const map = {};
-                teamData.forEach(u => map[u.id] = u.name || u.email);
+                teamData.forEach(item => {
+                    if (item.user) {
+                        map[item.user.id] = item.user.name || item.user.email;
+                    }
+                });
                 setUsersMap(map);
             }
         }
-
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
     fetchAllData();
   }, [jobId]);
 
+  const handleStatusChange = async (e) => {
+    const newStatus = e.target.value;
+    setStatusUpdating(true);
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        // Usa a API para garantir que o bypass de segurança funcione se necessário
+        const res = await fetch('/api/jobs', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ 
+                action: 'updateJobStatus', 
+                jobId: job.id, 
+                newStatus 
+            })
+        });
+
+        if (!res.ok) throw new Error('Falha ao atualizar status');
+
+        setJob(prev => ({ ...prev, status: newStatus }));
+        setFeedback({ open: true, message: 'Status da vaga atualizado!', severity: 'success' });
+    } catch (err) {
+        console.error(err);
+        setFeedback({ open: true, message: 'Erro ao atualizar status.', severity: 'error' });
+    } finally {
+        setStatusUpdating(false);
+    }
+  };
+
   const processedData = useMemo(() => {
     if (!parameters) return { chartData: [], evaluators: [] };
 
-    // Lista de avaliadores agora contém TODOS os membros da equipe (quem tem nome no mapa)
     const evaluators = Object.keys(usersMap).map(id => ({ id, name: usersMap[id] }));
 
     const chartData = applicants.map(app => {
         const appEvals = allEvaluations.filter(e => String(e.application_id) === String(app.id));
-
-        // Filtra para o cálculo apenas as avaliações do filtro selecionado
-        const evalsToConsider = evaluatorFilter === 'all' 
-            ? appEvals 
-            : appEvals.filter(e => e.evaluator_id === evaluatorFilter);
+        const evalsToConsider = evaluatorFilter === 'all' ? appEvals : appEvals.filter(e => e.evaluator_id === evaluatorFilter);
 
         let sumT = 0, sumC = 0, sumTc = 0, count = 0, sumTotal = 0;
         evalsToConsider.forEach(ev => {
             const scores = processEvaluation(ev, parameters);
-            // Considera avaliação válida se tiver alguma nota
             if (scores.total > 0 || scores.triagem > 0) {
                 sumT += scores.triagem; sumC += scores.cultura; sumTc += scores.tecnico; sumTotal += scores.total; count++;
             }
@@ -190,7 +215,30 @@ export default function JobDetails() {
 
   return (
     <Box>
-        <AppBar position="static" color="default" elevation={1}><Toolbar><Typography variant="h6" sx={{flexGrow:1}}>{job?.title}</Typography><Button color="inherit" component={RouterLink} to="/">Voltar</Button></Toolbar></AppBar>
+        <AppBar position="static" color="default" elevation={1}>
+            <Toolbar>
+                <Typography variant="h6" sx={{flexGrow:1}}>{job?.title}</Typography>
+                
+                {/* SELETOR DE STATUS (REESTABELECIDO) */}
+                <FormControl size="small" sx={{ minWidth: 150, mr: 2 }}>
+                    <Select 
+                        value={job?.status || 'active'} 
+                        onChange={handleStatusChange}
+                        disabled={statusUpdating}
+                        sx={{ bgcolor: 'white' }}
+                    >
+                        <MenuItem value="active">Ativa</MenuItem>
+                        <MenuItem value="inactive">Inativa</MenuItem>
+                        <MenuItem value="filled">Preenchida</MenuItem>
+                        <MenuItem value="suspended">Suspensa</MenuItem>
+                        <MenuItem value="cancelled">Cancelada</MenuItem>
+                    </Select>
+                </FormControl>
+
+                <Button color="inherit" component={RouterLink} to="/">Voltar</Button>
+            </Toolbar>
+        </AppBar>
+
         <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
             <Paper sx={{ mb: 3 }}><Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered><Tab label="Candidatos" /><Tab label="Classificação" /><Tab label="Configurações da Vaga" /></Tabs></Paper>
             
