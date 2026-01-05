@@ -15,7 +15,7 @@ import {
     Save as SaveIcon,
     Add as AddIcon 
 } from '@mui/icons-material';
-import { Share2, MapPin, Briefcase, Calendar, ArrowLeft } from 'lucide-react'; // Adicionado icons que faltavam no import
+import { Share2, MapPin, Briefcase, Calendar, ArrowLeft } from 'lucide-react'; // Certifique-se que esses icones existem no lucide
 import { processEvaluation } from '../utils/evaluationLogic';
 
 // --- COMPONENTES AUXILIARES ---
@@ -93,24 +93,21 @@ export default function JobDetails() {
     const fetchAllData = async () => {
       setLoading(true);
       try {
-        // 1. Busca Dados da Vaga
         const { data: jobData, error: jobError } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         if (jobError) throw jobError;
         setJob(jobData);
         setParameters(jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] });
 
-        // 2. Busca Candidatos da Vaga
         const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', jobId);
         setApplicants(appsData || []);
 
-        // 3. Busca Avaliações
         const appIds = (appsData || []).map(a => a.id);
         if (appIds.length > 0) {
             const { data: evalsData } = await supabase.from('evaluations').select('*').in('application_id', appIds);
             setAllEvaluations(evalsData || []);
         }
 
-        // 4. Busca Equipe (Tenant) para Dropdown
+        // Busca toda a equipe para o dropdown
         if (jobData.tenantId) {
             const { data: teamData, error: teamError } = await supabase
                 .from('user_tenants')
@@ -164,6 +161,7 @@ export default function JobDetails() {
   };
 
   const handleCopyLink = () => {
+    if (job.status !== 'active') return;
     navigator.clipboard.writeText(`${window.location.origin}/apply/${jobId}`);
     setFeedback({ open: true, message: 'Link copiado para a área de transferência!', severity: 'info' });
   };
@@ -252,7 +250,6 @@ export default function JobDetails() {
 
         <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
             
-            {/* Header da Vaga com Botão de Compartilhar Condicional */}
             <Box mb={4}>
                 <Box display="flex" justifyContent="space-between" alignItems="start">
                     <Box>
@@ -264,7 +261,7 @@ export default function JobDetails() {
                         </Box>
                     </Box>
                     
-                    {/* BOTÃO DE COMPARTILHAR - SÓ ATIVO SE STATUS FOR ACTIVE */}
+                    {/* BOTÃO DE COMPARTILHAR - ATIVO APENAS SE STATUS FOR 'active' */}
                     <Button 
                         variant="outlined" 
                         onClick={handleCopyLink}
@@ -281,7 +278,6 @@ export default function JobDetails() {
             
             {tabValue === 0 && (
                 <Paper sx={{ p: 0 }}>
-                    {/* ABA: DETALHES DA VAGA + CANDIDATOS */}
                     <Box p={3} borderBottom="1px solid #eee">
                         <Grid container spacing={3}>
                             <Grid item xs={12} md={6}>
@@ -389,7 +385,6 @@ export default function JobDetails() {
                         <ParametersSection criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} />
                     </Paper>
                     
-                    {/* RÉGUA DE NOTAS */}
                     <Paper variant="outlined" sx={{p:3, mb:3, borderColor: 'orange'}}>
                         <Typography variant="subtitle1" fontWeight="bold" gutterBottom color="orange">4. Régua de Notas</Typography>
                         <Typography variant="caption" color="text.secondary" gutterBottom>
