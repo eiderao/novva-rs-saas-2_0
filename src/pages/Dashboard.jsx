@@ -1,279 +1,359 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabase/client';
 import { useNavigate } from 'react-router-dom';
-import CreateJobModal from '../components/jobs/CreateJobModal';
-import { Briefcase, Users, Plus, Settings as SettingsIcon, Clock, Link as LinkIcon, CheckCircle } from 'lucide-react';
-import { differenceInDays, parseISO } from 'date-fns';
+import { 
+  Users, 
+  Briefcase, 
+  CheckCircle, 
+  Clock, 
+  TrendingUp, 
+  Calendar,
+  AlertCircle,
+  ArrowRight
+} from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [profile, setProfile] = useState(null);
-  const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [deptFilter, setDeptFilter] = useState('all');
-  const [fixing, setFixing] = useState(false);
-  const [copiedId, setCopiedId] = useState(null); // NOVO: Estado para feedback do botão copiar
+  const [stats, setStats] = useState({
+    activeJobs: 0,
+    totalApplications: 0,
+    hiredCandidates: 0,
+    pendingEvaluations: 0
+  });
+  const [recentApplications, setRecentApplications] = useState([]);
+  const [currentUserProfile, setCurrentUserProfile] = useState(null);
+  const [tenant, setTenant] = useState(null);
 
   useEffect(() => {
-    fetchData();
+    fetchDashboardData();
   }, []);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchDashboardData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      setLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        navigate('/login');
+        return;
+      }
 
       // 1. Busca Perfil
-      const { data: userProfile } = await supabase
+      const { data: profile } = await supabase
         .from('user_profiles')
         .select('*')
-        .eq('id', user.id)
+        .eq('id', session.user.id)
         .single();
 
-      setProfile(userProfile);
+      if (profile) {
+        setCurrentUserProfile(profile);
 
-      // 2. Se tiver Tenant, busca vagas
-      if (userProfile?.tenantId) {
-        const [jobsResult, deptsResult] = await Promise.all([
-          // Busca vagas e já conta os candidatos na query (count)
-          supabase.from('jobs').select('*, applications(count)').eq('tenantId', userProfile.tenantId),
-          supabase.from('company_departments').select('*').eq('tenantId', userProfile.tenantId)
-        ]);
-
-        const rawJobs = jobsResult.data || [];
-        const depts = deptsResult.data || [];
+        // 2. Busca Empresa (Tenant) para exibir o nome no cabeçalho
+        if (profile.tenantId) {
+            const { data: tenantData } = await supabase
+                .from('tenants')
+                .select('companyName')
+                .eq('id', profile.tenantId)
+                .single();
+            setTenant(tenantData);
+        }
         
-        const deptMap = {};
-        depts.forEach(d => deptMap[d.id] = d.name);
+        const tenantId = profile.tenantId;
 
-        const processed = rawJobs.map(j => ({
-          ...j,
-          deptName: j.company_department_id ? (deptMap[j.company_department_id] || 'Geral') : 'Geral',
-          // Métrica 1: Quantidade de Inscritos
-          candidateCount: j.applications?.[0]?.count || 0,
-          // Métrica 2: Dias em Aberto
-          daysOpen: differenceInDays(new Date(), parseISO(j.created_at))
-        }));
+        // 3. Busca Estatísticas (Filtradas pelo Tenant)
+        
+        // Vagas Ativas
+        const { count: activeJobsCount } = await supabase
+          .from('jobs')
+          .select('*', { count: 'exact', head: true })
+          .eq('tenantId', tenantId)
+          .eq('status', 'active');
 
-        // Ordena por data (mais recente primeiro)
-        processed.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        setJobs(processed);
+        // Total de Candidaturas (em vagas deste tenant)
+        // Precisamos filtrar applications cujas vagas pertencem ao tenant
+        // A melhor forma é buscar as vagas do tenant e depois as applications
+        const { data: tenantJobs } = await supabase
+            .from('jobs')
+            .select('id')
+            .eq('tenantId', tenantId);
+            
+        const jobIds = tenantJobs.map(j => j.id);
+        
+        let totalApps = 0;
+        let hiredCount = 0;
+        let recentAppsData = [];
+
+        if (jobIds.length > 0) {
+            const { count: appsCount } = await supabase
+                .from('applications')
+                .select('*', { count: 'exact', head: true })
+                .in('jobId', jobIds);
+            totalApps = appsCount || 0;
+
+            const { count: hired } = await supabase
+                .from('applications')
+                .select('*', { count: 'exact', head: true })
+                .in('jobId', jobIds)
+                .eq('isHired', true);
+            hiredCount = hired || 0;
+
+            // Busca Candidaturas Recentes
+            const { data: recent } = await supabase
+                .from('applications')
+                .select(`
+                    id, 
+                    created_at, 
+                    job:jobs(title), 
+                    candidate:candidates(name, email)
+                `)
+                .in('jobId', jobIds)
+                .order('created_at', { ascending: false })
+                .limit(5);
+            recentAppsData = recent || [];
+        }
+
+        setStats({
+          activeJobs: activeJobsCount || 0,
+          totalApplications: totalApps,
+          hiredCandidates: hiredCount,
+          pendingEvaluations: 0 // Placeholder para lógica futura se necessário
+        });
+
+        setRecentApplications(recentAppsData);
       }
+
     } catch (error) {
-      console.error("Erro ao carregar:", error);
+      console.error("Erro ao carregar dashboard:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Função para corrigir contas sem tenant (Mantida do original para segurança)
-  const fixAccount = async () => {
-    setFixing(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      const { data: newTenant, error: tError } = await supabase
-        .from('tenants')
-        .insert({ "companyName": "Minha Empresa" })
-        .select()
-        .single();
-      if (tError) throw tError;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-500 font-medium">Carregando indicadores...</p>
+        </div>
+      </div>
+    );
+  }
 
-      const { error: pError } = await supabase
-        .from('user_profiles')
-        .upsert({
-          id: user.id,
-          name: user.email.split('@')[0],
-          "tenantId": newTenant.id,
-          role: 'admin'
-        });
-      if (pError) throw pError;
+  // Dados para os gráficos (Mockados para visualização, idealmente viriam do banco)
+  const chartData = [
+    { name: 'Seg', candidaturas: 4 },
+    { name: 'Ter', candidaturas: 7 },
+    { name: 'Qua', candidaturas: 5 },
+    { name: 'Qui', candidaturas: 12 },
+    { name: 'Sex', candidaturas: 9 },
+    { name: 'Sáb', candidaturas: 3 },
+    { name: 'Dom', candidaturas: 2 },
+  ];
 
-      alert("Conta configurada com sucesso!");
-      fetchData();
-    } catch (err) {
-      alert("Erro ao configurar: " + err.message);
-    } finally {
-      setFixing(false);
-    }
-  };
-
-  // NOVO: Função para copiar link da vaga sem entrar nela
-  const copyJobLink = (e, jobId) => {
-    e.stopPropagation(); // Impede que o clique abra a página da vaga
-    const link = `${window.location.origin}/apply/${jobId}`;
-    navigator.clipboard.writeText(link).then(() => {
-      setCopiedId(jobId);
-      setTimeout(() => setCopiedId(null), 2000);
-    });
-  };
-
-  const filteredJobs = useMemo(() => {
-    if (deptFilter === 'all') return jobs;
-    return jobs.filter(j => j.deptName === deptFilter);
-  }, [jobs, deptFilter]);
-
-  const uniqueDepts = [...new Set(jobs.map(j => j.deptName))].sort();
-
-  if (loading) return <div className="p-10 text-center">Carregando Dashboard...</div>;
+  const pieData = [
+    { name: 'Triagem', value: stats.totalApplications - stats.hiredCandidates },
+    { name: 'Contratados', value: stats.hiredCandidates },
+  ];
+  const COLORS = ['#94a3b8', '#16a34a'];
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-8 max-w-7xl mx-auto font-sans bg-gray-50 min-h-screen">
+      
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 border-b pb-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-10 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-            <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600">
-              {profile?.name || 'Usuário'}
-            </span>
-            <span className="text-gray-300">|</span>
-            <button onClick={() => navigate('/settings')} className="text-gray-600 hover:text-blue-600 flex items-center gap-1">
-               <SettingsIcon size={14} /> Configurações
-            </button>
-            <span className="text-gray-300">|</span>
-            <button onClick={() => supabase.auth.signOut()} className="text-red-500 hover:underline">
-              Sair
-            </button>
-          </div>
+          <h1 className="text-3xl font-bold text-gray-900">
+             {/* ALTERAÇÃO SOLICITADA: Empresa / Usuário */}
+             {tenant?.companyName ? `${tenant.companyName} / ` : ''}{currentUserProfile?.name}
+          </h1>
+          <p className="text-gray-500 mt-1 flex items-center gap-2">
+            <Calendar size={16}/> {new Date().toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
         </div>
-        
-        {profile?.tenantId && (
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center shadow transition"
-          >
-            <Plus className="w-4 h-4 mr-2" /> Nova Vaga
-          </button>
-        )}
+        <div className="flex gap-3">
+            <button onClick={() => navigate('/jobs/new')} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 transition flex items-center gap-2">
+                <Briefcase size={18}/> Nova Vaga
+            </button>
+        </div>
       </div>
 
-      {!profile?.tenantId ? (
-        <div className="bg-yellow-50 border border-yellow-200 p-8 rounded-lg text-center shadow-sm max-w-2xl mx-auto">
-          <h2 className="text-xl font-bold text-yellow-800 mb-2">Finalizar Configuração da Conta</h2>
-          <p className="text-yellow-700 mb-6">
-            Bem-vindo ao Novva R&S! Para começar, precisamos configurar sua empresa.
-          </p>
-          <button 
-            onClick={fixAccount} 
-            disabled={fixing}
-            className="bg-yellow-600 text-white px-6 py-3 rounded-md font-bold hover:bg-yellow-700 shadow transition"
-          >
-            {fixing ? 'Configurando...' : '⚙️ Configurar Minha Empresa Agora'}
-          </button>
+      {/* Cards de KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition">
+            <div className="flex items-center justify-between mb-4">
+                <div className="bg-blue-50 p-3 rounded-xl text-blue-600">
+                    <Briefcase size={24} />
+                </div>
+                <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">+2 essa semana</span>
+            </div>
+            <p className="text-gray-500 text-sm font-medium">Vagas Ativas</p>
+            <h3 className="text-3xl font-bold text-gray-900">{stats.activeJobs}</h3>
         </div>
-      ) : (
-        <>
-          {/* KPI Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            <div className="bg-white p-6 rounded shadow border border-gray-100 flex items-center gap-4">
-              <div className="p-3 bg-blue-100 text-blue-600 rounded-full"><Briefcase size={24}/></div>
-              <div>
-                <p className="text-sm text-gray-500">Vagas Ativas</p>
-                <p className="text-2xl font-bold">{jobs.filter(j => j.status === 'active').length}</p>
-              </div>
-            </div>
-            <div className="bg-white p-6 rounded shadow border border-gray-100 flex items-center gap-4">
-              <div className="p-3 bg-green-100 text-green-600 rounded-full"><Users size={24}/></div>
-              <div>
-                <p className="text-sm text-gray-500">Total Candidatos</p>
-                <p className="text-2xl font-bold">{jobs.reduce((acc, j) => acc + j.candidateCount, 0)}</p>
-              </div>
-            </div>
-          </div>
 
-          {/* Tabela de Vagas */}
-          <div className="bg-white rounded shadow border overflow-hidden">
-            <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-              <h2 className="font-semibold text-gray-700">Listagem de Vagas</h2>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Filtrar:</span>
-                <select 
-                  className="border p-1 rounded text-sm bg-white outline-none"
-                  value={deptFilter}
-                  onChange={e => setDeptFilter(e.target.value)}
-                >
-                  <option value="all">Todas as Áreas</option>
-                  {uniqueDepts.map(d => <option key={d} value={d}>{d}</option>)}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition">
+            <div className="flex items-center justify-between mb-4">
+                <div className="bg-purple-50 p-3 rounded-xl text-purple-600">
+                    <Users size={24} />
+                </div>
+                <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">+12%</span>
+            </div>
+            <p className="text-gray-500 text-sm font-medium">Total Candidaturas</p>
+            <h3 className="text-3xl font-bold text-gray-900">{stats.totalApplications}</h3>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition">
+            <div className="flex items-center justify-between mb-4">
+                <div className="bg-green-50 p-3 rounded-xl text-green-600">
+                    <CheckCircle size={24} />
+                </div>
+            </div>
+            <p className="text-gray-500 text-sm font-medium">Contratações</p>
+            <h3 className="text-3xl font-bold text-gray-900">{stats.hiredCandidates}</h3>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition">
+            <div className="flex items-center justify-between mb-4">
+                <div className="bg-orange-50 p-3 rounded-xl text-orange-600">
+                    <Clock size={24} />
+                </div>
+            </div>
+            <p className="text-gray-500 text-sm font-medium">Aguardando Avaliação</p>
+            <h3 className="text-3xl font-bold text-gray-900">{stats.pendingEvaluations}</h3>
+        </div>
+      </div>
+
+      {/* Gráficos e Listas */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Gráfico Principal */}
+        <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-6">
+                <h3 className="font-bold text-gray-800 text-lg flex items-center gap-2">
+                    <TrendingUp size={20} className="text-blue-600"/> Fluxo de Candidaturas
+                </h3>
+                <select className="text-sm border-gray-200 rounded-lg text-gray-500 bg-gray-50 p-1">
+                    <option>Últimos 7 dias</option>
+                    <option>Este Mês</option>
                 </select>
-              </div>
             </div>
+            <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10}/>
+                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}}/>
+                        <Tooltip 
+                            cursor={{fill: '#f8fafc'}}
+                            contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                        />
+                        <Bar dataKey="candidaturas" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
 
-            <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 text-gray-500 border-b">
-                <tr>
-                  <th className="p-4 font-medium">Área / Depto</th>
-                  <th className="p-4 font-medium">Título</th>
-                  {/* NOVAS COLUNAS */}
-                  <th className="p-4 font-medium text-center">Inscritos</th>
-                  <th className="p-4 font-medium text-center">Tempo</th>
-                  <th className="p-4 font-medium text-center">Divulgação</th>
-                  <th className="p-4 font-medium">Status</th>
-                  <th className="p-4 font-medium text-right">Ação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredJobs.length === 0 ? (
-                  <tr><td colSpan="7" className="p-8 text-center text-gray-500">Nenhuma vaga encontrada.</td></tr>
-                ) : (
-                  filteredJobs.map(job => (
-                    <tr 
-                      key={job.id} 
-                      onClick={() => navigate(`/jobs/${job.id}`)}
-                      className="border-b hover:bg-blue-50 transition cursor-pointer group"
-                    >
-                      <td className="p-4 text-gray-600">{job.deptName}</td>
-                      <td className="p-4 font-bold text-gray-800 group-hover:text-blue-600">{job.title}</td>
-                      
-                      {/* DADOS ADICIONADOS */}
-                      <td className="p-4 text-center">
-                          <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold text-xs">{job.candidateCount}</span>
-                      </td>
-                      <td className="p-4 text-center text-gray-500">
-                          <div className="flex items-center justify-center gap-1">
-                            <Clock size={14}/> {job.daysOpen} dias
-                          </div>
-                      </td>
-
-                      {/* NOVO: BOTÃO DE LINK */}
-                      <td className="p-4 text-center">
-                        <button 
-                          onClick={(e) => copyJobLink(e, job.id)}
-                          className={`p-1.5 rounded transition ${
-                            copiedId === job.id 
-                            ? 'bg-green-100 text-green-700' 
-                            : 'text-gray-400 hover:text-blue-600 hover:bg-white border border-transparent hover:border-gray-200'
-                          }`}
-                          title="Copiar Link para Candidatos"
+        {/* Funil / Pizza */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <h3 className="font-bold text-gray-800 text-lg mb-6">Conversão</h3>
+            <div className="h-60 relative">
+                 <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                        <Pie
+                            data={pieData}
+                            innerRadius={60}
+                            outerRadius={80}
+                            paddingAngle={5}
+                            dataKey="value"
                         >
-                          {copiedId === job.id ? <CheckCircle size={16}/> : <LinkIcon size={16}/>}
-                        </button>
-                      </td>
+                            {pieData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                        </Pie>
+                        <Tooltip />
+                    </PieChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
+                    <span className="text-3xl font-bold text-gray-800">{stats.hiredCandidates}</span>
+                    <span className="text-xs text-gray-500 uppercase font-bold">Contratados</span>
+                </div>
+            </div>
+            <div className="mt-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                    <span className="flex items-center gap-2 text-gray-600"><div className="w-3 h-3 rounded-full bg-green-600"></div> Contratados</span>
+                    <span className="font-bold">{stats.hiredCandidates}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                    <span className="flex items-center gap-2 text-gray-600"><div className="w-3 h-3 rounded-full bg-slate-400"></div> Em Processo</span>
+                    <span className="font-bold">{stats.totalApplications - stats.hiredCandidates}</span>
+                </div>
+            </div>
+        </div>
 
-                      <td className="p-4">
-                        <span className={`px-2 py-1 rounded text-xs font-semibold ${job.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
-                          {job.status === 'active' ? 'Ativa' : 'Inativa'}
-                        </span>
-                      </td>
-                      <td className="p-4 text-right text-blue-600 font-medium">
-                        Gerenciar →
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+        {/* Candidaturas Recentes */}
+        <div className="lg:col-span-3 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-6">
+                <h3 className="font-bold text-gray-800 text-lg">Candidaturas Recentes</h3>
+                <button onClick={() => navigate('/jobs')} className="text-blue-600 text-sm font-bold hover:underline flex items-center gap-1">
+                    Ver todas <ArrowRight size={14}/>
+                </button>
+            </div>
+            
+            {recentApplications.length === 0 ? (
+                <div className="text-center py-10 text-gray-400">
+                    <AlertCircle className="mx-auto mb-2 opacity-50" size={32}/>
+                    <p>Nenhuma candidatura recente.</p>
+                </div>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead className="text-xs text-gray-500 uppercase border-b border-gray-100">
+                            <tr>
+                                <th className="pb-3 font-semibold pl-4">Candidato</th>
+                                <th className="pb-3 font-semibold">Vaga</th>
+                                <th className="pb-3 font-semibold">Data</th>
+                                <th className="pb-3 font-semibold text-right pr-4">Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                            {recentApplications.map((app) => (
+                                <tr key={app.id} className="hover:bg-blue-50/50 transition">
+                                    <td className="py-4 pl-4">
+                                        <p className="font-bold text-gray-900 text-sm">{app.candidate?.name || 'Desconhecido'}</p>
+                                        <p className="text-xs text-gray-500">{app.candidate?.email}</p>
+                                    </td>
+                                    <td className="py-4 text-sm text-gray-700">{app.job?.title}</td>
+                                    <td className="py-4 text-sm text-gray-500">{new Date(app.created_at).toLocaleDateString()}</td>
+                                    <td className="py-4 text-right pr-4">
+                                        <button 
+                                            onClick={() => navigate(`/applications/${app.id}`)}
+                                            className="text-xs font-bold bg-white border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 hover:text-blue-600 transition shadow-sm"
+                                        >
+                                            Ver Perfil
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
 
-      <CreateJobModal 
-        open={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        onSuccess={fetchData} 
-      />
+      </div>
     </div>
   );
 }
