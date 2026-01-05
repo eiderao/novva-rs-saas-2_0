@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabase/client';
 import { useNavigate } from 'react-router-dom';
 import CreateJobModal from '../components/jobs/CreateJobModal';
-import { Briefcase, Users, Plus, Settings as SettingsIcon, Clock, Link as LinkIcon, CheckCircle } from 'lucide-react';
+import { Briefcase, Users, Plus, Settings as SettingsIcon, Clock, Link as LinkIcon, CheckCircle, Ban } from 'lucide-react';
 import { differenceInDays, parseISO } from 'date-fns';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
-  const [companyName, setCompanyName] = useState(''); // Estado para o nome da empresa
+  const [companyName, setCompanyName] = useState('');
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -26,7 +26,6 @@ export default function Dashboard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Busca Perfil
       const { data: userProfile } = await supabase
         .from('user_profiles')
         .select('*')
@@ -35,9 +34,7 @@ export default function Dashboard() {
 
       setProfile(userProfile);
 
-      // 2. Se tiver Tenant, busca o Nome da Empresa e as Vagas
       if (userProfile?.tenantId) {
-        // Busca nome da empresa (NOVO)
         const { data: tenantData } = await supabase
             .from('tenants')
             .select('companyName')
@@ -47,7 +44,6 @@ export default function Dashboard() {
         if (tenantData) setCompanyName(tenantData.companyName);
 
         const [jobsResult, deptsResult] = await Promise.all([
-          // Busca vagas e já conta os candidatos na query (count)
           supabase.from('jobs').select('*, applications(count)').eq('tenantId', userProfile.tenantId),
           supabase.from('company_departments').select('*').eq('tenantId', userProfile.tenantId)
         ]);
@@ -61,13 +57,10 @@ export default function Dashboard() {
         const processed = rawJobs.map(j => ({
           ...j,
           deptName: j.company_department_id ? (deptMap[j.company_department_id] || 'Geral') : 'Geral',
-          // Métrica 1: Quantidade de Inscritos
           candidateCount: j.applications?.[0]?.count || 0,
-          // Métrica 2: Dias em Aberto
           daysOpen: differenceInDays(new Date(), parseISO(j.created_at))
         }));
 
-        // Ordena por data (mais recente primeiro)
         processed.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         setJobs(processed);
       }
@@ -78,12 +71,10 @@ export default function Dashboard() {
     }
   };
 
-  // Função para corrigir contas sem tenant
   const fixAccount = async () => {
     setFixing(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      
       const { data: newTenant, error: tError } = await supabase
         .from('tenants')
         .insert({ "companyName": "Minha Empresa" })
@@ -101,7 +92,6 @@ export default function Dashboard() {
         });
       if (pError) throw pError;
 
-      // Vincula também no user_tenants para garantir consistência
       await supabase.from('user_tenants').insert({
           user_id: user.id,
           tenant_id: newTenant.id,
@@ -117,13 +107,28 @@ export default function Dashboard() {
     }
   };
 
-  const copyJobLink = (e, jobId) => {
+  const copyJobLink = (e, job) => {
     e.stopPropagation();
-    const link = `${window.location.origin}/apply/${jobId}`;
+    // Bloqueio extra no clique
+    if (job.status !== 'active') return;
+
+    const link = `${window.location.origin}/apply/${job.id}`;
     navigator.clipboard.writeText(link).then(() => {
-      setCopiedId(jobId);
+      setCopiedId(job.id);
       setTimeout(() => setCopiedId(null), 2000);
     });
+  };
+
+  // Helper para Status (Texto e Cor)
+  const getStatusConfig = (status) => {
+    switch (status) {
+        case 'active': return { label: 'Ativa', classes: 'bg-green-100 text-green-800 border-green-200' };
+        case 'inactive': return { label: 'Inativa', classes: 'bg-gray-100 text-gray-600 border-gray-200' };
+        case 'filled': return { label: 'Preenchida', classes: 'bg-blue-100 text-blue-800 border-blue-200' };
+        case 'suspended': return { label: 'Suspensa', classes: 'bg-orange-100 text-orange-800 border-orange-200' };
+        case 'cancelled': return { label: 'Cancelada', classes: 'bg-red-100 text-red-800 border-red-200' };
+        default: return { label: status, classes: 'bg-gray-100 text-gray-600' };
+    }
   };
 
   const filteredJobs = useMemo(() => {
@@ -143,7 +148,6 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
             <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600">
-               {/* AQUI ESTÁ A ALTERAÇÃO SOLICITADA */}
                {companyName ? `${companyName} / ` : ''}{profile?.name || 'Usuário'}
             </span>
             <span className="text-gray-300">|</span>
@@ -234,48 +238,57 @@ export default function Dashboard() {
                 {filteredJobs.length === 0 ? (
                   <tr><td colSpan="7" className="p-8 text-center text-gray-500">Nenhuma vaga encontrada.</td></tr>
                 ) : (
-                  filteredJobs.map(job => (
-                    <tr 
-                      key={job.id} 
-                      onClick={() => navigate(`/jobs/${job.id}`)}
-                      className="border-b hover:bg-blue-50 transition cursor-pointer group"
-                    >
-                      <td className="p-4 text-gray-600">{job.deptName}</td>
-                      <td className="p-4 font-bold text-gray-800 group-hover:text-blue-600">{job.title}</td>
-                      
-                      <td className="p-4 text-center">
-                          <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold text-xs">{job.candidateCount}</span>
-                      </td>
-                      <td className="p-4 text-center text-gray-500">
-                          <div className="flex items-center justify-center gap-1">
-                            <Clock size={14}/> {job.daysOpen} dias
-                          </div>
-                      </td>
+                  filteredJobs.map(job => {
+                    const statusConfig = getStatusConfig(job.status);
+                    const isActive = job.status === 'active';
 
-                      <td className="p-4 text-center">
-                        <button 
-                          onClick={(e) => copyJobLink(e, job.id)}
-                          className={`p-1.5 rounded transition ${
-                            copiedId === job.id 
-                            ? 'bg-green-100 text-green-700' 
-                            : 'text-gray-400 hover:text-blue-600 hover:bg-white border border-transparent hover:border-gray-200'
-                          }`}
-                          title="Copiar Link para Candidatos"
+                    return (
+                        <tr 
+                          key={job.id} 
+                          onClick={() => navigate(`/jobs/${job.id}`)}
+                          className="border-b hover:bg-blue-50 transition cursor-pointer group"
                         >
-                          {copiedId === job.id ? <CheckCircle size={16}/> : <LinkIcon size={16}/>}
-                        </button>
-                      </td>
+                          <td className="p-4 text-gray-600">{job.deptName}</td>
+                          <td className="p-4 font-bold text-gray-800 group-hover:text-blue-600">{job.title}</td>
+                          
+                          <td className="p-4 text-center">
+                              <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold text-xs">{job.candidateCount}</span>
+                          </td>
+                          <td className="p-4 text-center text-gray-500">
+                              <div className="flex items-center justify-center gap-1">
+                                <Clock size={14}/> {job.daysOpen} dias
+                              </div>
+                          </td>
 
-                      <td className="p-4">
-                        <span className={`px-2 py-1 rounded text-xs font-semibold ${job.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
-                          {job.status === 'active' ? 'Ativa' : 'Inativa'}
-                        </span>
-                      </td>
-                      <td className="p-4 text-right text-blue-600 font-medium">
-                        Gerenciar →
-                      </td>
-                    </tr>
-                  ))
+                          {/* BOTÃO DE LINK (Bloqueado se não estiver ativo) */}
+                          <td className="p-4 text-center">
+                            <button 
+                              onClick={(e) => copyJobLink(e, job)}
+                              disabled={!isActive}
+                              className={`p-1.5 rounded transition ${
+                                copiedId === job.id 
+                                ? 'bg-green-100 text-green-700' 
+                                : isActive 
+                                    ? 'text-gray-400 hover:text-blue-600 hover:bg-white border border-transparent hover:border-gray-200' 
+                                    : 'text-gray-200 cursor-not-allowed'
+                              }`}
+                              title={isActive ? "Copiar Link para Candidatos" : "Vaga inativa - Link indisponível"}
+                            >
+                              {copiedId === job.id ? <CheckCircle size={16}/> : isActive ? <LinkIcon size={16}/> : <Ban size={16}/>}
+                            </button>
+                          </td>
+
+                          <td className="p-4">
+                            <span className={`px-2 py-1 rounded text-xs font-semibold border ${statusConfig.classes}`}>
+                              {statusConfig.label}
+                            </span>
+                          </td>
+                          <td className="p-4 text-right text-blue-600 font-medium">
+                            Gerenciar →
+                          </td>
+                        </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
