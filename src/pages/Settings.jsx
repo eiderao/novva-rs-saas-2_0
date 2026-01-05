@@ -48,6 +48,7 @@ export default function Settings() {
 
         // 3. Busca EQUIPE (Multi-tenant seguro)
         // Busca na tabela de junção user_tenants e faz o join com user_profiles
+        // IMPORTANTE: O join 'user:user_profiles' depende da FK criada no SQL
         const { data: teamRelations, error: teamError } = await supabase
             .from('user_tenants')
             .select(`
@@ -62,19 +63,24 @@ export default function Settings() {
         if (teamError) throw teamError;
 
         // Formata os dados para a estrutura que a tela espera
-        // O filtro (u.user) remove casos onde o vínculo existe mas o perfil foi deletado (sanidade)
-        const formattedTeam = teamRelations
-            .filter(item => item.user) 
-            .map(item => ({
-                id: item.user.id,
-                name: item.user.name,
-                email: item.user.email,
-                is_admin_system: item.user.is_admin_system,
-                role: item.role, // O cargo específico nesta empresa
-                isAdmin: item.role === 'Administrador' || item.role === 'admin' // Helper para UI
-            }));
+        const formattedTeam = [];
+        if (teamRelations) {
+            teamRelations.forEach(item => {
+                // Defesa contra relacionamentos órfãos
+                if (item.user) {
+                    formattedTeam.push({
+                        id: item.user.id,
+                        name: item.user.name,
+                        email: item.user.email,
+                        is_admin_system: item.user.is_admin_system,
+                        role: item.role, // O cargo específico nesta empresa
+                        isAdmin: item.role === 'Administrador' || item.role === 'admin'
+                    });
+                }
+            });
+        }
         
-        setTeam(formattedTeam || []);
+        setTeam(formattedTeam);
       }
     } catch (error) {
       console.error("Erro ao carregar dados:", error);
