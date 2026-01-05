@@ -13,7 +13,7 @@ import {
     Delete as DeleteIcon, 
     ContentCopy as ContentCopyIcon, 
     Save as SaveIcon,
-    Add as AddIcon // Necessário para adicionar itens
+    Add as AddIcon 
 } from '@mui/icons-material';
 import { processEvaluation } from '../utils/evaluationLogic';
 
@@ -47,7 +47,7 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
   );
 };
 
-// Componente para a Régua de Notas (NOVO)
+// Componente para a Régua de Notas
 const RatingScaleSection = ({ notes = [], onNotesChange }) => {
     const handleChange = (i, field, value) => {
         const newNotes = [...notes];
@@ -120,7 +120,7 @@ export default function JobDetails() {
       try {
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         setJob(jobData);
-        // Garante que 'notas' exista mesmo se vier null do banco
+        
         setParameters(jobData.parameters || { 
             triagem: [], 
             cultura: [], 
@@ -142,7 +142,8 @@ export default function JobDetails() {
 
             const userIds = [...new Set((evalsData || []).map(e => e.evaluator_id))];
             if (userIds.length > 0) {
-                const { data: usersData } = await supabase.from('users').select('id, name, email').in('id', userIds);
+                [cite_start]// CORREÇÃO AQUI: Mudado de 'users' para 'user_profiles' [cite: 1674]
+                const { data: usersData } = await supabase.from('user_profiles').select('id, name, email').in('id', userIds);
                 const map = {};
                 usersData?.forEach(u => map[u.id] = u.name || u.email);
                 setUsersMap(map);
@@ -278,9 +279,11 @@ export default function JobDetails() {
                                                 <LabelList dataKey="tecnico" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/>
                                             </Bar>
                                             
+                                            {/* BARRA DE MÉDIA GERAL DESTACADA */}
                                             <Bar dataKey="total" name="Média Geral" fill="#4caf50" barSize={20} radius={[0, 4, 4, 0]}>
                                                 <LabelList dataKey="total" position="right" style={{fontSize:'0.8rem', fontWeight:'bold', fill:'#2e7d32'}} />
                                             </Bar>
+                                            
                                             <ReferenceLine x={5} stroke="red" strokeDasharray="3 3" />
                                         </BarChart>
                                     </ResponsiveContainer>
@@ -329,7 +332,7 @@ export default function JobDetails() {
                         <ParametersSection criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} />
                     </Paper>
                     
-                    {/* AQUI ESTÁ A RÉGUA DE NOTAS QUE FALTAVA */}
+                    {/* RÉGUA DE NOTAS */}
                     <Paper variant="outlined" sx={{p:3, mb:3, borderColor: 'orange'}}>
                         <Typography variant="subtitle1" fontWeight="bold" gutterBottom color="orange">4. Régua de Notas</Typography>
                         <Typography variant="caption" color="text.secondary" gutterBottom>
