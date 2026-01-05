@@ -46,12 +46,26 @@ export default function Settings() {
             .single();
         setTenant(tenantData);
 
-        // 3. Busca EQUIPE
-        const { data: teamData } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('tenantId', profile.tenantId);
-        setTeam(teamData || []);
+        // 3. Busca EQUIPE (CORREÇÃO MULTI-TENANT)
+        // Agora buscamos na tabela de vínculos 'user_tenants' para garantir que 
+        // todos os membros apareçam, mesmo que estejam logados em outra empresa.
+        const { data: teamRelations, error: teamError } = await supabase
+            .from('user_tenants')
+            .select(`
+                role,
+                user:user_profiles (*)
+            `)
+            .eq('tenant_id', profile.tenantId);
+
+        if (teamError) throw teamError;
+
+        // Formata os dados para a estrutura que a tela espera
+        const formattedTeam = teamRelations.map(item => ({
+            ...item.user,      // Dados base (id, nome, email)
+            role: item.role    // Cargo específico nesta empresa (Vem do user_tenants)
+        })).filter(u => u.id); // Remove nulos caso haja inconsistência
+        
+        setTeam(formattedTeam || []);
       }
     } catch (error) {
       console.error("Erro ao carregar dados:", error);
@@ -240,7 +254,7 @@ export default function Settings() {
                 <div>
                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Identificador do Tenant (ID)</label>
                      <div className="font-mono text-sm bg-slate-100 p-3 rounded-lg text-slate-600 break-all border border-slate-200 select-all">
-                        {tenant.id}
+                         {tenant.id}
                      </div>
                 </div>
 
