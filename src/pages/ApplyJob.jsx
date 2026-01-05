@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-import { Building, MapPin, Briefcase, CheckCircle, Send, GraduationCap, User, Link as LinkIcon, FileText, Upload, Paperclip } from 'lucide-react';
+import { Building, MapPin, Briefcase, CheckCircle, Send, GraduationCap, User, Link as LinkIcon, FileText, Upload, Paperclip, AlertCircle } from 'lucide-react';
 
 export default function ApplyJob() {
   const { jobId } = useParams();
@@ -10,21 +10,25 @@ export default function ApplyJob() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Estados para Upload de Arquivo
-  const [resumeType, setResumeType] = useState('file'); // 'file' ou 'link'
+  // Controle de Tipo de Currículo (Arquivo ou Link)
+  const [resumeType, setResumeType] = useState('file'); 
   const [resumeFile, setResumeFile] = useState(null);
 
   // Estado do Formulário
+  // PADRONIZADO: Usamos snake_case onde o dado vai para o banco (candidates)
+  // E mantemos os campos de educação que vão para o JSON (applications)
   const [formData, setFormData] = useState({
+    // Grupo A: Candidates (Perfil)
     name: '',
     email: '',
     phone: '',
     city: '',
     state: '',
-    linkedin_profile: '',
-    github_profile: '',
-    resume_url: '', // Será preenchido automaticamente após upload
-    
+    linkedin_profile: '', // Corrigido para snake_case
+    github_profile: '',   // Corrigido para snake_case
+    resume_link_input: '', // Campo visual para quando o usuário cola link
+
+    // Grupo B: Applications (JSON form_data)
     motivation: '',
     education_level: '',
     education_status: '',
@@ -63,21 +67,26 @@ export default function ApplyJob() {
     }
   };
 
+  // Função que faz o upload para o Supabase Storage e retorna a URL pública
   const uploadResumeToStorage = async () => {
     if (!resumeFile) return null;
 
+    // Sanitiza nome do arquivo para evitar erros no Storage
     const fileExt = resumeFile.name.split('.').pop();
-    const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+    const sanitizedEmail = formData.email.replace(/[^a-zA-Z0-9]/g, '');
+    const fileName = `${sanitizedEmail}_${Date.now()}.${fileExt}`;
+    
+    // Caminho dentro do bucket 'resumes'
     const filePath = `${fileName}`;
 
-    // 1. Upload para o bucket 'resumes'
+    // Upload
     const { error: uploadError } = await supabase.storage
       .from('resumes')
       .upload(filePath, resumeFile);
 
     if (uploadError) throw new Error("Erro no upload do arquivo: " + uploadError.message);
 
-    // 2. Pegar URL pública
+    // Gera URL pública
     const { data } = supabase.storage.from('resumes').getPublicUrl(filePath);
     return data.publicUrl;
   };
@@ -89,63 +98,49 @@ export default function ApplyJob() {
     try {
       if (job.status !== 'active') throw new Error("Esta vaga não está mais aceitando candidaturas.");
       
-      let finalResumeUrl = formData.resume_url;
+      let finalResumeUrl = '';
 
-      // --- LÓGICA DE UPLOAD ---
+      // --- 1. RESOLVER URL DO CURRÍCULO ---
       if (resumeType === 'file') {
-        if (!resumeFile) throw new Error("Por favor, selecione um arquivo de currículo.");
+        if (!resumeFile) throw new Error("Por favor, selecione um arquivo de currículo (PDF/DOC).");
+        // Faz o upload agora e pega a URL
         finalResumeUrl = await uploadResumeToStorage();
       } else {
-        if (!formData.resume_url) throw new Error("Por favor, informe o link do currículo.");
+        // Usa o link colado pelo usuário
+        if (!formData.resume_link_input) throw new Error("Por favor, cole o link do seu currículo (Google Drive/Dropbox).");
+        finalResumeUrl = formData.resume_link_input;
       }
 
-      // 1. Upsert Candidato
-      const { data: candidate, error: candError } = await supabase
-        .from('candidates')
-        .upsert({
-            email: formData.email,
-            name: formData.name,
-            phone: formData.phone,
-            city: formData.city,
-            state: formData.state,
-            linkedin_profile: formData.linkedin_profile,
-            github_profile: formData.github_profile,
-            resume_url: finalResumeUrl, // Usa a URL gerada ou o link colado
-            updated_at: new Date()
-        }, { onConflict: 'email' }) // Isso agora vai funcionar com a constraint criada no SQL
-        .select()
-        .single();
+      // --- 2. PREPARAR ENVIO PARA API ---
+      const payload = new FormData();
+      payload.append('jobId', jobId);
+      
+      // Campos do Perfil (Candidates)
+      payload.append('name', formData.name);
+      payload.append('email', formData.email);
+      payload.append('phone', formData.phone);
+      payload.append('city', formData.city);
+      payload.append('state', formData.state);
+      payload.append('linkedin_profile', formData.linkedin_profile);
+      payload.append('github_profile', formData.github_profile);
+      payload.append('resume_url', finalResumeUrl); // Mandamos a URL final processada
 
-      if (candError) throw candError;
+      // Campos da Aplicação (JSON)
+      payload.append('motivation', formData.motivation);
+      payload.append('education_level', formData.education_level);
+      payload.append('education_status', formData.education_status);
+      payload.append('course_name', formData.course_name);
+      payload.append('institution', formData.institution);
+      payload.append('conclusion_date', formData.conclusion_date);
+      payload.append('current_period', formData.current_period);
 
-      // 2. Prepara Application Data
-      const appPayload = {
-        motivation: formData.motivation,
-        education: {
-            level: formData.education_level,
-            status: formData.education_status,
-            course: formData.course_name,
-            institution: formData.institution,
-            date: formData.conclusion_date,
-            period: formData.current_period
-        },
-        applied_at: new Date().toISOString()
-      };
+      const response = await fetch('/api/apply', {
+          method: 'POST',
+          body: payload
+      });
 
-      // 3. Insert Application
-      const { error: appError } = await supabase
-        .from('applications')
-        .insert({
-            jobId: jobId,
-            candidateId: candidate.id,
-            status: 'new',
-            formData: appPayload
-        });
-
-      if (appError) {
-        if (appError.code === '23505') throw new Error("Você já se candidatou para esta vaga.");
-        throw appError;
-      }
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Erro ao enviar.");
 
       setSuccess(true);
 
@@ -156,6 +151,7 @@ export default function ApplyJob() {
     }
   };
 
+  // Lógica visual para mostrar campos de educação
   const isSuperiorOrTech = ['tecnico', 'superior', 'pos', 'mestrado'].includes(formData.education_level);
   const isStudying = formData.education_status === 'cursando';
   const isCompleted = formData.education_status === 'completo';
@@ -172,9 +168,10 @@ export default function ApplyJob() {
                         <CheckCircle className="text-green-600 w-12 h-12" />
                     </div>
                 </div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-2">Candidatura Enviada!</h2>
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">Candidatura Recebida!</h2>
                 <p className="text-gray-600 mb-6">
                     Seus dados foram enviados com sucesso para a vaga de <strong>{job.title}</strong>.
+                    Boa sorte!
                 </p>
                 <button onClick={() => window.location.reload()} className="text-blue-600 font-medium hover:underline text-sm">
                     Voltar para a vaga
@@ -199,6 +196,7 @@ export default function ApplyJob() {
         </div>
 
         <div className="grid lg:grid-cols-12">
+            {/* Coluna Esquerda: Descrição */}
             <div className="lg:col-span-5 p-8 bg-gray-50 border-r border-gray-100 sticky top-0 h-fit">
                 <div className="space-y-8">
                     <div>
@@ -218,6 +216,7 @@ export default function ApplyJob() {
                 </div>
             </div>
 
+            {/* Coluna Direita: Formulário */}
             <div className="lg:col-span-7 p-8 bg-white">
                 <h2 className="text-2xl font-bold text-slate-800 mb-6 pb-2 border-b border-gray-100">Ficha de Inscrição</h2>
                 
@@ -264,23 +263,22 @@ export default function ApplyJob() {
                         </div>
                     </section>
 
-                    {/* CURRÍCULO E LINKS (COM UPLOAD) */}
+                    {/* CURRÍCULO E LINKS */}
                     <section>
                         <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6">
                             <Paperclip size={16}/> Currículo e Links
                         </h4>
                         
-                        {/* Toggle Tipo de Currículo */}
                         <div className="bg-gray-50 p-4 rounded-lg border mb-4">
                             <label className="block text-xs font-bold text-gray-500 mb-2">Como deseja enviar seu currículo?</label>
                             <div className="flex gap-4 mb-4">
-                                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                                    <input type="radio" name="resumeType" checked={resumeType === 'file'} onChange={() => setResumeType('file')} />
-                                    <Upload size={16} className="text-gray-600"/> Enviar Arquivo (PDF/DOC)
+                                <label className="flex items-center gap-2 text-sm cursor-pointer p-2 hover:bg-gray-100 rounded">
+                                    <input type="radio" name="resumeType" checked={resumeType === 'file'} onChange={() => setResumeType('file')} className="text-blue-600"/>
+                                    <Upload size={16} className="text-gray-600 ml-1"/> Arquivo (PDF/DOC)
                                 </label>
-                                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                                    <input type="radio" name="resumeType" checked={resumeType === 'link'} onChange={() => setResumeType('link')} />
-                                    <LinkIcon size={16} className="text-gray-600"/> Colar Link (Drive/LinkedIn)
+                                <label className="flex items-center gap-2 text-sm cursor-pointer p-2 hover:bg-gray-100 rounded">
+                                    <input type="radio" name="resumeType" checked={resumeType === 'link'} onChange={() => setResumeType('link')} className="text-blue-600"/>
+                                    <LinkIcon size={16} className="text-gray-600 ml-1"/> Link (Drive/LinkedIn)
                                 </label>
                             </div>
 
@@ -297,15 +295,20 @@ export default function ApplyJob() {
                                         file:bg-blue-50 file:text-blue-700
                                         hover:file:bg-blue-100"
                                     />
-                                    <p className="text-xs text-gray-400 mt-1">Formatos aceitos: PDF, DOC, DOCX. Máx 5MB.</p>
+                                    <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                                        <AlertCircle size={10}/> Formatos: PDF, DOC. Máx 5MB.
+                                    </p>
                                 </div>
                             ) : (
-                                <input 
-                                    className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
-                                    placeholder="Cole aqui o link do seu currículo..."
-                                    value={formData.resume_url} 
-                                    onChange={e => handleInputChange('resume_url', e.target.value)} 
-                                />
+                                <div>
+                                    <input 
+                                        className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                        placeholder="Ex: https://docs.google.com/..."
+                                        value={formData.resume_link_input} 
+                                        onChange={e => handleInputChange('resume_link_input', e.target.value)} 
+                                    />
+                                    <p className="text-xs text-gray-400 mt-1">Certifique-se de que o link esteja acessível publicamente.</p>
+                                </div>
                             )}
                         </div>
 
