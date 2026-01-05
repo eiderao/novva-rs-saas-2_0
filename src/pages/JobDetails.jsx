@@ -15,6 +15,7 @@ import {
     Save as SaveIcon,
     Add as AddIcon 
 } from '@mui/icons-material';
+import { Share2, MapPin, Briefcase, Calendar, ArrowLeft } from 'lucide-react'; // Adicionado icons que faltavam no import
 import { processEvaluation } from '../utils/evaluationLogic';
 
 // --- COMPONENTES AUXILIARES ---
@@ -92,21 +93,24 @@ export default function JobDetails() {
     const fetchAllData = async () => {
       setLoading(true);
       try {
+        // 1. Busca Dados da Vaga
         const { data: jobData, error: jobError } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         if (jobError) throw jobError;
         setJob(jobData);
         setParameters(jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] });
 
+        // 2. Busca Candidatos da Vaga
         const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', jobId);
         setApplicants(appsData || []);
 
+        // 3. Busca Avaliações
         const appIds = (appsData || []).map(a => a.id);
         if (appIds.length > 0) {
             const { data: evalsData } = await supabase.from('evaluations').select('*').in('application_id', appIds);
             setAllEvaluations(evalsData || []);
         }
 
-        // Busca TODA a equipe do Tenant para o Dropdown
+        // 4. Busca Equipe (Tenant) para Dropdown
         if (jobData.tenantId) {
             const { data: teamData, error: teamError } = await supabase
                 .from('user_tenants')
@@ -134,7 +138,6 @@ export default function JobDetails() {
     try {
         const { data: { session } } = await supabase.auth.getSession();
         
-        // Usa a API para garantir que o bypass de segurança funcione se necessário
         const res = await fetch('/api/jobs', {
             method: 'POST',
             headers: { 
@@ -160,6 +163,11 @@ export default function JobDetails() {
     }
   };
 
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(`${window.location.origin}/apply/${jobId}`);
+    setFeedback({ open: true, message: 'Link copiado para a área de transferência!', severity: 'info' });
+  };
+
   const processedData = useMemo(() => {
     if (!parameters) return { chartData: [], evaluators: [] };
 
@@ -167,7 +175,9 @@ export default function JobDetails() {
 
     const chartData = applicants.map(app => {
         const appEvals = allEvaluations.filter(e => String(e.application_id) === String(app.id));
-        const evalsToConsider = evaluatorFilter === 'all' ? appEvals : appEvals.filter(e => e.evaluator_id === evaluatorFilter);
+        const evalsToConsider = evaluatorFilter === 'all' 
+            ? appEvals 
+            : appEvals.filter(e => e.evaluator_id === evaluatorFilter);
 
         let sumT = 0, sumC = 0, sumTc = 0, count = 0, sumTotal = 0;
         evalsToConsider.forEach(ev => {
@@ -212,6 +222,7 @@ export default function JobDetails() {
   };
 
   if (loading) return <Box p={5} display="flex" justifyContent="center"><CircularProgress /></Box>;
+  if (!job) return <Box p={5} textAlign="center">Vaga não encontrada</Box>;
 
   return (
     <Box>
@@ -219,13 +230,13 @@ export default function JobDetails() {
             <Toolbar>
                 <Typography variant="h6" sx={{flexGrow:1}}>{job?.title}</Typography>
                 
-                {/* SELETOR DE STATUS (REESTABELECIDO) */}
+                {/* SELETOR DE STATUS */}
                 <FormControl size="small" sx={{ minWidth: 150, mr: 2 }}>
                     <Select 
                         value={job?.status || 'active'} 
                         onChange={handleStatusChange}
                         disabled={statusUpdating}
-                        sx={{ bgcolor: 'white' }}
+                        sx={{ bgcolor: 'white', '& .MuiSelect-select': { py: 1 } }}
                     >
                         <MenuItem value="active">Ativa</MenuItem>
                         <MenuItem value="inactive">Inativa</MenuItem>
@@ -240,10 +251,50 @@ export default function JobDetails() {
         </AppBar>
 
         <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+            
+            {/* Header da Vaga com Botão de Compartilhar Condicional */}
+            <Box mb={4}>
+                <Box display="flex" justifyContent="space-between" alignItems="start">
+                    <Box>
+                        <Typography variant="h4" fontWeight="bold" color="text.primary">{job.title}</Typography>
+                        <Box display="flex" gap={3} mt={1} color="text.secondary">
+                            <Box display="flex" alignItems="center" gap={0.5}><MapPin size={16}/> <Typography variant="body2">{job.location_type || 'Remoto'}</Typography></Box>
+                            <Box display="flex" alignItems="center" gap={0.5}><Briefcase size={16}/> <Typography variant="body2">{job.type || 'CLT'}</Typography></Box>
+                            <Box display="flex" alignItems="center" gap={0.5}><Calendar size={16}/> <Typography variant="body2">{new Date(job.created_at).toLocaleDateString()}</Typography></Box>
+                        </Box>
+                    </Box>
+                    
+                    {/* BOTÃO DE COMPARTILHAR - SÓ ATIVO SE STATUS FOR ACTIVE */}
+                    <Button 
+                        variant="outlined" 
+                        onClick={handleCopyLink}
+                        disabled={job.status !== 'active'}
+                        startIcon={<Share2 size={18}/>}
+                        sx={{ textTransform: 'none', fontWeight: 'bold' }}
+                    >
+                        {job.status === 'active' ? 'Compartilhar Formulário' : 'Link Indisponível (Vaga Inativa)'}
+                    </Button>
+                </Box>
+            </Box>
+
             <Paper sx={{ mb: 3 }}><Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered><Tab label="Candidatos" /><Tab label="Classificação" /><Tab label="Configurações da Vaga" /></Tabs></Paper>
             
             {tabValue === 0 && (
                 <Paper sx={{ p: 0 }}>
+                    {/* ABA: DETALHES DA VAGA + CANDIDATOS */}
+                    <Box p={3} borderBottom="1px solid #eee">
+                        <Grid container spacing={3}>
+                            <Grid item xs={12} md={6}>
+                                <Typography variant="subtitle2" fontWeight="bold">Descrição</Typography>
+                                <Typography variant="body2" color="text.secondary" whiteSpace="pre-wrap">{job.description || 'Sem descrição.'}</Typography>
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <Typography variant="subtitle2" fontWeight="bold">Requisitos</Typography>
+                                <Typography variant="body2" color="text.secondary" whiteSpace="pre-wrap">{job.requirements || 'Sem requisitos.'}</Typography>
+                            </Grid>
+                        </Grid>
+                    </Box>
+
                     <Table>
                         <TableHead sx={{ bgcolor: '#f5f5f5' }}><TableRow><TableCell><strong>Nome</strong></TableCell><TableCell><strong>Email</strong></TableCell><TableCell align="center"><strong>Avaliações</strong></TableCell><TableCell align="center"><strong>Nota Geral</strong></TableCell></TableRow></TableHead>
                         <TableBody>{processedData.chartData.map(d => (
