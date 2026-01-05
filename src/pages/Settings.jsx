@@ -46,24 +46,33 @@ export default function Settings() {
             .single();
         setTenant(tenantData);
 
-        // 3. Busca EQUIPE (CORREÇÃO MULTI-TENANT)
-        // Agora buscamos na tabela de vínculos 'user_tenants' para garantir que 
-        // todos os membros apareçam, mesmo que estejam logados em outra empresa.
+        // 3. Busca EQUIPE (Multi-tenant seguro)
+        // Busca na tabela de junção user_tenants e faz o join com user_profiles
         const { data: teamRelations, error: teamError } = await supabase
             .from('user_tenants')
             .select(`
                 role,
-                user:user_profiles (*)
+                user_id,
+                user:user_profiles (
+                    id, name, email, is_admin_system
+                )
             `)
             .eq('tenant_id', profile.tenantId);
 
         if (teamError) throw teamError;
 
         // Formata os dados para a estrutura que a tela espera
-        const formattedTeam = teamRelations.map(item => ({
-            ...item.user,      // Dados base (id, nome, email)
-            role: item.role    // Cargo específico nesta empresa (Vem do user_tenants)
-        })).filter(u => u.id); // Remove nulos caso haja inconsistência
+        // O filtro (u.user) remove casos onde o vínculo existe mas o perfil foi deletado (sanidade)
+        const formattedTeam = teamRelations
+            .filter(item => item.user) 
+            .map(item => ({
+                id: item.user.id,
+                name: item.user.name,
+                email: item.user.email,
+                is_admin_system: item.user.is_admin_system,
+                role: item.role, // O cargo específico nesta empresa
+                isAdmin: item.role === 'Administrador' || item.role === 'admin' // Helper para UI
+            }));
         
         setTeam(formattedTeam || []);
       }
@@ -80,10 +89,9 @@ export default function Settings() {
     setIsUpdatingProfile(true);
     try {
         const { data: { user } } = await supabase.auth.getUser();
-        const updates = {};
         let emailChanged = false;
 
-        // 1. Atualização de Senha (se preenchida)
+        // 1. Atualização de Senha
         if (myProfileForm.password) {
             if (myProfileForm.password !== myProfileForm.confirmPassword) {
                 throw new Error("As senhas não conferem.");
@@ -96,20 +104,19 @@ export default function Settings() {
             alert("Senha atualizada com sucesso!");
         }
 
-        // 2. Atualização de E-mail (se alterado)
-        // Nota: O Supabase enviará um link de confirmação para o novo e-mail.
+        // 2. Atualização de E-mail
         if (myProfileForm.email !== user.email) {
             const { error: emailError } = await supabase.auth.updateUser({ email: myProfileForm.email });
             if (emailError) throw emailError;
             emailChanged = true;
         }
 
-        // 3. Atualização de Perfil (Nome e espelho do e-mail)
+        // 3. Atualização de Perfil
         const { error: profileError } = await supabase
             .from('user_profiles')
             .update({ 
                 name: myProfileForm.name,
-                email: myProfileForm.email // Mantemos sincronizado, mesmo que aguardando confirmação no Auth
+                email: myProfileForm.email
             })
             .eq('id', user.id);
 
@@ -154,7 +161,7 @@ export default function Settings() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erro ao conectar na API.");
 
-      alert("Usuário adicionado com sucesso!");
+      alert(data.message || "Usuário adicionado com sucesso!");
       setIsAddingUser(false);
       setNewUser({ name: '', email: '', password: '', role: '', isAdmin: false });
       fetchData();
@@ -166,21 +173,22 @@ export default function Settings() {
   };
 
   const handleDeleteUser = async (userId) => {
-    if (!confirm("Tem certeza? O acesso deste usuário será revogado imediatamente.")) return;
+    if (!confirm("Tem certeza? O acesso deste usuário será revogado apenas para ESTA empresa.")) return;
     const { data: { session } } = await supabase.auth.getSession();
     
     try {
         const res = await fetch('/api/admin', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-            body: JSON.stringify({ action: 'deleteUser', userId })
+            body: JSON.stringify({ action: 'deleteUser', userId, tenantId: tenant.id })
         });
 
         if (res.ok) {
-            alert("Usuário removido.");
+            alert("Acesso revogado com sucesso.");
             fetchData();
         } else {
-            throw new Error("Falha na API");
+            const err = await res.json();
+            throw new Error(err.error || "Falha na API");
         }
     } catch (e) {
         alert("Erro: " + e.message);
@@ -359,10 +367,10 @@ export default function Settings() {
                             <tr key={user.id} className="hover:bg-blue-50/50 transition-colors">
                                 <td className="p-5 font-medium text-gray-900">{user.name || 'Sem nome'}</td>
                                 <td className="p-5 text-gray-600 text-sm flex items-center gap-2"><Mail size={14} className="text-gray-400"/> {user.email}</td>
-                                <td className="p-5 text-gray-700 font-medium text-sm">{user.role}</td>
+                                <td className="p-5 text-slate-700 font-medium text-sm">{user.role}</td>
                                 <td className="p-5">
-                                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ${user.isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                                        {user.isAdmin ? 'Admin' : 'Membro'}
+                                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ${user.isAdmin || user.role === 'admin' ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                                        {user.isAdmin || user.role === 'admin' ? 'Admin' : 'Membro'}
                                     </span>
                                 </td>
                                 <td className="p-5 text-right">
@@ -391,7 +399,7 @@ export default function Settings() {
         </div>
       )}
 
-      {/* ABA 3: MEU PERFIL (NOVO) */}
+      {/* ABA 3: MEU PERFIL */}
       {activeTab === 'profile' && (
         <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 max-w-2xl animate-in fade-in slide-in-from-right-2 duration-300">
             <div className="flex items-center gap-4 mb-8 pb-6 border-b">
