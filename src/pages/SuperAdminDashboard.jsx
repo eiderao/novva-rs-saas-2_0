@@ -1,352 +1,374 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase/client';
 import { useNavigate } from 'react-router-dom';
-import { Building, Edit, Trash2, Plus, X, Save, UserCheck, Key, Users, Check } from 'lucide-react';
+import { Shield, Building, Users, CreditCard, Edit, Trash2, Plus, Save, X, DollarSign, ArrowLeft, Calendar, FileText, CheckCircle } from 'lucide-react';
 
 export default function SuperAdminDashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('tenants'); // 'tenants' | 'plans'
+  
+  // Dados
   const [tenants, setTenants] = useState([]);
   const [plans, setPlans] = useState([]);
-  
-  // Modais
-  const [isModalOpen, setIsModalOpen] = useState(false); // Modal Empresa
-  const [isUsersModalOpen, setIsUsersModalOpen] = useState(false); // Modal Usuários
-  
-  const [editingTenant, setEditingTenant] = useState(null); 
-  const [selectedTenantUsers, setSelectedTenantUsers] = useState([]); // Lista de usuários do tenant selecionado
-  const [currentTenantName, setCurrentTenantName] = useState('');
-  
-  // Estado para Edição de Usuário
-  const [editingUser, setEditingUser] = useState(null); // ID do user sendo editado
-  const [userForm, setUserForm] = useState({ id: '', name: '', email: '', password: '' });
 
-  // Formulário Empresa
-  const [formData, setFormData] = useState({ 
-      companyName: '', planId: 'freemium', cnpj: '',
-      adminName: '', adminEmail: '', adminPassword: ''
-  });
+  // Estados de Formulário
+  const [isEditingPlan, setIsEditingPlan] = useState(false);
+  const [isEditingTenant, setIsEditingTenant] = useState(false); // Novo: Edição de Empresa
+  
+  // Objeto Modelo do Plano
+  const initialPlanState = { 
+      id: '', name: '', price: 0, 
+      user_limit: 1, job_limit: 1, candidate_limit: -1, 
+      plan_billing_period: 'monthly' 
+  };
+  const [planForm, setPlanForm] = useState(initialPlanState);
 
-  useEffect(() => { checkPermission(); }, []);
+  // Objeto Modelo do Tenant
+  const [tenantForm, setTenantForm] = useState({ id: '', companyName: '', planId: '', cnpj: '' });
 
-  const checkPermission = async () => {
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    setLoading(true);
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return navigate('/login');
-    
-    const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('is_admin_system')
-        .eq('id', session.user.id)
-        .single();
 
-    if (!profile?.is_admin_system) {
-        alert("Acesso restrito."); 
-        return navigate('/');
-    }
-    fetchData(session.access_token);
-  };
-
-  const fetchData = async (token) => {
-    setLoading(true);
     try {
-      const res = await fetch('/api/admin?action=getTenantsAndPlans', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (res.ok) {
+        // Chamada única para buscar tudo (conforme sua API getTenantsAndPlans)
+        const res = await fetch('/api/admin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+            body: JSON.stringify({ action: 'getTenantsAndPlans' })
+        });
+        
+        if (!res.ok) throw new Error('Falha ao carregar dados.');
+        
+        const data = await res.json();
         setTenants(data.tenants || []);
         setPlans(data.plans || []);
-      }
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+    } catch (error) {
+        console.error(error);
+        alert("Erro ao carregar painel: " + error.message);
+    } finally {
+        setLoading(false);
+    }
   };
 
-  // --- GESTÃO DE EMPRESAS ---
+  // --- GESTÃO DE PLANOS ---
 
-  const handleSubmitTenant = async (e) => {
+  const handleNewPlan = () => {
+    setPlanForm(initialPlanState);
+    setIsEditingPlan(true);
+  };
+
+  const handleEditPlan = (plan) => {
+    setPlanForm({ ...plan });
+    setIsEditingPlan(true);
+  };
+
+  const handleSavePlan = async (e) => {
     e.preventDefault();
     const { data: { session } } = await supabase.auth.getSession();
-    const action = editingTenant ? 'updateTenant' : 'provisionTenant';
-    const payload = editingTenant ? { id: editingTenant.id, companyName: formData.companyName, planId: formData.planId, cnpj: formData.cnpj } : formData;
+    
+    // Determina se é CRIAÇÃO ou ATUALIZAÇÃO baseado se o plano já existe na lista
+    // (Ou poderíamos usar um flag isNew, mas checar o ID na lista atual é seguro)
+    const isUpdating = plans.some(p => p.id === planForm.id);
+    const action = isUpdating ? 'updatePlan' : 'createPlan';
+
+    try {
+        const payload = { 
+            action, 
+            planData: {
+                id: planForm.id,
+                name: planForm.name,
+                price: parseFloat(planForm.price),
+                user_limit: parseInt(planForm.user_limit),
+                job_limit: parseInt(planForm.job_limit),
+                candidate_limit: parseInt(planForm.candidate_limit),
+                plan_billing_period: planForm.plan_billing_period
+            }
+        };
+
+        if (isUpdating) payload.planId = planForm.id;
+
+        const res = await fetch('/api/admin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Erro ao salvar.');
+        }
+
+        alert(`Plano ${isUpdating ? 'atualizado' : 'criado'} com sucesso!`);
+        setIsEditingPlan(false);
+        fetchData(); // Recarrega a lista
+    } catch (err) {
+        alert("Erro: " + err.message);
+    }
+  };
+
+  const handleDeletePlan = async (planId) => {
+    if (!confirm("Tem certeza que deseja excluir este plano?")) return;
+    const { data: { session } } = await supabase.auth.getSession();
 
     try {
         const res = await fetch('/api/admin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-          body: JSON.stringify({ action, ...payload })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+            body: JSON.stringify({ action: 'deletePlan', planId })
         });
-        const data = await res.json();
-        if (res.ok) {
-          alert("Sucesso!");
-          setIsModalOpen(false);
-          setEditingTenant(null);
-          resetForm();
-          fetchData(session.access_token);
-        } else {
-          throw new Error(data.error);
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error);
         }
-    } catch (err) { alert("Erro: " + err.message); }
+        
+        alert("Plano excluído.");
+        fetchData();
+    } catch (err) {
+        alert("Erro: " + err.message);
+    }
   };
 
-  const handleDeleteTenant = async (tenantId) => {
-      if(!confirm("Tem certeza absoluta? Isso apagará TUDO desta empresa.")) return;
-      const { data: { session } } = await supabase.auth.getSession();
-      await fetch('/api/admin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-          body: JSON.stringify({ action: 'deleteTenant', tenantId })
+  // --- GESTÃO DE TENANTS (Edição Rápida) ---
+  
+  const handleEditTenant = (tenant) => {
+      setTenantForm({
+          id: tenant.id,
+          companyName: tenant.companyName,
+          planId: tenant.planId,
+          cnpj: tenant.cnpj || ''
       });
-      fetchData(session.access_token);
+      setIsEditingTenant(true);
   };
 
-  // --- GESTÃO DE USUÁRIOS DO CLIENTE ---
-
-  const openUsersModal = async (tenant) => {
-      setCurrentTenantName(tenant.companyName);
+  const handleSaveTenant = async (e) => {
+      e.preventDefault();
       const { data: { session } } = await supabase.auth.getSession();
-      
-      // Busca usuários dessa empresa
-      const res = await fetch(`/api/admin?action=getTenantDetails&tenantId=${tenant.id}`, {
-          headers: { Authorization: `Bearer ${session.access_token}` }
-      });
-      const data = await res.json();
-      
-      if (res.ok) {
-          setSelectedTenantUsers(data.users || []);
-          setIsUsersModalOpen(true);
-          setEditingUser(null);
-      } else {
-          alert("Erro ao buscar usuários: " + data.error);
-      }
-  };
-
-  const handleEditUserClick = (user) => {
-      setEditingUser(user.id);
-      setUserForm({ id: user.id, name: user.name, email: user.email, password: '' });
-  };
-
-  const handleSaveUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!userForm.name || !userForm.email) return alert("Nome e Email são obrigatórios.");
 
       try {
           const res = await fetch('/api/admin', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-              body: JSON.stringify({
-                  action: 'updateUserAuth',
-                  userId: userForm.id,
-                  name: userForm.name,
-                  email: userForm.email,
-                  password: userForm.password || undefined // Só envia se preenchido
+              body: JSON.stringify({ 
+                  action: 'updateTenant', 
+                  id: tenantForm.id,
+                  companyName: tenantForm.companyName,
+                  planId: tenantForm.planId,
+                  cnpj: tenantForm.cnpj
               })
           });
 
-          if (res.ok) {
-              alert("Usuário atualizado com sucesso!");
-              setEditingUser(null);
-              // Recarrega a lista localmente
-              setSelectedTenantUsers(prev => prev.map(u => u.id === userForm.id ? { ...u, name: userForm.name, email: userForm.email } : u));
-          } else {
-              const err = await res.json();
-              throw new Error(err.error);
-          }
-      } catch (e) {
-          alert("Erro ao atualizar: " + e.message);
+          if (!res.ok) throw new Error('Falha ao atualizar empresa.');
+          
+          alert("Empresa atualizada!");
+          setIsEditingTenant(false);
+          fetchData();
+      } catch (err) {
+          alert("Erro: " + err.message);
       }
   };
 
-  // --- AUXILIARES ---
-
-  const openEditTenant = (t) => {
-      setEditingTenant(t);
-      setFormData({ companyName: t.companyName, planId: t.planId, cnpj: t.cnpj || '', adminName: '', adminEmail: '', adminPassword: '' });
-      setIsModalOpen(true);
-  };
-
-  const openNewTenant = () => {
-      setEditingTenant(null);
-      resetForm();
-      setIsModalOpen(true);
-  };
-
-  const resetForm = () => {
-      setFormData({ companyName: '', planId: 'freemium', cnpj: '', adminName: '', adminEmail: '', adminPassword: '' });
-  };
-
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-100 text-slate-500">Carregando Painel...</div>;
+  if (loading) return <div className="flex items-center justify-center h-screen bg-slate-50 text-slate-500">Carregando Sistema...</div>;
 
   return (
-    <div className="min-h-screen bg-slate-100 p-8 font-sans">
+    <div className="min-h-screen bg-slate-50 p-8 font-sans">
+      <div className="max-w-7xl mx-auto mb-8 flex justify-between items-center">
+        <div>
+            <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
+                <Shield className="text-red-600" size={32} /> Painel Super Admin
+            </h1>
+            <p className="text-slate-500 mt-1 ml-11">Gestão Centralizada do SaaS</p>
+        </div>
+        <button onClick={() => navigate('/settings')} className="flex items-center text-slate-600 hover:text-blue-600 font-medium transition">
+            <ArrowLeft size={18} className="mr-2"/> Voltar
+        </button>
+      </div>
+
       <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-            <div>
-                <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Painel Novva</h1>
-                <p className="text-slate-500">Gestão e Provisionamento de Clientes (SaaS)</p>
-            </div>
-            <button onClick={openNewTenant} className="bg-slate-900 text-white px-5 py-2.5 rounded-lg flex gap-2 hover:bg-slate-800 shadow-lg items-center font-medium">
-                <Plus size={18}/> Novo Cliente
+        {/* Navegação */}
+        <div className="bg-white p-1 rounded-lg border border-slate-200 inline-flex mb-8 shadow-sm">
+            <button onClick={() => setActiveTab('tenants')} className={`px-6 py-2.5 rounded-md font-bold text-sm flex items-center gap-2 transition ${activeTab === 'tenants' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}>
+                <Building size={16}/> Empresas ({tenants.length})
+            </button>
+            <button onClick={() => setActiveTab('plans')} className={`px-6 py-2.5 rounded-md font-bold text-sm flex items-center gap-2 transition ${activeTab === 'plans' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}>
+                <CreditCard size={16}/> Planos ({plans.length})
             </button>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <table className="w-full text-left">
-                <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>
-                        <th className="p-5 text-sm uppercase text-slate-500 font-bold">Empresa Cliente</th>
-                        <th className="p-5 text-sm uppercase text-slate-500 font-bold">Plano</th>
-                        <th className="p-5 text-right text-sm uppercase text-slate-500 font-bold">Ações</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                    {tenants.map(t => (
-                        <tr key={t.id} className="hover:bg-slate-50">
-                            <td className="p-5">
-                                <div className="font-bold text-slate-800">{t.companyName}</div>
-                                <div className="text-xs text-slate-400 font-mono">{t.cnpj || 'Sem CNPJ'}</div>
-                            </td>
-                            <td className="p-5">
-                                <span className="px-3 py-1 rounded-full text-xs font-bold uppercase border bg-slate-100 text-slate-600 border-slate-200">
-                                  {t.plans?.name || t.planId}
-                                </span>
-                            </td>
-                            <td className="p-5 text-right flex justify-end gap-2">
-                                <button onClick={() => openUsersModal(t)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg" title="Gerenciar Usuários / Senhas">
-                                    <Users size={18} />
-                                </button>
-                                <button onClick={() => openEditTenant(t)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" title="Editar Empresa">
-                                    <Edit size={18} />
-                                </button>
-                                <button onClick={() => handleDeleteTenant(t.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Excluir">
-                                    <Trash2 size={18} />
-                                </button>
-                            </td>
+        {/* TAB 1: EMPRESAS */}
+        {activeTab === 'tenants' && (
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold">
+                        <tr>
+                            <th className="p-4 pl-6">Empresa</th>
+                            <th className="p-4">CNPJ</th>
+                            <th className="p-4">Plano Atual</th>
+                            <th className="p-4 text-right pr-6">Ações</th>
                         </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-      </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {tenants.map(t => (
+                            <tr key={t.id} className="hover:bg-slate-50">
+                                <td className="p-4 pl-6">
+                                    <div className="font-bold text-slate-800">{t.companyName}</div>
+                                    <div className="text-xs text-slate-400 font-mono mt-0.5">{t.id}</div>
+                                </td>
+                                <td className="p-4 text-sm text-slate-600">{t.cnpj || '-'}</td>
+                                <td className="p-4">
+                                    <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-bold uppercase border border-blue-200">
+                                        {t.plans?.name || t.planId || 'Free'}
+                                    </span>
+                                </td>
+                                <td className="p-4 text-right pr-6">
+                                    <button onClick={() => handleEditTenant(t)} className="text-blue-600 font-bold text-sm hover:underline flex items-center justify-end gap-1 w-full">
+                                        <Edit size={14}/> Editar
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        )}
 
-      {/* MODAL 1: EMPRESA (Criação/Edição) */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
-                <div className="flex justify-between items-center p-6 border-b">
-                    <h3 className="text-xl font-bold">{editingTenant ? 'Editar Empresa' : 'Provisionar Novo Cliente'}</h3>
-                    <button onClick={() => setIsModalOpen(false)}><X/></button>
+        {/* TAB 2: PLANOS */}
+        {activeTab === 'plans' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                <div className="lg:col-span-2 space-y-4">
+                    <div className="flex justify-between items-center mb-2">
+                         <h2 className="font-bold text-lg text-slate-800">Planos Disponíveis</h2>
+                         <button onClick={handleNewPlan} className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-green-700 shadow-sm transition"><Plus size={16}/> Novo Plano</button>
+                    </div>
+                    {plans.map(plan => (
+                        <div key={plan.id} className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex justify-between items-center group hover:border-blue-300 transition">
+                            <div>
+                                <div className="flex items-center gap-3">
+                                    <h3 className="font-bold text-lg text-slate-900">{plan.name}</h3>
+                                    <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase border ${plan.plan_billing_period === 'yearly' ? 'bg-purple-50 text-purple-700 border-purple-100' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                        {plan.plan_billing_period === 'yearly' ? 'Anual' : 'Mensal'}
+                                    </span>
+                                </div>
+                                <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-500">
+                                    <span className="flex items-center gap-1.5"><Users size={14}/> <strong>{plan.user_limit === -1 ? '∞' : plan.user_limit}</strong> Users</span>
+                                    <span className="flex items-center gap-1.5"><Building size={14}/> <strong>{plan.job_limit === -1 ? '∞' : plan.job_limit}</strong> Vagas</span>
+                                    <span className="flex items-center gap-1.5"><FileText size={14}/> <strong>{plan.candidate_limit === -1 ? '∞' : plan.candidate_limit}</strong> Cands.</span>
+                                </div>
+                            </div>
+                            <div className="text-right flex items-center gap-4">
+                                <div className="text-xl font-bold text-green-700 bg-green-50 px-3 py-1 rounded-lg border border-green-100">
+                                    {Number(plan.price).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
+                                </div>
+                                <div className="flex gap-1">
+                                    <button onClick={() => handleEditPlan(plan)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"><Edit size={18}/></button>
+                                    <button onClick={() => handleDeletePlan(plan.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"><Trash2 size={18}/></button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
-                <form onSubmit={handleSubmitTenant} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-                    {/* Campos de Empresa ... */}
-                    <div className="space-y-3">
-                        <label className="block text-xs font-bold uppercase">Razão Social</label>
-                        <input required className="w-full border p-2.5 rounded-lg" value={formData.companyName} onChange={e => setFormData({...formData, companyName: e.target.value})} />
-                        
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-xs font-bold uppercase">CNPJ</label>
-                                <input className="w-full border p-2.5 rounded-lg" value={formData.cnpj} onChange={e => setFormData({...formData, cnpj: e.target.value})} />
+
+                {/* MODAL/SIDEBAR DE EDIÇÃO DE PLANO */}
+                {isEditingPlan && (
+                    <div className="lg:col-span-1 animate-in fade-in slide-in-from-right-4 duration-300">
+                        <div className="bg-white p-6 rounded-xl shadow-xl border border-blue-100 sticky top-8 ring-4 ring-blue-50">
+                            <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
+                                <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+                                    {plans.some(p => p.id === planForm.id) ? 'Editar Plano' : 'Novo Plano'}
+                                </h3>
+                                <button onClick={() => setIsEditingPlan(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold uppercase">Plano</label>
-                                <select className="w-full border p-2.5 rounded-lg bg-white" value={formData.planId} onChange={e => setFormData({...formData, planId: e.target.value})}>
-                                    {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                </select>
-                            </div>
+
+                            <form onSubmit={handleSavePlan} className="space-y-5">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">ID (Slug Único)</label>
+                                    <input 
+                                        className="w-full border p-2.5 rounded-lg bg-slate-50 font-mono text-sm disabled:opacity-60" 
+                                        value={planForm.id} 
+                                        onChange={e => setPlanForm({...planForm, id: e.target.value})}
+                                        disabled={plans.some(p => p.id === planForm.id)} // Trava ID na edição
+                                        placeholder="ex: pro-mensal"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Nome do Plano</label>
+                                    <input className="w-full border p-2.5 rounded-lg text-sm" value={planForm.name} onChange={e => setPlanForm({...planForm, name: e.target.value})} required />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Preço (R$)</label>
+                                        <input type="number" step="0.01" className="w-full border p-2.5 rounded-lg text-sm" value={planForm.price} onChange={e => setPlanForm({...planForm, price: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Ciclo</label>
+                                        <select className="w-full border p-2.5 rounded-lg text-sm bg-white" value={planForm.plan_billing_period} onChange={e => setPlanForm({...planForm, plan_billing_period: e.target.value})}>
+                                            <option value="monthly">Mensal</option>
+                                            <option value="yearly">Anual</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="space-y-3 pt-2 border-t border-dashed border-slate-200">
+                                    <div className="flex items-center gap-4">
+                                        <label className="w-20 text-xs font-bold text-slate-500">Usuários</label>
+                                        <input type="number" className="flex-1 border p-2 rounded text-sm" value={planForm.user_limit} onChange={e => setPlanForm({...planForm, user_limit: e.target.value})} />
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <label className="w-20 text-xs font-bold text-slate-500">Vagas</label>
+                                        <input type="number" className="flex-1 border p-2 rounded text-sm" value={planForm.job_limit} onChange={e => setPlanForm({...planForm, job_limit: e.target.value})} />
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <label className="w-20 text-xs font-bold text-slate-500">Candidatos</label>
+                                        <input type="number" className="flex-1 border p-2 rounded text-sm" value={planForm.candidate_limit} onChange={e => setPlanForm({...planForm, candidate_limit: e.target.value})} />
+                                    </div>
+                                    <p className="text-[10px] text-center text-slate-400">-1 para Ilimitado</p>
+                                </div>
+                                <button type="submit" className="w-full py-2.5 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-lg flex justify-center items-center gap-2">
+                                    <Save size={18}/> Salvar Plano
+                                </button>
+                            </form>
                         </div>
                     </div>
+                )}
 
-                    {!editingTenant && (
-                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 space-y-3">
-                            <h4 className="font-bold text-sm text-blue-800 flex items-center gap-2"><UserCheck size={16}/> Admin Inicial</h4>
-                            <input required placeholder="Nome Responsável" className="w-full border p-2 rounded" value={formData.adminName} onChange={e => setFormData({...formData, adminName: e.target.value})} />
-                            <input required type="email" placeholder="Email Login" className="w-full border p-2 rounded" value={formData.adminEmail} onChange={e => setFormData({...formData, adminEmail: e.target.value})} />
-                            <input required type="text" placeholder="Senha Temporária" className="w-full border p-2 rounded" value={formData.adminPassword} onChange={e => setFormData({...formData, adminPassword: e.target.value})} />
+                {/* MODAL DE EDIÇÃO DE TENANT */}
+                {isEditingTenant && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+                            <h3 className="text-lg font-bold mb-4">Editar Empresa</h3>
+                            <form onSubmit={handleSaveTenant} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">Nome da Empresa</label>
+                                    <input className="w-full border p-2 rounded" value={tenantForm.companyName} onChange={e => setTenantForm({...tenantForm, companyName: e.target.value})} required />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">CNPJ</label>
+                                    <input className="w-full border p-2 rounded" value={tenantForm.cnpj} onChange={e => setTenantForm({...tenantForm, cnpj: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 mb-1">Plano Atribuído</label>
+                                    <select className="w-full border p-2 rounded bg-white" value={tenantForm.planId} onChange={e => setTenantForm({...tenantForm, planId: e.target.value})}>
+                                        {plans.map(p => <option key={p.id} value={p.id}>{p.name} ({p.plan_billing_period})</option>)}
+                                    </select>
+                                </div>
+                                <div className="flex justify-end gap-2 pt-4">
+                                    <button type="button" onClick={() => setIsEditingTenant(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancelar</button>
+                                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Salvar Alterações</button>
+                                </div>
+                            </form>
                         </div>
-                    )}
-
-                    <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold hover:bg-slate-800 flex justify-center gap-2">
-                        <Save size={18}/> Salvar
-                    </button>
-                </form>
+                    </div>
+                )}
             </div>
-        </div>
-      )}
-
-      {/* MODAL 2: GESTÃO DE USUÁRIOS (Reset de Senha/Correção) */}
-      {isUsersModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                  <div className="p-6 border-b bg-slate-50 flex justify-between items-center">
-                      <div>
-                          <h3 className="text-lg font-bold text-slate-800">Usuários: {currentTenantName}</h3>
-                          <p className="text-xs text-slate-500">Gerencie acessos e resete senhas se necessário.</p>
-                      </div>
-                      <button onClick={() => setIsUsersModalOpen(false)}><X className="text-slate-400 hover:text-slate-600"/></button>
-                  </div>
-                  
-                  <div className="p-0 overflow-y-auto flex-1">
-                      <table className="w-full text-left border-collapse">
-                          <thead className="bg-slate-100 text-xs uppercase text-slate-500 font-semibold">
-                              <tr>
-                                  <th className="p-4 border-b">Nome</th>
-                                  <th className="p-4 border-b">Email (Login)</th>
-                                  <th className="p-4 border-b">Cargo</th>
-                                  <th className="p-4 border-b text-right">Ação</th>
-                              </tr>
-                          </thead>
-                          <tbody>
-                              {selectedTenantUsers.map(u => (
-                                  <tr key={u.id} className={`border-b hover:bg-slate-50 ${editingUser === u.id ? 'bg-blue-50' : ''}`}>
-                                      {editingUser === u.id ? (
-                                          // MODO EDIÇÃO
-                                          <>
-                                              <td className="p-3">
-                                                  <input className="w-full border border-blue-300 p-1.5 rounded text-sm" 
-                                                      value={userForm.name} onChange={e => setUserForm({...userForm, name: e.target.value})} />
-                                              </td>
-                                              <td className="p-3">
-                                                  <input className="w-full border border-blue-300 p-1.5 rounded text-sm" 
-                                                      value={userForm.email} onChange={e => setUserForm({...userForm, email: e.target.value})} />
-                                              </td>
-                                              <td className="p-3 text-sm text-slate-500">{u.role}</td>
-                                              <td className="p-3 text-right">
-                                                  <div className="flex flex-col gap-2 items-end">
-                                                      <input type="text" placeholder="Nova Senha (Opcional)" className="w-32 border border-blue-300 p-1.5 rounded text-xs" 
-                                                          value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
-                                                      <div className="flex gap-2">
-                                                          <button onClick={handleSaveUser} className="bg-blue-600 text-white p-1.5 rounded hover:bg-blue-700" title="Salvar"><Check size={16}/></button>
-                                                          <button onClick={() => setEditingUser(null)} className="bg-white border text-slate-500 p-1.5 rounded hover:bg-slate-100" title="Cancelar"><X size={16}/></button>
-                                                      </div>
-                                                  </div>
-                                              </td>
-                                          </>
-                                      ) : (
-                                          // MODO LEITURA
-                                          <>
-                                              <td className="p-4 font-medium text-slate-700">{u.name}</td>
-                                              <td className="p-4 text-slate-600 text-sm">{u.email}</td>
-                                              <td className="p-4">
-                                                  <span className={`px-2 py-1 text-xs rounded-full border ${u.role === 'admin' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-slate-100 text-slate-600'}`}>
-                                                      {u.role}
-                                                  </span>
-                                              </td>
-                                              <td className="p-4 text-right">
-                                                  <button onClick={() => handleEditUserClick(u)} className="text-blue-600 hover:bg-blue-50 p-2 rounded transition flex items-center gap-1 ml-auto text-sm font-medium">
-                                                      <Key size={14}/> Editar Acesso
-                                                  </button>
-                                              </td>
-                                          </>
-                                      )}
-                                  </tr>
-                              ))}
-                          </tbody>
-                      </table>
-                      {selectedTenantUsers.length === 0 && <div className="p-8 text-center text-slate-400">Nenhum usuário encontrado nesta empresa.</div>}
-                  </div>
-              </div>
-          </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
