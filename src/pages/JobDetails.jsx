@@ -216,7 +216,7 @@ export default function JobDetails() {
       setSaving(true);
       await supabase.from('jobs').update({ parameters }).eq('id', jobId);
       setSaving(false);
-      setFeedback({ open: true, message: 'ConfiguraÃ§Ãµes salvas!', severity: 'success' });
+      setFeedback({ open: true, message: 'Configurações salvas!', severity: 'success' });
   };
 
   if (loading) return <Box p={5} display="flex" justifyContent="center"><CircularProgress /></Box>;
@@ -274,15 +274,15 @@ export default function JobDetails() {
                 </Box>
             </Box>
 
-            <Paper sx={{ mb: 3 }}><Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered><Tab label="Candidatos" /><Tab label="ClassificaÃ§Ã£o" /><Tab label="ConfiguraÃ§Ãµes da Vaga" /></Tabs></Paper>
+            <Paper sx={{ mb: 3 }}><Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered><Tab label="Candidatos" /><Tab label="Classificação" /><Tab label="Configurações da Vaga" /></Tabs></Paper>
             
             {tabValue === 0 && (
                 <Paper sx={{ p: 0 }}>
                     <Box p={3} borderBottom="1px solid #eee">
                         <Grid container spacing={3}>
                             <Grid item xs={12} md={6}>
-                                <Typography variant="subtitle2" fontWeight="bold">DescriÃ§Ã£o</Typography>
-                                <Typography variant="body2" color="text.secondary" whiteSpace="pre-wrap">{job.description || 'Sem descriÃ§Ã£o.'}</Typography>
+                                <Typography variant="subtitle2" fontWeight="bold">Descrição</Typography>
+                                <Typography variant="body2" color="text.secondary" whiteSpace="pre-wrap">{job.description || 'Sem descrição.'}</Typography>
                             </Grid>
                             <Grid item xs={12} md={6}>
                                 <Typography variant="subtitle2" fontWeight="bold">Requisitos</Typography>
@@ -292,7 +292,7 @@ export default function JobDetails() {
                     </Box>
 
                     <Table>
-                        <TableHead sx={{ bgcolor: '#f5f5f5' }}><TableRow><TableCell><strong>Nome</strong></TableCell><TableCell><strong>Email</strong></TableCell><TableCell align="center"><strong>AvaliaÃ§Ãµes</strong></TableCell><TableCell align="center"><strong>Nota Geral</strong></TableCell></TableRow></TableHead>
+                        <TableHead sx={{ bgcolor: '#f5f5f5' }}><TableRow><TableCell><strong>Nome</strong></TableCell><TableCell><strong>Email</strong></TableCell><TableCell align="center"><strong>Avaliações</strong></TableCell><TableCell align="center"><strong>Nota Geral</strong></TableCell></TableRow></TableHead>
                         <TableBody>{processedData.chartData.map(d => (
                             <TableRow key={d.appId} hover component={RouterLink} to={`/applications/${d.appId}`} style={{textDecoration:'none', cursor:'pointer'}}>
                                 <TableCell>{d.name}</TableCell>
@@ -344,7 +344,7 @@ export default function JobDetails() {
                             ) : (
                                 <Box sx={{ flex: 1, display: 'flex', flexDirection:'column', alignItems: 'center', justifyContent: 'center', color: 'text.secondary', bgcolor:'#fafafa', borderRadius:2 }}>
                                     <Typography variant="body1">Ainda nÃ£o hÃ¡ dados suficientes.</Typography>
-                                    <Typography variant="caption">Realize avaliaÃ§Ãµes para visualizar o grÃ¡fico.</Typography>
+                                    <Typography variant="caption">Realize avaliações para visualizar o grÃ¡fico.</Typography>
                                 </Box>
                             )}
                         </Paper>
@@ -388,7 +388,7 @@ export default function JobDetails() {
                     <Paper variant="outlined" sx={{p:3, mb:3, borderColor: 'orange'}}>
                         <Typography variant="subtitle1" fontWeight="bold" gutterBottom color="orange">4. RÃ©gua de Notas</Typography>
                         <Typography variant="caption" color="text.secondary" gutterBottom>
-                            Defina os nomes e valores (0 a 100) que aparecerÃ£o nas opÃ§Ãµes de avaliaÃ§Ã£o.
+                            Defina os nomes e valores (0 a 100) que aparecerÃ£o nas opções de avaliação.
                         </Typography>
                         <RatingScaleSection 
                             notes={parameters?.notas || []} 
@@ -404,7 +404,7 @@ export default function JobDetails() {
                             disabled={saving}
                             startIcon={<SaveIcon />} 
                         >
-                            {saving ? 'Salvando...' : 'Salvar ConfiguraÃ§Ãµes'}
+                            {saving ? 'Salvando...' : 'Salvar Configurações'}
                         </Button>
                     </Box>
                 </Box>
