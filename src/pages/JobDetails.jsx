@@ -19,11 +19,10 @@ import {
     Add as AddIcon,
     Star as StarIcon,
     CheckCircle as CheckCircleIcon,
-    EmojiEvents as TrophyIcon,
-    Delete as DeleteIcon
+    EmojiEvents as TrophyIcon
 } from '@mui/icons-material';
-import { Share2, MapPin, Briefcase, Calendar, ArrowLeft, Download, Plus, Trash2, Save, Copy } from 'lucide-react'; // Ajustado imports conforme arquivo original
-import { processEvaluation } from '../utils/evaluationLogic';
+import { Share2, MapPin, Briefcase, Calendar, ArrowLeft, Download, Plus, Trash2, Save, Copy } from 'lucide-react'; 
+import { processEvaluation, generateDefaultBenchmarkScores } from '../utils/evaluationLogic';
 import EvaluationForm from '../components/EvaluationForm'; 
 
 // --- ÍCONE SVG ---
@@ -33,6 +32,7 @@ const ArrowIcon = () => (
 
 // --- ESTILOS DOS MODAIS ---
 const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 600, bgcolor: 'background.paper', boxShadow: 24, p: 4, borderRadius: 2 };
+const formModalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '90%', maxWidth: 800, height: '85vh', bgcolor: 'background.paper', boxShadow: 24, p: 0, borderRadius: 2, overflow: 'hidden' };
 
 // --- COMPONENTE INTERNO: SEÇÃO DE CRITÉRIOS ---
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
@@ -119,7 +119,7 @@ const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
 
 // --- COMPONENTE PRINCIPAL DA PÁGINA ---
 export default function JobDetails() {
-  const { jobId } = useParams(); // Note: O Router passa 'id' ou 'jobId' dependendo da rota. No arquivo original era 'id'. Ajuste se necessário.
+  const { jobId } = useParams(); 
   const navigate = useNavigate();
   
   const [job, setJob] = useState(null);
@@ -138,7 +138,6 @@ export default function JobDetails() {
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [feedback, setFeedback] = useState({ open: false, message: '', severity: 'success' });
 
-  // Fallback para ID se vier undefined do useParams (dependendo da rota)
   const safeJobId = jobId || useParams().id;
 
   useEffect(() => {
@@ -159,7 +158,6 @@ export default function JobDetails() {
             setAllEvaluations(evalsData || []);
         }
 
-        // Busca toda a equipe para o dropdown
         if (jobData.tenantId) {
             const { data: teamData, error: teamError } = await supabase
                 .from('user_tenants')
@@ -373,7 +371,7 @@ export default function JobDetails() {
                                         </Select>
                                     </FormControl>
 
-                                    {/* FILTRO DE PILARES - ADICIONADO CONFORME PEDIDO */}
+                                    {/* FILTRO DE PILARES - ADICIONADO */}
                                     <FormControl size="small" sx={{ minWidth: 180 }}>
                                         <InputLabel>Critério</InputLabel>
                                         <Select value={metricFilter} label="Critério" onChange={(e) => setMetricFilter(e.target.value)}>
@@ -385,7 +383,7 @@ export default function JobDetails() {
                                     </FormControl>
                                 </Box>
                             </Box>
-
+                            
                             {processedData.chartData.some(d => d.total > 0 || d.count > 0) ? (
                                 <Box sx={{ flex: 1, width: '100%', minHeight: 0 }}>
                                     <ResponsiveContainer width="100%" height="100%">
