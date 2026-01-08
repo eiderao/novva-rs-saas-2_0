@@ -9,11 +9,9 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
     let hasAnswers = false;
 
     criteriaList.forEach(criterion => {
-        // Suporta estrutura aninhada (v2) ou plana (v1)
         const noteId = answers?.[sectionName]?.[criterion.name] || answers?.[criterion.name];
         
         if (noteId && noteId !== 'NA') {
-            // Garante comparação de string para evitar erros de tipo
             const noteObj = ratingScale.find(n => String(n.id) === String(noteId));
             
             if (noteObj) {
@@ -26,8 +24,6 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
     });
 
     if (!hasAnswers || totalWeightAnswered === 0) return null;
-
-    // Retorna média ponderada (0 a 10 ou 0 a 100 dependendo da régua)
     return (totalScore / totalWeightAnswered);
 };
 
@@ -64,27 +60,29 @@ export const processEvaluation = (evaluationObj, parameters) => {
     };
 };
 
-// NOVA FUNÇÃO: Gera respostas padrão baseadas no item central da régua
+// GERA O GABARITO PADRÃO (CENTRO DA RÉGUA)
 export const generateDefaultBenchmarkScores = (parameters) => {
     const notes = parameters.notas || [];
     if (notes.length === 0) return { triagem: {}, cultura: {}, tecnico: {} };
 
-    // Ordena notas por valor para achar o centro
+    // Ordena por valor
     const sortedNotes = [...notes].sort((a, b) => Number(a.valor) - Number(b.valor));
     
-    // Pega o índice central. Se par (ex: 4 itens), pega o índice 2 (o terceiro item, acima do meio).
+    // Regra: Centro ou primeiro acima do centro se par
+    // Ex: [0, 5, 10] (len 3) -> index 1 (5)
+    // Ex: [0, 5, 8, 10] (len 4) -> index 2 (8)
     const centerIndex = Math.floor(sortedNotes.length / 2);
-    const centerNoteId = sortedNotes[centerIndex]?.id;
+    const defaultNoteId = sortedNotes[centerIndex]?.id;
 
-    const benchmark = { triagem: {}, cultura: {}, tecnico: {} };
+    const benchmarkScores = { triagem: {}, cultura: {}, tecnico: {} };
 
-    // Preenche todos os critérios com a nota central
     ['triagem', 'cultura', 'tecnico'].forEach(section => {
         const criteria = parameters[section] || [];
         criteria.forEach(c => {
-            benchmark[section][c.name] = centerNoteId;
+            benchmarkScores[section] = benchmarkScores[section] || {};
+            benchmarkScores[section][c.name] = defaultNoteId;
         });
     });
 
-    return benchmark;
+    return benchmarkScores;
 };

@@ -11,12 +11,14 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
   useEffect(() => {
     if (initialData) {
+        // Suporte a v1 e v2
+        const scores = initialData.scores || initialData;
         setAnswers({
-            triagem: initialData.triagem || {},
-            cultura: initialData.cultura || {},
-            tecnico: initialData.tecnico || {}
+            triagem: scores.triagem || {},
+            cultura: scores.cultura || {},
+            tecnico: scores.tecnico || {}
         });
-        setNotes(initialData.anotacoes_gerais || '');
+        setNotes(initialData.anotacoes_gerais || initialData.notes || '');
     }
   }, [initialData]);
 
@@ -120,7 +122,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             <TextField multiline rows={2} fullWidth variant="outlined" size="small" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Comentários..." sx={{ bgcolor: '#fff' }} InputProps={{ style: { fontSize: '0.8rem' } }} />
           </Paper>
 
-          {/* HISTÓRICO DE TODAS AS ANOTAÇÕES */}
+          {/* HISTÓRICO */}
           <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
               <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <MessageSquare size={14} /> Histórico de Observações ({allEvaluations?.length || 0})
@@ -128,7 +130,6 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
               {allEvaluations && allEvaluations.length > 0 ? allEvaluations.map((ev, i) => (
                   <Box key={i} sx={{ mb: 1, p: 1.5, bgcolor: '#f9fafb', borderRadius: 1, border: '1px solid #eee' }}>
                       <Box display="flex" justifyContent="space-between" mb={0.5}>
-                          {/* Usa o nome mapeado ou fallback */}
                           <Typography variant="caption" fontWeight="bold" color="primary">{ev.evaluator_name || 'Usuário'}</Typography>
                           <Typography variant="caption" color="text.secondary">Nota: {Number(ev.final_score).toFixed(1)}</Typography>
                       </Box>
