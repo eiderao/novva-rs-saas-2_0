@@ -1,7 +1,6 @@
 // src/utils/evaluationLogic.js
 
 export const calculatePillarScore = (sectionName, criteriaList, answers, ratingScale) => {
-    // Se não houver critérios ou respostas, retorna null (neutro)
     if (!criteriaList || !Array.isArray(criteriaList) || criteriaList.length === 0) return null;
     if (!answers) return null;
     
@@ -10,19 +9,16 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
     let hasAnswers = false;
 
     criteriaList.forEach(criterion => {
-        // Tenta achar a resposta (suporta estrutura v2 aninhada ou v1 plana)
+        // Suporta estrutura aninhada (v2) ou plana (v1)
         const noteId = answers?.[sectionName]?.[criterion.name] || answers?.[criterion.name];
         
-        // Ignora 'NA', null ou undefined
         if (noteId && noteId !== 'NA') {
-            // CORREÇÃO CRÍTICA: Converte ambos para String para garantir o match (1 vs "1")
+            // Garante comparação de string para evitar erros de tipo
             const noteObj = ratingScale.find(n => String(n.id) === String(noteId));
             
             if (noteObj) {
                 hasAnswers = true;
                 const weight = Number(criterion.weight) || 0;
-                
-                // Cálculo: Valor da Nota * Peso
                 totalScore += (Number(noteObj.valor) * weight);
                 totalWeightAnswered += weight;
             }
@@ -31,7 +27,7 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
 
     if (!hasAnswers || totalWeightAnswered === 0) return null;
 
-    // Normaliza para escala 0-10
+    // Retorna média ponderada (0 a 10 ou 0 a 100 dependendo da régua)
     return (totalScore / totalWeightAnswered);
 };
 
@@ -45,14 +41,12 @@ export const processEvaluation = (evaluationObj, parameters) => {
     
     const pTriagem = parameters.triagem || [];
     const pCultura = parameters.cultura || [];
-    const pTecnico = parameters.tecnico || parameters['técnico'] || parameters['tÃ©cnico'] || [];
+    const pTecnico = parameters.tecnico || parameters['técnico'] || parameters['tƒ©cnico'] || [];
 
-    // Calcula parciais
     const triagem = calculatePillarScore('triagem', pTriagem, answers, ratingScale);
     const cultura = calculatePillarScore('cultura', pCultura, answers, ratingScale);
     const tecnico = calculatePillarScore('tecnico', pTecnico, answers, ratingScale);
 
-    // Média Aritmética Simples dos pilares respondidos
     let sum = 0;
     let count = 0;
 
@@ -60,7 +54,6 @@ export const processEvaluation = (evaluationObj, parameters) => {
     if (cultura !== null) { sum += cultura; count++; }
     if (tecnico !== null) { sum += tecnico; count++; }
 
-    // Se count for 0 (nenhum pilar avaliado), nota é 0.
     const total = count > 0 ? (sum / count) : 0;
 
     return {
@@ -69,4 +62,29 @@ export const processEvaluation = (evaluationObj, parameters) => {
         tecnico: tecnico !== null ? Number(tecnico) : 0,
         total: Number(total)
     };
+};
+
+// NOVA FUNÇÃO: Gera respostas padrão baseadas no item central da régua
+export const generateDefaultBenchmarkScores = (parameters) => {
+    const notes = parameters.notas || [];
+    if (notes.length === 0) return { triagem: {}, cultura: {}, tecnico: {} };
+
+    // Ordena notas por valor para achar o centro
+    const sortedNotes = [...notes].sort((a, b) => Number(a.valor) - Number(b.valor));
+    
+    // Pega o índice central. Se par (ex: 4 itens), pega o índice 2 (o terceiro item, acima do meio).
+    const centerIndex = Math.floor(sortedNotes.length / 2);
+    const centerNoteId = sortedNotes[centerIndex]?.id;
+
+    const benchmark = { triagem: {}, cultura: {}, tecnico: {} };
+
+    // Preenche todos os critérios com a nota central
+    ['triagem', 'cultura', 'tecnico'].forEach(section => {
+        const criteria = parameters[section] || [];
+        criteria.forEach(c => {
+            benchmark[section][c.name] = centerNoteId;
+        });
+    });
+
+    return benchmark;
 };
