@@ -13,14 +13,13 @@ import {
     Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis 
 } from 'recharts';
 import { 
-    Delete as DeleteIcon, 
     ContentCopy as ContentCopyIcon,
     Save as SaveIcon,
     Add as AddIcon,
     Star as StarIcon,
     CheckCircle as CheckCircleIcon,
-    Edit as EditIcon,
-    EmojiEvents as TrophyIcon
+    EmojiEvents as TrophyIcon,
+    Delete as DeleteIcon
 } from '@mui/icons-material';
 import { processEvaluation, generateDefaultBenchmarkScores } from '../utils/evaluationLogic';
 import EvaluationForm from '../components/EvaluationForm'; 
@@ -33,7 +32,7 @@ const ArrowIcon = () => (
 const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 600, bgcolor: 'background.paper', boxShadow: 24, p: 4, borderRadius: 2 };
 const formModalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '90%', maxWidth: 800, height: '85vh', bgcolor: 'background.paper', boxShadow: 24, p: 0, borderRadius: 2, overflow: 'hidden' };
 
-// --- CONFIG DE CRITÉRIOS ---
+// --- COMPONENTE DE CRITÉRIOS ---
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
   const handleChange = (i, f, v) => { const n = [...criteria]; n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; onCriteriaChange(n); };
   const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
@@ -77,7 +76,7 @@ const RatingScaleSection = ({ notes = [], onNotesChange }) => {
     );
 };
 
-// --- MODAL CÓPIA ---
+// --- MODAL DE CÓPIA ---
 const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState('');
@@ -127,10 +126,11 @@ export default function JobDetails() {
   const [allEvaluations, setAllEvaluations] = useState([]);
   const [usersMap, setUsersMap] = useState({});
   const [currentUser, setCurrentUser] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   
-  // FILTROS
+  // Filtros
   const [evaluatorFilter, setEvaluatorFilter] = useState('all');
-  const [metricFilter, setMetricFilter] = useState('Geral'); // 'Geral', 'Triagem', 'Fit Cultural', 'Teste Técnico'
+  const [metricFilter, setMetricFilter] = useState('Geral'); 
 
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [isIdealModalOpen, setIsIdealModalOpen] = useState(false);
@@ -143,10 +143,15 @@ export default function JobDetails() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         setCurrentUser(user);
+        
+        // Verificação simples de Admin (Email hardcoded ou metadados se existissem)
+        const isSuperAdmin = user?.email === 'eider@novvaempresa.com.br';
+        setIsAdmin(isSuperAdmin);
 
-        // A. Vaga
+        // A. Dados da Vaga
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         setJob(jobData);
+        
         const safeParams = jobData.parameters || { 
             triagem: [], cultura: [], tecnico: [], 
             notas: [{id:'1',nome:'Abaixo',valor:0}, {id:'2',nome:'Atende',valor:5}, {id:'3',nome:'Supera',valor:10}] 
@@ -156,12 +161,11 @@ export default function JobDetails() {
         // B. Candidatos
         const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', jobId);
         
-        // --- AUTO-CRIAÇÃO (BACKFILL) DO CANDIDATO IDEAL SE NÃO EXISTIR ---
+        // --- AUTO-HEALING: GARANTE QUE O IDEAL EXISTA ---
         const idealEmail = `benchmark_${jobId}@novva.app`;
         let idealApp = appsData?.find(a => a.candidate?.email === idealEmail);
 
         if (!idealApp && user) {
-            // Criação silenciosa para vagas antigas
             const { data: cand } = await supabase.from('candidates').upsert(
                 { name: 'Candidato Ideal (Referência)', email: idealEmail, city: 'N/A', state: 'N/A' }, 
                 { onConflict: 'email' }
@@ -176,21 +180,20 @@ export default function JobDetails() {
                 application_id: app.id, evaluator_id: user.id, scores: defaultScores, final_score: 5, notes: 'Gabarito Padrão'
             });
 
-            if (app) appsData.push(app); // Adiciona na lista local
+            if (app) appsData.push(app); 
         }
         
         setApplicants(appsData || []);
 
-        // C. Avaliações (Para filtro de avaliador funcionar, precisamos de TODOS os avaliadores que avaliaram ESTES candidatos)
+        // C. Avaliações
         const appIds = (appsData || []).map(a => a.id);
         if (appIds.length > 0) {
             const { data: evalsData } = await supabase.from('evaluations').select('*').in('application_id', appIds);
             setAllEvaluations(evalsData || []);
 
-            // Popula lista de avaliadores para o filtro
+            // Popula lista de avaliadores
             const userIds = [...new Set(evalsData.map(e => e.evaluator_id))];
             if (userIds.length > 0) {
-                // Tenta buscar nomes na tabela users (ou user_profiles)
                 const { data: usersData } = await supabase.from('users').select('id, name, email').in('id', userIds);
                 const map = {};
                 usersData?.forEach(u => map[u.id] = u.name || u.email);
@@ -206,14 +209,12 @@ export default function JobDetails() {
   const processedData = useMemo(() => {
     if (!parameters) return { chartData: [], evaluators: [] };
 
-    // Lista de avaliadores para o Dropdown
     const evaluators = Object.keys(usersMap).map(id => ({ id, name: usersMap[id] || 'Desconhecido' }));
 
     let chartData = applicants.map(app => {
-        // Flag do Ideal
         const isIdeal = app.status === 'benchmark' || app.candidate?.email?.includes('benchmark_');
 
-        // Filtra avaliações pelo ID do avaliador SE o filtro não for 'all'
+        // Filtro de Avaliador
         const appEvals = allEvaluations.filter(e => 
             String(e.application_id) === String(app.id) && 
             (evaluatorFilter === 'all' || e.evaluator_id === evaluatorFilter)
@@ -248,16 +249,16 @@ export default function JobDetails() {
             count: count,
             hired: app.isHired,
             isIdeal: isIdeal,
-            lastEval: lastEvalData // Para edição
+            lastEval: lastEvalData 
         };
     });
 
-    // Se filtro de avaliador ativo, remove quem não tem avaliação desse avaliador (exceto se for o Ideal, que sempre queremos ver)
+    // Se filtro de avaliador ativo, remove quem não tem avaliação (exceto Ideal)
     if (evaluatorFilter !== 'all') {
         chartData = chartData.filter(c => c.count > 0 || c.isIdeal);
     }
 
-    // Ordenação (Ideal sempre primeiro, depois decrescente por nota escolhida)
+    // Ordenação
     chartData.sort((a, b) => {
         if (a.isIdeal) return -1;
         if (b.isIdeal) return 1;
@@ -292,7 +293,11 @@ export default function JobDetails() {
       setFeedback({ open: true, message: 'Configurações salvas!', severity: 'success' });
   };
 
-  const handleOpenEvaluation = (appId) => {
+  const handleOpenEvaluation = (appId, isIdeal) => {
+      if (isIdeal && !isAdmin) {
+          alert("Apenas administradores podem alterar o Candidato Ideal.");
+          return;
+      }
       setEditingAppId(appId);
       setIsIdealModalOpen(true);
   };
@@ -313,6 +318,13 @@ export default function JobDetails() {
       return '#94a3b8';
   };
 
+  const activeDataKey = useMemo(() => {
+      if (metricFilter === 'Triagem') return 'triagem';
+      if (metricFilter === 'Fit Cultural') return 'cultura';
+      if (metricFilter === 'Teste Técnico') return 'tecnico';
+      return 'total';
+  }, [metricFilter]);
+
   if (loading) return <Box p={10} display="flex" justifyContent="center"><CircularProgress /></Box>;
 
   return (
@@ -329,12 +341,12 @@ export default function JobDetails() {
             <Paper sx={{ mb: 3, borderRadius: 2 }}>
                 <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered>
                     <Tab label={`Candidatos (${applicants.length})`} />
-                    <Tab label="Classificação & Ranking" icon={<TrophyIcon />} iconPosition="start" />
+                    <Tab label="Ranking" icon={<TrophyIcon />} iconPosition="start" />
                     <Tab label="Configuração da Vaga" />
                 </Tabs>
             </Paper>
             
-            {/* ABA 0: LISTA SIMPLES */}
+            {/* ABA 0: LISTA SIMPLES (CANDIDATO IDEAL INCLUÍDO) */}
             {tabValue === 0 && (
                 <Paper sx={{ p: 0, borderRadius: 2, overflow: 'hidden' }}>
                     <Table>
@@ -348,17 +360,37 @@ export default function JobDetails() {
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {processedData.chartData.filter(d => !d.isIdeal).map(d => (
-                                <TableRow key={d.appId} hover component={RouterLink} to={`/applications/${d.appId}`} style={{textDecoration:'none', cursor:'pointer'}}>
-                                    <TableCell>{d.name}</TableCell>
-                                    <TableCell>{d.email}</TableCell>
-                                    <TableCell align="center">{d.hired ? <Chip label="Contratado" color="success" size="small" icon={<CheckCircleIcon/>}/> : <Chip label="Em análise" size="small"/>}</TableCell>
-                                    <TableCell align="center"><Chip label={d.count} size="small" /></TableCell>
-                                    <TableCell align="center">
-                                        <Chip label={d.total.toFixed(1)} color={getScoreColor(d.total)} variant={d.count > 0 ? 'filled' : 'outlined'} />
-                                    </TableCell>
-                                </TableRow>
-                            ))}
+                            {processedData.chartData.map(d => {
+                                const isClickable = d.isIdeal ? isAdmin : true; // Ideal só admin clica
+                                const rowBg = d.isIdeal ? '#fff7ed' : 'inherit';
+
+                                return (
+                                    <TableRow 
+                                        key={d.appId} 
+                                        hover 
+                                        sx={{ bgcolor: rowBg, cursor: isClickable ? 'pointer' : 'default' }}
+                                        onClick={() => {
+                                            if (d.isIdeal) handleOpenEvaluation(d.appId, true);
+                                            else navigate(`/applications/${d.appId}`);
+                                        }}
+                                    >
+                                        <TableCell sx={{ fontWeight: d.isIdeal ? 'bold' : 'normal', color: d.isIdeal ? 'orange' : 'inherit' }}>
+                                            {d.isIdeal && <StarIcon sx={{fontSize: 16, mr: 1, verticalAlign: 'text-top'}}/>}
+                                            {d.name}
+                                        </TableCell>
+                                        <TableCell>{d.email}</TableCell>
+                                        <TableCell align="center">
+                                            {d.isIdeal ? <Chip label="Referência" size="small" color="warning" variant="outlined"/> : 
+                                             d.hired ? <Chip label="Contratado" color="success" size="small" icon={<CheckCircleIcon/>}/> : 
+                                             <Chip label="Em análise" size="small"/>}
+                                        </TableCell>
+                                        <TableCell align="center"><Chip label={d.count} size="small" variant="outlined" /></TableCell>
+                                        <TableCell align="center">
+                                            <Chip label={d.total.toFixed(1)} color={getScoreColor(d.total)} variant={d.count > 0 ? 'filled' : 'outlined'} />
+                                        </TableCell>
+                                    </TableRow>
+                                )
+                            })}
                         </TableBody>
                     </Table>
                 </Paper>
@@ -373,7 +405,6 @@ export default function JobDetails() {
                             <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                                 <Typography variant="subtitle2" color="text.secondary" mb={1} fontWeight="bold">FILTROS</Typography>
                                 
-                                {/* Filtro Avaliador (Funcional) */}
                                 <FormControl fullWidth size="small" sx={{ mb: 2, bgcolor: 'white' }}>
                                     <InputLabel>Avaliador</InputLabel>
                                     <Select value={evaluatorFilter} label="Avaliador" onChange={(e) => setEvaluatorFilter(e.target.value)}>
@@ -382,7 +413,6 @@ export default function JobDetails() {
                                     </Select>
                                 </FormControl>
 
-                                {/* Filtro Pilares (Dropdown, nomes completos) */}
                                 <FormControl fullWidth size="small" sx={{ bgcolor: 'white' }}>
                                     <InputLabel>Pilar / Critério</InputLabel>
                                     <Select value={metricFilter} label="Pilar / Critério" onChange={(e) => setMetricFilter(e.target.value)}>
@@ -396,19 +426,18 @@ export default function JobDetails() {
 
                             <List sx={{ overflowY: 'auto', flex: 1 }}>
                                 {processedData.chartData.map((d, index) => {
-                                    // Determina qual valor exibir na lista
                                     let displayVal = d.total;
                                     if(metricFilter === 'Triagem') displayVal = d.triagem;
                                     if(metricFilter === 'Fit Cultural') displayVal = d.cultura;
                                     if(metricFilter === 'Teste Técnico') displayVal = d.tecnico;
                                     
                                     if (d.isIdeal) {
+                                        // Ideal na aba Ranking é apenas visual (sem clique)
                                         return (
-                                            <ListItem key="ideal" button onClick={() => handleOpenEvaluation(d.appId)} sx={{ bgcolor: '#fff7ed', borderBottom: '1px dashed orange' }}>
+                                            <ListItem key="ideal" sx={{ bgcolor: '#fff7ed', borderBottom: '1px dashed orange' }}>
                                                 <StarIcon sx={{ color: 'orange', mr: 1, fontSize: 20 }} />
                                                 <ListItemText 
-                                                    primary={<Typography variant="caption" fontWeight="bold" color="orange" sx={{fontSize: '0.8rem'}}>Candidato Ideal</Typography>} 
-                                                    secondary={<Typography variant="caption" sx={{fontSize: '0.65rem'}}>Clique para editar</Typography>}
+                                                    primary={<Typography variant="caption" fontWeight="bold" color="orange" sx={{fontSize: '0.8rem'}}>Candidato Ideal (Ref)</Typography>} 
                                                 />
                                                 <Chip label={displayVal.toFixed(1)} size="small" sx={{ bgcolor: 'orange', color: 'white', fontWeight: 'bold', height: 20, fontSize: '0.7rem' }} />
                                             </ListItem>
@@ -419,24 +448,22 @@ export default function JobDetails() {
                                             <ListItem 
                                                 secondaryAction={
                                                     <Box textAlign="right" display="flex" alignItems="center" gap={1}>
-                                                        <Typography variant="body2" fontWeight="bold" sx={{color: getScoreColorHex(displayVal)}}>
+                                                        <Typography variant="body2" fontWeight="bold" sx={{color: getScoreColorHex(displayVal), fontSize: '0.9rem'}}>
                                                             {displayVal.toFixed(1)}
                                                         </Typography>
-                                                        {/* Checkbox de contratação (Desabilitado para Ideal) */}
                                                         <Checkbox 
                                                             checked={d.hired || false} 
                                                             onChange={() => handleHireToggle(d.appId, d.hired)} 
                                                             color="success"
                                                             size="small"
                                                             disabled={d.isIdeal}
-                                                            inputProps={{ 'aria-label': 'Contratar' }}
                                                         />
                                                     </Box>
                                                 }
                                             >
                                                 <ListItemText 
                                                     primary={<Typography variant="body2" fontWeight="bold" sx={{fontSize: '0.85rem'}}>#{index} {d.name}</Typography>}
-                                                    secondary={<Typography variant="caption" sx={{fontSize: '0.7rem'}}>{d.email}</Typography>}
+                                                    secondary={<Typography variant="caption" sx={{fontSize: '0.7rem', display: 'block', maxWidth: '180px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{d.email}</Typography>}
                                                 />
                                             </ListItem>
                                             <Divider component="li" />
@@ -450,9 +477,9 @@ export default function JobDetails() {
                     {/* DIREITA: GRÁFICOS MAIORES */}
                     <Grid item xs={12} md={8}>
                         <Grid container spacing={3}>
-                            {/* RADAR: AUMENTADO, RÓTULOS, LINHA IDEAL PRETA PONTILHADA */}
+                            {/* RADAR */}
                             <Grid item xs={12}>
-                                <Paper sx={{ p: 3, height: '500px', borderRadius: 2 }} elevation={2}>
+                                <Paper sx={{ p: 3, height: '550px', borderRadius: 2 }} elevation={2}>
                                     <Typography variant="h6" mb={2} fontWeight="bold" color="#334155">Comparativo de Perfil</Typography>
                                     <ResponsiveContainer width="100%" height="100%">
                                         <RadarChart cx="50%" cy="50%" outerRadius="75%" data={[
@@ -464,10 +491,8 @@ export default function JobDetails() {
                                             <PolarAngleAxis dataKey="subject" tick={{ fill: '#333', fontWeight: 'bold', fontSize: 14 }} />
                                             <PolarRadiusAxis angle={30} domain={[0, 'auto']} /> 
                                             
-                                            {/* IDEAL: PRETO, PONTILHADO, GROSSO */}
                                             <Radar name="Ideal" dataKey="ideal" stroke="#000000" strokeWidth={3} strokeDasharray="5 5" fill="none" />
                                             
-                                            {/* OUTROS CANDIDATOS */}
                                             {processedData.chartData.slice(1, 4).map((c, i) => (
                                                 <Radar 
                                                     key={i} 
@@ -476,7 +501,7 @@ export default function JobDetails() {
                                                     stroke={['#8884d8','#82ca9d','#ffc658'][i]} 
                                                     fill={['#8884d8','#82ca9d','#ffc658'][i]} 
                                                     fillOpacity={0.2} 
-                                                    label={{ position: 'top', fill: '#333', fontSize: 10 }} // Rótulos
+                                                    label={{ position: 'top', fill: '#333', fontSize: 12, fontWeight: 'bold' }} 
                                                 />
                                             ))}
                                             <Legend />
@@ -486,7 +511,7 @@ export default function JobDetails() {
                                 </Paper>
                             </Grid>
 
-                            {/* BARRAS: LADO A LADO, LÓGICA DE 4 BARRAS SE GERAL */}
+                            {/* BARRAS */}
                             <Grid item xs={12}>
                                 <Paper sx={{ p: 3, minHeight: '600px', borderRadius: 2 }} elevation={2}>
                                     <Typography variant="h6" mb={3} fontWeight="bold" color="#334155">Comparativo por {metricFilter}</Typography>
@@ -497,7 +522,7 @@ export default function JobDetails() {
                                                     data={processedData.chartData} 
                                                     layout="vertical" 
                                                     margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
-                                                    barSize={metricFilter === 'Geral' ? 12 : 24} // Barras mais finas se forem muitas
+                                                    barSize={metricFilter === 'Geral' ? 12 : 24} 
                                                     barGap={2}
                                                 >
                                                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
@@ -506,7 +531,6 @@ export default function JobDetails() {
                                                     <Tooltip cursor={{fill: '#f5f5f5'}} />
                                                     <Legend verticalAlign="top" height={36} />
                                                     
-                                                    {/* SE FOR GERAL, MOSTRA 4 BARRAS. SE NÃO, MOSTRA SÓ A SELECIONADA */}
                                                     {metricFilter === 'Geral' ? (
                                                         <>
                                                             <Bar dataKey="total" name="Geral" fill="#1e293b" radius={[0,4,4,0]}><LabelList dataKey="total" position="right" fontSize={10} /></Bar>
@@ -565,7 +589,6 @@ export default function JobDetails() {
                     <Button onClick={() => setIsIdealModalOpen(false)}>Fechar</Button>
                 </Box>
                 <Box p={2} sx={{ height: 'calc(100% - 60px)', overflowY: 'auto' }}>
-                     {/* Form de Avaliação Comum - Reutiliza componente existente */}
                      {editingAppId && (
                          <EvaluationForm 
                             applicationId={editingAppId}
