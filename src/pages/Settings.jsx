@@ -7,10 +7,12 @@ export default function Settings() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('company'); // company, team, profile
   const [loading, setLoading] = useState(true);
-  
   const [tenant, setTenant] = useState(null);
   const [team, setTeam] = useState([]);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
+  
+  // Controle de Permissão do Usuário Logado
+  const [amIAdmin, setAmIAdmin] = useState(false);
 
   // Estados para Edição do Próprio Perfil
   const [myProfileForm, setMyProfileForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
@@ -60,24 +62,36 @@ export default function Settings() {
 
         if (teamError) throw teamError;
 
-        // Formata os dados para a estrutura que a tela espera
+        // Formata os dados e verifica permissões
+        let userIsAdmin = false;
         const formattedTeam = [];
+        
         if (teamRelations) {
             teamRelations.forEach(item => {
                 if (item.user) {
+                    // Verifica se este item da lista é o usuário logado
+                    const isMe = item.user.id === session.user.id;
+                    const isRoleAdmin = item.role === 'Administrador' || item.role === 'admin';
+                    
+                    // Se sou eu, define minha permissão (Super Admin OU Admin do Tenant)
+                    if (isMe) {
+                        userIsAdmin = item.user.is_admin_system || isRoleAdmin;
+                    }
+
                     formattedTeam.push({
                         id: item.user.id,
                         name: item.user.name,
                         email: item.user.email,
                         is_admin_system: item.user.is_admin_system,
                         role: item.role, 
-                        isAdmin: item.role === 'Administrador' || item.role === 'admin'
+                        isAdmin: isRoleAdmin // Flag visual para a tabela
                     });
                 }
             });
         }
         
         setTeam(formattedTeam);
+        setAmIAdmin(userIsAdmin);
       }
     } catch (error) {
       console.error("Erro ao carregar dados:", error);
@@ -285,7 +299,7 @@ export default function Settings() {
         </div>
       )}
 
-      {/* ABA 2: EQUIPE (CRUD) */}
+      {/* ABA 2: EQUIPE (CRUD - Protegido por amIAdmin) */}
       {activeTab === 'team' && (
         <div className="animate-in fade-in slide-in-from-right-2 duration-300">
             <div className="flex justify-between items-end mb-6">
@@ -293,7 +307,8 @@ export default function Settings() {
                     <h2 className="text-xl font-bold text-gray-900">Membros da Equipe</h2>
                     <p className="text-sm text-gray-500">Gerencie quem tem acesso aos dados da {tenant?.companyName}.</p>
                 </div>
-                {!isAddingUser && (
+                {/* BOTÃO VISÍVEL APENAS PARA ADMINS */}
+                {!isAddingUser && amIAdmin && (
                     <button onClick={() => setIsAddingUser(true)} className="bg-blue-600 text-white px-4 py-2.5 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-sm transition font-medium">
                         <Plus size={18}/> Adicionar Usuário
                     </button>
@@ -304,24 +319,23 @@ export default function Settings() {
                 <div className="bg-white p-6 rounded-xl border border-blue-100 mb-8 shadow-sm ring-4 ring-blue-50">
                     <h3 className="font-bold mb-6 text-gray-900 flex items-center gap-2 pb-4 border-b"><Plus size={18} className="text-blue-600"/> Cadastrar Novo Membro</h3>
                     
-                    {/* CORREÇÃO AQUI: AUTOCOMPLETE OFF */}
                     <form onSubmit={handleAddUser} autoComplete="off">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 mb-1.5">Nome Completo *</label>
                                 <input required className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" 
                                     value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} 
-                                    autoComplete="off" // Prevenção extra
+                                    autoComplete="off" 
                                 />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 mb-1.5">E-mail Corporativo *</label>
                                 <input required type="email" className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" 
                                     value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} 
-                                    autoComplete="off" // Evita sugestão de email do usuário atual
+                                    autoComplete="off" 
                                 />
                             </div>
-                            {/* NOVO CAMPO: CARGO */}
+                            
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 mb-1.5">Cargo / Função</label>
                                 <div className="relative">
@@ -338,7 +352,7 @@ export default function Settings() {
                                 <label className="block text-xs font-bold text-gray-700 mb-1.5">Senha Inicial *</label>
                                 <input required type="password" className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" 
                                     value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} 
-                                    autoComplete="new-password" // CHAVE MESTRA: Força o navegador a não preencher
+                                    autoComplete="new-password" 
                                 />
                             </div>
                             <div className="flex items-center h-full pt-1 md:col-span-2">
@@ -380,15 +394,19 @@ export default function Settings() {
                                 <td className="p-5 text-gray-600 text-sm flex items-center gap-2"><Mail size={14} className="text-gray-400"/> {user.email}</td>
                                 <td className="p-5 text-slate-700 font-medium text-sm">{user.role}</td>
                                 <td className="p-5">
-                                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ${user.isAdmin || user.role === 'admin' ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                                        {user.isAdmin || user.role === 'admin' ? 'Admin' : 'Membro'}
+                                    {/* Exibição da Permissão Baseada na Flag isAdmin calculada no backend */}
+                                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ${user.isAdmin || user.is_admin_system ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                                        {user.isAdmin || user.is_admin_system ? 'Admin' : 'Membro'}
                                     </span>
                                 </td>
                                 <td className="p-5 text-right">
                                     {user.id !== currentUserProfile?.id ? (
-                                        <button onClick={() => handleDeleteUser(user.id)} className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-all" title="Remover Usuário">
-                                            <Trash2 size={18} />
-                                        </button>
+                                        /* AÇÃO DE EXCLUIR VISÍVEL APENAS SE EU FOR ADMIN */
+                                        amIAdmin && (
+                                            <button onClick={() => handleDeleteUser(user.id)} className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-all" title="Remover Usuário">
+                                                <Trash2 size={18} />
+                                            </button>
+                                        )
                                     ) : (
                                         <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">VOCÊ</span>
                                     )}
@@ -410,7 +428,7 @@ export default function Settings() {
         </div>
       )}
 
-      {/* ABA 3: MEU PERFIL (NOVO) */}
+      {/* ABA 3: MEU PERFIL */}
       {activeTab === 'profile' && (
         <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 max-w-2xl animate-in fade-in slide-in-from-right-2 duration-300">
             <div className="flex items-center gap-4 mb-8 pb-6 border-b">
