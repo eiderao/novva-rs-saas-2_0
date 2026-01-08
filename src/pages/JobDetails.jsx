@@ -5,8 +5,9 @@ import {
     Container, Typography, Box, AppBar, Toolbar, Button, CircularProgress, 
     Paper, Tabs, Tab, TextField, IconButton, Snackbar,
     List, ListItem, ListItemText, Divider, Grid,
-    Table, TableHead, TableRow, TableCell, TableBody, Checkbox,
-    FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert, Switch
+    Table, TableHead, TableRow, TableCell, TableBody, 
+    FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert, Switch,
+    ToggleButton, ToggleButtonGroup
 } from '@mui/material';
 import { 
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList,
@@ -14,68 +15,26 @@ import {
 } from 'recharts';
 import { 
     Delete as DeleteIcon, 
-    ContentCopy as ContentCopyIcon, 
     Save as SaveIcon,
     Add as AddIcon,
     Star as StarIcon,
     CheckCircle as CheckCircleIcon,
     Edit as EditIcon,
-    EmojiEvents as TrophyIcon
+    EmojiEvents as TrophyIcon,
+    FilterList as FilterIcon
 } from '@mui/icons-material';
 import { processEvaluation } from '../utils/evaluationLogic';
+import EvaluationForm from '../components/EvaluationForm'; // Certifique-se que o caminho está correto
 
-// --- ÍCONE SVG (DEFINIDO FORA PARA EVITAR ERRO DE BUILD) ---
+// --- ÍCONE SVG ---
 const ArrowIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="19" y1="12" x2="5" y2="12"></line>
-        <polyline points="12 19 5 12 12 5"></polyline>
-    </svg>
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
 );
 
-// --- ESTILOS AUXILIARES ---
 const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 600, bgcolor: 'background.paper', boxShadow: 24, p: 4, borderRadius: 2 };
+const formModalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '90%', maxWidth: 800, height: '85vh', bgcolor: 'background.paper', boxShadow: 24, p: 0, borderRadius: 2, overflow: 'hidden' };
 
-// --- MODAL DE CÓPIA ---
-const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
-  const [jobs, setJobs] = useState([]);
-  const [selectedJobId, setSelectedJobId] = useState('');
-  useEffect(() => { 
-      if (open) { 
-          const f = async () => { 
-              const { data } = await supabase.from('jobs').select('id, title').neq('id', currentJobId).eq('status', 'active'); 
-              setJobs(data || []); 
-          }; 
-          f(); 
-      } 
-  }, [open, currentJobId]);
-  
-  const handleConfirm = async () => { 
-      if (!selectedJobId) return; 
-      const { data } = await supabase.from('jobs').select('parameters').eq('id', selectedJobId).single(); 
-      if (data?.parameters) onCopy(data.parameters); 
-      onClose(); 
-  };
-
-  return ( 
-      <Modal open={open} onClose={onClose}>
-          <Box sx={modalStyle}>
-              <Typography variant="h6" fontWeight="bold" mb={2}>Copiar Critérios de Outra Vaga</Typography>
-              <FormControl fullWidth margin="normal">
-                  <InputLabel>Selecionar Vaga de Origem</InputLabel>
-                  <Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Selecionar Vaga de Origem">
-                      {jobs.map(j=><MenuItem key={j.id} value={j.id}>{j.title}</MenuItem>)}
-                  </Select>
-              </FormControl>
-              <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-                  <Button onClick={onClose} color="inherit">Cancelar</Button>
-                  <Button onClick={handleConfirm} variant="contained" color="primary" disabled={!selectedJobId}>Copiar Dados</Button>
-              </Box>
-          </Box>
-      </Modal> 
-  );
-};
-
-// --- SEÇÃO DE CRITÉRIOS ---
+// --- CONFIG DE CRITÉRIOS (REUTILIZADA) ---
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
   const handleChange = (i, f, v) => { const n = [...criteria]; n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; onCriteriaChange(n); };
   const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
@@ -83,52 +42,32 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
     <Box sx={{mt:2, bgcolor: '#f8f9fa', p: 2, borderRadius: 2}}>
         {criteria.map((c, i) => (
             <Box key={i} display="flex" gap={2} mb={1} alignItems="center">
-                <TextField 
-                    value={c.name} 
-                    onChange={e=>handleChange(i,'name',e.target.value)} 
-                    fullWidth 
-                    size="small" 
-                    label={`Critério #${i+1}`}
-                    variant="outlined"
-                    sx={{ bgcolor: 'white' }}
-                />
-                <TextField 
-                    type="number" 
-                    value={c.weight} 
-                    onChange={e=>handleChange(i,'weight',e.target.value)} 
-                    sx={{width:120, bgcolor: 'white'}} 
-                    size="small" 
-                    label="Peso %" 
-                />
+                <TextField value={c.name} onChange={e=>handleChange(i,'name',e.target.value)} fullWidth size="small" label={`Critério #${i+1}`} variant="outlined" sx={{ bgcolor: 'white' }} />
+                <TextField type="number" value={c.weight} onChange={e=>handleChange(i,'weight',e.target.value)} sx={{width:120, bgcolor: 'white'}} size="small" label="Peso %" />
                 <IconButton onClick={()=>onCriteriaChange(criteria.filter((_,idx)=>idx!==i))} color="error" size="small"><DeleteIcon/></IconButton>
             </Box>
         ))}
         <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>
             <Button onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small" startIcon={<AddIcon />}>Adicionar Critério</Button>
-            <Typography color={total===100?'success.main':'error.main'} variant="body2" fontWeight="bold">Total: {total}% {total!==100 && '(Deve ser 100%)'}</Typography>
+            <Typography color={total===100?'success.main':'error.main'} variant="body2" fontWeight="bold">Total: {total}%</Typography>
         </Box>
     </Box>
   );
 };
 
-// --- RÉGUA DE NOTAS ---
 const RatingScaleSection = ({ notes = [], onNotesChange }) => {
     const handleChange = (i, field, value) => {
         const newNotes = [...notes];
         newNotes[i] = { ...newNotes[i], [field]: field === 'valor' ? Number(value) : value };
         onNotesChange(newNotes);
     };
-    const handleAdd = () => {
-        const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
-        onNotesChange([...notes, { id, nome: 'Nova Nota', valor: 0 }]);
-    };
+    const handleAdd = () => onNotesChange([...notes, { id: crypto.randomUUID(), nome: 'Novo Nível', valor: 0 }]);
     const handleRemove = (i) => onNotesChange(notes.filter((_, idx) => idx !== i));
-
     return (
         <Box sx={{ mt: 2, bgcolor: '#fff3e0', p: 2, borderRadius: 2 }}>
             {notes.map((n, i) => (
                 <Box key={n.id || i} display="flex" gap={2} mb={1} alignItems="center">
-                    <TextField value={n.nome} onChange={(e) => handleChange(i, 'nome', e.target.value)} fullWidth size="small" label="Rótulo (Ex: Supera)" sx={{bgcolor: 'white'}} />
+                    <TextField value={n.nome} onChange={(e) => handleChange(i, 'nome', e.target.value)} fullWidth size="small" label="Rótulo" sx={{bgcolor: 'white'}} />
                     <TextField type="number" value={n.valor} onChange={(e) => handleChange(i, 'valor', e.target.value)} sx={{ width: 120, bgcolor: 'white' }} size="small" label="Valor" />
                     <IconButton onClick={() => handleRemove(i)} color="error"><DeleteIcon /></IconButton>
                 </Box>
@@ -138,7 +77,6 @@ const RatingScaleSection = ({ notes = [], onNotesChange }) => {
     );
 };
 
-// --- PÁGINA PRINCIPAL ---
 export default function JobDetails() {
   const { jobId } = useParams();
   const navigate = useNavigate();
@@ -151,8 +89,10 @@ export default function JobDetails() {
   const [allEvaluations, setAllEvaluations] = useState([]);
   const [usersMap, setUsersMap] = useState({});
   const [evaluatorFilter, setEvaluatorFilter] = useState('all');
+  const [metricFilter, setMetricFilter] = useState('total'); // FILTRO DE PILARES RESTAURADO
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [feedback, setFeedback] = useState({ open: false, message: '', severity: 'success' });
+  const [isIdealModalOpen, setIsIdealModalOpen] = useState(false); // Modal para editar o ideal
 
   useEffect(() => {
     const fetchAllData = async () => {
@@ -186,29 +126,71 @@ export default function JobDetails() {
     fetchAllData();
   }, [jobId]);
 
+  // CÁLCULO E PROCESSAMENTO
   const processedData = useMemo(() => {
     if (!parameters) return { chartData: [], evaluators: [] };
 
     const evaluators = Object.keys(usersMap).map(id => ({ id, name: usersMap[id] || 'Desconhecido' }));
 
-    // 1. Encontra o valor de "Atende" para o Benchmark (Candidato Ideal)
-    // Se não encontrar, assume 5 (padrão 0-10) ou 50 (padrão 0-100)
-    const atendeObj = parameters.notas?.find(n => n.nome.toLowerCase().includes('atende'));
-    const benchmarkValue = atendeObj ? Number(atendeObj.valor) : 5;
+    // 1. Lógica do Candidato Ideal (Benchmark) - Item Central da Régua
+    const sortedNotes = [...(parameters.notas || [])].sort((a, b) => Number(a.valor) - Number(b.valor));
+    let centralNoteId = null;
+    if (sortedNotes.length > 0) {
+        // Se par (ex: 4), pega index 2 (o 3º item). Se impar (ex: 3), pega index 1 (o 2º item).
+        const centerIndex = Math.floor(sortedNotes.length / 2);
+        centralNoteId = sortedNotes[centerIndex]?.id;
+    }
 
+    // Monta o gabarito do Ideal: Todos os critérios recebem a nota central
+    // A menos que já tenha sido editado e salvo no parameters.benchmark_scores
+    const idealScores = parameters.benchmark_scores || { triagem: {}, cultura: {}, tecnico: {} };
+    
+    if (!parameters.benchmark_scores && centralNoteId) {
+        ['triagem', 'cultura', 'tecnico'].forEach(sec => {
+            if(!idealScores[sec]) idealScores[sec] = {};
+            (parameters[sec] || []).forEach(crit => {
+                idealScores[sec][crit.name] = centralNoteId;
+            });
+        });
+    }
+
+    // Calcula nota do Ideal usando os mesmos pesos
+    const idealResults = processEvaluation({ scores: idealScores }, parameters);
+    
+    const idealCandidate = {
+        appId: 'ideal',
+        name: 'Candidato Ideal (Ref)',
+        email: 'benchmark@sistema',
+        triagem: idealResults.triagem,
+        cultura: idealResults.cultura,
+        tecnico: idealResults.tecnico,
+        total: idealResults.total,
+        count: 1,
+        hired: false,
+        isIdeal: true,
+        rawScores: idealScores // Para passar para o formulário de edição
+    };
+
+    // 2. Processa Candidatos Reais
     let chartData = applicants.map(app => {
+        // FILTRO DE AVALIADOR APLICADO AQUI
         const appEvals = allEvaluations.filter(e => 
             String(e.application_id) === String(app.id) && 
             (evaluatorFilter === 'all' || e.evaluator_id === evaluatorFilter)
         );
 
         let sumT = 0, sumC = 0, sumTc = 0, count = 0, sumTotal = 0;
-        appEvals.forEach(ev => {
-            const scores = processEvaluation(ev, parameters);
-            if (scores.total > 0 || scores.triagem > 0 || scores.cultura > 0 || scores.tecnico > 0) {
-                sumT += scores.triagem; sumC += scores.cultura; sumTc += scores.tecnico; sumTotal += scores.total; count++;
-            }
-        });
+        
+        // Se não houver avaliações após filtro, retorna zerado
+        if (appEvals.length > 0) {
+            appEvals.forEach(ev => {
+                const scores = processEvaluation(ev, parameters);
+                // Considera válida se tiver alguma nota
+                if (scores.total > 0 || scores.triagem > 0 || scores.cultura > 0 || scores.tecnico > 0) {
+                    sumT += scores.triagem; sumC += scores.cultura; sumTc += scores.tecnico; sumTotal += scores.total; count++;
+                }
+            });
+        }
 
         const avgT = count > 0 ? sumT / count : 0;
         const avgC = count > 0 ? sumC / count : 0;
@@ -229,45 +211,36 @@ export default function JobDetails() {
         };
     });
 
-    // Adiciona Candidato Ideal (Benchmark - Média/Atende)
-    const idealCandidate = {
-        appId: 'ideal-benchmark',
-        name: 'Candidato Ideal (Meta)',
-        email: 'Referência',
-        triagem: benchmarkValue,
-        cultura: benchmarkValue,
-        tecnico: benchmarkValue,
-        total: benchmarkValue,
-        count: 1,
-        hired: false,
-        isIdeal: true
-    };
-    
+    // Filtra candidatos sem avaliação se houver filtro de avaliador ativo (opcional, mas bom pra UX)
+    if (evaluatorFilter !== 'all') {
+        chartData = chartData.filter(c => c.count > 0);
+    }
+
+    // Adiciona o Ideal na lista para o gráfico e tabela
     chartData = [idealCandidate, ...chartData];
 
+    // Ordenação baseada na métrica selecionada
     chartData.sort((a, b) => {
         if (a.isIdeal) return -1;
         if (b.isIdeal) return 1;
-        return b.total - a.total;
+        // Ordena pelo filtro ativo (total, triagem, etc)
+        const metric = metricFilter === 'Média Geral' ? 'total' : metricFilter.toLowerCase().replace('é', 'e').split(' ')[0]; 
+        // Fallback simples
+        const valA = a[metric] || a.total;
+        const valB = b[metric] || b.total;
+        return valB - valA;
     });
 
-    return { chartData, evaluators, benchmarkValue };
-  }, [applicants, allEvaluations, evaluatorFilter, parameters, usersMap]);
+    return { chartData, evaluators, idealCandidate };
+  }, [applicants, allEvaluations, evaluatorFilter, parameters, usersMap, metricFilter]);
 
+  // AÇÕES
   const handleHireToggle = async (appId, currentStatus) => {
       const newStatus = !currentStatus;
       setApplicants(prev => prev.map(a => a.id === appId ? {...a, isHired: newStatus} : a));
-      
       const { error } = await supabase.from('applications').update({ isHired: newStatus }).eq('id', appId);
-      
-      if (error) {
-          alert("Erro ao atualizar status: " + error.message);
-      } else {
-          setFeedback({ 
-              open: true, 
-              message: newStatus ? 'Candidato marcado como CONTRATADO!' : 'Status de contratação removido.', 
-              severity: newStatus ? 'success' : 'info' 
-          });
+      if (!error) {
+          setFeedback({ open: true, message: newStatus ? 'Contratado!' : 'Descontratado.', severity: 'success' });
       }
   };
 
@@ -275,30 +248,51 @@ export default function JobDetails() {
       setSaving(true);
       await supabase.from('jobs').update({ parameters }).eq('id', jobId);
       setSaving(false);
-      setFeedback({ open: true, message: 'Configurações salvas com sucesso!', severity: 'success' });
+      setFeedback({ open: true, message: 'Configurações salvas!', severity: 'success' });
   };
 
-  const jumpToSettings = () => setTabValue(2);
+  const handleSaveIdeal = async (evalData) => {
+      // Salva as respostas do ideal DENTRO da vaga (não na tabela evaluations)
+      const newParams = { ...parameters, benchmark_scores: evalData.scores };
+      setParameters(newParams);
+      const { error } = await supabase.from('jobs').update({ parameters: newParams }).eq('id', jobId);
+      if (!error) {
+        setFeedback({ open: true, message: 'Candidato Ideal atualizado!', severity: 'success' });
+        setIsIdealModalOpen(false);
+      }
+  };
 
-  if (loading) return <Box p={10} display="flex" flexDirection="column" alignItems="center"><CircularProgress size={60} /><Typography mt={2}>Carregando dados da vaga...</Typography></Box>;
+  // Função para pegar a cor da nota (Regra: >=8 Verde, >=5 Amarelo, <5 Padrão/Vermelho)
+  const getScoreColor = (val) => {
+      if (val >= 8) return 'success';
+      if (val >= 5) return 'warning';
+      return 'default'; // ou 'error' se quiser vermelho
+  };
+
+  // Define qual chave de dados usar no gráfico baseado no filtro
+  const activeDataKey = useMemo(() => {
+      switch(metricFilter) {
+          case 'Triagem': return 'triagem';
+          case 'Fit Cultural': return 'cultura';
+          case 'Teste Técnico': return 'tecnico';
+          default: return 'total';
+      }
+  }, [metricFilter]);
+
+  if (loading) return <Box p={10} display="flex" justifyContent="center"><CircularProgress /></Box>;
 
   return (
     <Box sx={{ bgcolor: '#f4f6f8', minHeight: '100vh', pb: 8 }}>
         <AppBar position="static" color="default" elevation={0} sx={{ borderBottom: '1px solid #e0e0e0', bgcolor: 'white' }}>
             <Toolbar>
-                <IconButton edge="start" color="inherit" onClick={() => navigate('/')} sx={{ mr: 2 }}>
-                    <RouterLink to="/" style={{ color: 'inherit', display: 'flex' }}><ArrowIcon /></RouterLink> 
-                </IconButton>
-                <Typography variant="h6" sx={{flexGrow:1, fontWeight: 'bold', color: '#1a202c'}}>
-                    {job?.title} <Chip label={job?.status === 'active' ? 'Ativa' : 'Inativa'} size="small" color={job?.status === 'active' ? 'success' : 'default'} sx={{ml: 1}}/>
-                </Typography>
-                <Button variant="outlined" component={RouterLink} to="/">Voltar ao Dashboard</Button>
+                <IconButton edge="start" onClick={() => navigate('/')} sx={{ mr: 2 }}><ArrowIcon /></IconButton>
+                <Typography variant="h6" sx={{flexGrow:1, fontWeight:'bold'}}>{job?.title}</Typography>
             </Toolbar>
         </AppBar>
 
         <Container maxWidth="xl" sx={{ mt: 4 }}>
             <Paper sx={{ mb: 3, borderRadius: 2 }}>
-                <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered indicatorColor="primary" textColor="primary">
+                <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered>
                     <Tab label={`Candidatos (${applicants.length})`} />
                     <Tab label="Classificação & Ranking" icon={<TrophyIcon />} iconPosition="start" />
                     <Tab label="Configuração da Vaga" />
@@ -307,7 +301,7 @@ export default function JobDetails() {
             
             {/* ABA 0: LISTA SIMPLES */}
             {tabValue === 0 && (
-                <Paper sx={{ p: 0, borderRadius: 2, overflow: 'hidden' }} elevation={1}>
+                <Paper sx={{ p: 0, borderRadius: 2, overflow: 'hidden' }}>
                     <Table>
                         <TableHead sx={{ bgcolor: '#f9fafb' }}>
                             <TableRow>
@@ -321,232 +315,147 @@ export default function JobDetails() {
                         <TableBody>
                             {processedData.chartData.filter(d => !d.isIdeal).map(d => (
                                 <TableRow key={d.appId} hover component={RouterLink} to={`/applications/${d.appId}`} style={{textDecoration:'none', cursor:'pointer'}}>
-                                    <TableCell sx={{fontWeight:500}}>{d.name}</TableCell>
+                                    <TableCell>{d.name}</TableCell>
                                     <TableCell>{d.email}</TableCell>
                                     <TableCell align="center">{d.hired ? <Chip label="Contratado" color="success" size="small" icon={<CheckCircleIcon/>}/> : <Chip label="Em análise" size="small"/>}</TableCell>
                                     <TableCell align="center"><Chip label={d.count} size="small" variant="outlined" /></TableCell>
                                     <TableCell align="center">
-                                        {/* LÓGICA DE CORES RESTAURADA: >=8 (Success), >=5 (Warning), else Default */}
-                                        <Chip 
-                                            label={d.total.toFixed(1)} 
-                                            color={d.total >= 8 ? 'success' : d.total >= 5 ? 'warning' : 'default'} 
-                                            variant={d.count > 0 ? 'filled' : 'outlined'} 
-                                            fontWeight="bold"
-                                        />
+                                        <Chip label={d.total.toFixed(1)} color={getScoreColor(d.total)} variant={d.count > 0 ? 'filled' : 'outlined'} fontWeight="bold"/>
                                     </TableCell>
                                 </TableRow>
                             ))}
-                            {processedData.chartData.length <= 1 && (
-                                <TableRow><TableCell colSpan={5} align="center" sx={{py: 4, color: 'text.secondary'}}>Nenhum candidato inscrito ainda.</TableCell></TableRow>
-                            )}
                         </TableBody>
                     </Table>
                 </Paper>
             )}
 
-            {/* ABA 1: CLASSIFICAÇÃO & DASHBOARD */}
+            {/* ABA 1: CLASSIFICAÇÃO */}
             {tabValue === 1 && (
                 <Grid container spacing={3}>
-                    {/* COLUNA ESQUERDA: RANKING */}
-                    <Grid item xs={12} md={5} lg={4}>
+                    {/* LATERAL ESQUERDA: LISTA DE RANKING + FILTROS */}
+                    <Grid item xs={12} md={4}>
                         <Paper sx={{ height: '100%', maxHeight: '800px', display: 'flex', flexDirection: 'column', borderRadius: 2 }} elevation={2}>
-                            <Box sx={{ p: 2.5, bgcolor: '#1e293b', color: 'white', borderTopLeftRadius: 8, borderTopRightRadius: 8, display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <TrophyIcon sx={{ color: '#fbbf24' }} />
-                                <Typography variant="h6" fontWeight="bold">Ranking Final</Typography>
-                            </Box>
-                            
-                            <Box sx={{ p: 2, bgcolor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                                <FormControl fullWidth size="small" sx={{ bgcolor: 'white', borderRadius: 1 }}>
-                                    <InputLabel>Filtrar por Avaliador</InputLabel>
-                                    <Select value={evaluatorFilter} label="Filtrar por Avaliador" onChange={(e) => setEvaluatorFilter(e.target.value)}>
-                                        <MenuItem value="all">Média de Todos os Avaliadores</MenuItem>
+                            <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                <Typography variant="subtitle2" color="text.secondary" mb={1} fontWeight="bold">FILTROS</Typography>
+                                
+                                {/* 1. FILTRO DE AVALIADOR (CORRIGIDO) */}
+                                <FormControl fullWidth size="small" sx={{ mb: 2, bgcolor: 'white' }}>
+                                    <InputLabel>Avaliador</InputLabel>
+                                    <Select value={evaluatorFilter} label="Avaliador" onChange={(e) => setEvaluatorFilter(e.target.value)}>
+                                        <MenuItem value="all">Todos (Média)</MenuItem>
                                         {processedData.evaluators.map(ev => <MenuItem key={ev.id} value={ev.id}>{ev.name}</MenuItem>)}
                                     </Select>
                                 </FormControl>
+
+                                {/* 2. FILTRO DE PILARES (RESTAURADO) */}
+                                <ToggleButtonGroup
+                                    value={metricFilter}
+                                    exclusive
+                                    onChange={(e, v) => v && setMetricFilter(v)}
+                                    size="small"
+                                    fullWidth
+                                    color="primary"
+                                    sx={{ bgcolor: 'white' }}
+                                >
+                                    <ToggleButton value="total">Geral</ToggleButton>
+                                    <ToggleButton value="Triagem">Triagem</ToggleButton>
+                                    <ToggleButton value="Fit Cultural">Cult</ToggleButton>
+                                    <ToggleButton value="Teste Técnico">Téc</ToggleButton>
+                                </ToggleButtonGroup>
                             </Box>
 
-                            <List sx={{ overflowY: 'auto', flex: 1, p: 0 }}>
+                            <List sx={{ overflowY: 'auto', flex: 1 }}>
                                 {processedData.chartData.map((d, index) => {
-                                    const isWinner = index === 1 && !d.isIdeal; 
+                                    // Valor a exibir baseado no filtro
+                                    const displayValue = d[activeDataKey]?.toFixed(1);
                                     
                                     if (d.isIdeal) {
                                         return (
-                                            <React.Fragment key="ideal">
-                                                <ListItem button onClick={jumpToSettings} sx={{ bgcolor: '#fff7ed', borderBottom: '1px dashed #fdba74' }}>
-                                                    <Box sx={{ mr: 2, color: 'orange' }}><StarIcon /></Box>
-                                                    <ListItemText 
-                                                        primary={<Typography variant="body2" fontWeight="bold" color="orange">Candidato Ideal (Meta)</Typography>}
-                                                        secondary="Clique para editar critérios"
-                                                    />
-                                                    <Chip label={d.total.toFixed(1)} size="small" sx={{ bgcolor: 'orange', color: 'white', fontWeight: 'bold' }} />
-                                                </ListItem>
-                                            </React.Fragment>
+                                            <ListItem key="ideal" button onClick={() => setIsIdealModalOpen(true)} sx={{ bgcolor: '#fff7ed', borderBottom: '1px dashed orange' }}>
+                                                <StarIcon sx={{ color: 'orange', mr: 1 }} />
+                                                <ListItemText 
+                                                    primary={<Typography variant="body2" fontWeight="bold" color="orange">Candidato Ideal</Typography>} 
+                                                    secondary="Clique para editar gabarito"
+                                                />
+                                                <Chip label={displayValue} size="small" sx={{ bgcolor: 'orange', color: 'white', fontWeight: 'bold' }} />
+                                            </ListItem>
                                         )
                                     }
-
                                     return (
                                         <React.Fragment key={d.appId}>
                                             <ListItem 
-                                                alignItems="flex-start"
-                                                sx={{ 
-                                                    bgcolor: d.hired ? '#f0fdf4' : 'white', 
-                                                    borderLeft: d.hired ? '6px solid #22c55e' : isWinner ? '6px solid #fbbf24' : '6px solid transparent',
-                                                    transition: 'all 0.2s',
-                                                    '&:hover': { bgcolor: '#f8fafc' }
-                                                }}
                                                 secondaryAction={
-                                                    <Box display="flex" flexDirection="column" alignItems="center" gap={1}>
-                                                        <Typography variant="h6" fontWeight="bold" color={d.total >= 8 ? 'success.main' : 'text.primary'}>
-                                                            {d.total.toFixed(1)}
-                                                        </Typography>
-                                                        <Switch 
-                                                            size="small"
-                                                            checked={d.hired || false}
-                                                            onChange={() => handleHireToggle(d.appId, d.hired)}
-                                                            color="success"
-                                                        />
-                                                        <Typography variant="caption" sx={{fontSize: '0.6rem'}} color={d.hired ? 'success.main' : 'text.disabled'}>
-                                                            {d.hired ? 'CONTRATADO' : 'CONTRATAR'}
-                                                        </Typography>
+                                                    <Box textAlign="right">
+                                                        <Typography variant="h6" fontWeight="bold" color={getScoreColor(d[activeDataKey]) + '.main'}>{displayValue}</Typography>
+                                                        <Switch size="small" checked={d.hired || false} onChange={() => handleHireToggle(d.appId, d.hired)} color="success"/>
                                                     </Box>
                                                 }
                                             >
                                                 <ListItemText 
-                                                    primary={
-                                                        <Box display="flex" alignItems="center" gap={1}>
-                                                            <Typography variant="body1" fontWeight="bold" color="text.primary">
-                                                                #{index} {d.name}
-                                                            </Typography>
-                                                            {isWinner && <TrophyIcon sx={{ fontSize: 16, color: '#fbbf24' }} />}
-                                                        </Box>
-                                                    }
-                                                    secondary={
-                                                        <Box mt={0.5}>
-                                                            <Typography variant="caption" display="block" color="text.secondary">{d.email}</Typography>
-                                                            <Box display="flex" gap={1} mt={0.5}>
-                                                                <Chip label={`Triagem: ${d.triagem.toFixed(0)}`} size="small" sx={{height: 20, fontSize: '0.65rem'}} variant="outlined"/>
-                                                                <Chip label={`Téc: ${d.tecnico.toFixed(0)}`} size="small" sx={{height: 20, fontSize: '0.65rem'}} variant="outlined"/>
-                                                                <Chip label={`Cult: ${d.cultura.toFixed(0)}`} size="small" sx={{height: 20, fontSize: '0.65rem'}} variant="outlined"/>
-                                                            </Box>
-                                                        </Box>
-                                                    } 
+                                                    primary={<Typography fontWeight="bold">#{index} {d.name}</Typography>}
+                                                    secondary={d.email}
                                                 />
                                             </ListItem>
                                             <Divider component="li" />
                                         </React.Fragment>
-                                    );
+                                    )
                                 })}
-                                {processedData.chartData.length <= 1 && (
-                                    <Box p={4} textAlign="center" color="text.secondary">
-                                        <Typography variant="body2">Aguardando candidatos...</Typography>
-                                    </Box>
-                                )}
                             </List>
                         </Paper>
                     </Grid>
 
-                    {/* COLUNA DIREITA: VISUALIZAÇÃO GRÁFICA */}
-                    <Grid item xs={12} md={7} lg={8}>
+                    {/* LATERAL DIREITA: GRÁFICOS */}
+                    <Grid item xs={12} md={8}>
                         <Grid container spacing={3}>
-                            
-                            {/* 1. GRÁFICO RADAR (ANÁLISE DE PERFIL) */}
+                            {/* RADAR */}
                             <Grid item xs={12}>
-                                <Paper sx={{ p: 3, borderRadius: 2, height: '450px', position: 'relative' }} elevation={2}>
-                                    <Typography variant="h6" fontWeight="bold" color="#1e293b" mb={2}>Análise de Perfil (Radar)</Typography>
-                                    {processedData.chartData.length > 1 ? (
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <RadarChart cx="50%" cy="50%" outerRadius="80%" data={[
-                                                { subject: 'Triagem', ideal: processedData.benchmarkValue, media: 0, ...processedData.chartData.slice(1).reduce((acc, curr, i) => ({ ...acc, [`c${i}`]: curr.triagem }), {}) },
-                                                { subject: 'Cultura', ideal: processedData.benchmarkValue, media: 0, ...processedData.chartData.slice(1).reduce((acc, curr, i) => ({ ...acc, [`c${i}`]: curr.cultura }), {}) },
-                                                { subject: 'Técnico', ideal: processedData.benchmarkValue, media: 0, ...processedData.chartData.slice(1).reduce((acc, curr, i) => ({ ...acc, [`c${i}`]: curr.tecnico }), {}) },
-                                            ]}>
-                                                <PolarGrid />
-                                                <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontWeight: 'bold', fontSize: 14 }} />
-                                                <PolarRadiusAxis angle={30} domain={[0, 10]} />
-                                                
-                                                {/* Candidato Ideal (Fixo) */}
-                                                <Radar name="Candidato Ideal" dataKey="ideal" stroke="#fbbf24" strokeWidth={3} fill="#fbbf24" fillOpacity={0.2} />
-                                                
-                                                {/* Top 3 Candidatos */}
-                                                {processedData.chartData.slice(1, 4).map((c, i) => (
-                                                    <Radar 
-                                                        key={c.appId} 
-                                                        name={c.name} 
-                                                        dataKey={`c${i}`} 
-                                                        stroke={['#3b82f6', '#10b981', '#8b5cf6'][i]} 
-                                                        strokeWidth={2} 
-                                                        fill={['#3b82f6', '#10b981', '#8b5cf6'][i]} 
-                                                        fillOpacity={0.1} 
-                                                    />
-                                                ))}
-                                                <Legend />
-                                                <Tooltip 
-                                                    contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                                                />
-                                            </RadarChart>
-                                        </ResponsiveContainer>
-                                    ) : (
-                                        <Box display="flex" alignItems="center" justifyContent="center" height="100%" color="text.secondary">
-                                            <Typography>Dados insuficientes para o Radar.</Typography>
-                                        </Box>
-                                    )}
-                                    <Button 
-                                        size="small" 
-                                        onClick={jumpToSettings}
-                                        sx={{ position: 'absolute', top: 20, right: 20 }} 
-                                        startIcon={<EditIcon/>}
-                                    >
-                                        Ajustar Ideal
-                                    </Button>
+                                <Paper sx={{ p: 3, height: '400px', borderRadius: 2 }} elevation={2}>
+                                    <Typography variant="h6" mb={2}>Comparativo de Perfil (Radar)</Typography>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <RadarChart cx="50%" cy="50%" outerRadius="80%" data={[
+                                            { subject: 'Triagem', ideal: processedData.idealCandidate.triagem, media: 0, ...processedData.chartData.slice(1).reduce((acc, c, i) => ({...acc, [`c${i}`]: c.triagem}), {}) },
+                                            { subject: 'Cultura', ideal: processedData.idealCandidate.cultura, media: 0, ...processedData.chartData.slice(1).reduce((acc, c, i) => ({...acc, [`c${i}`]: c.cultura}), {}) },
+                                            { subject: 'Técnico', ideal: processedData.idealCandidate.tecnico, media: 0, ...processedData.chartData.slice(1).reduce((acc, c, i) => ({...acc, [`c${i}`]: c.tecnico}), {}) }
+                                        ]}>
+                                            <PolarGrid />
+                                            <PolarAngleAxis dataKey="subject" />
+                                            <PolarRadiusAxis angle={30} domain={[0, 10]} /> {/* ESCALA CORRIGIDA PARA 0-10 */}
+                                            <Radar name="Ideal" dataKey="ideal" stroke="#ff9800" fill="#ff9800" fillOpacity={0.3} />
+                                            {processedData.chartData.slice(1, 4).map((c, i) => (
+                                                <Radar key={i} name={c.name} dataKey={`c${i}`} stroke="#8884d8" fill="#8884d8" fillOpacity={0.1} />
+                                            ))}
+                                            <Legend />
+                                        </RadarChart>
+                                    </ResponsiveContainer>
                                 </Paper>
                             </Grid>
 
-                            {/* 2. GRÁFICO DE BARRAS (COMPARATIVO GERAL) - CORRIGIDO PARA BARRAS AGRUPADAS */}
+                            {/* BARRAS - LADO A LADO (CORRIGIDO) */}
                             <Grid item xs={12}>
-                                <Paper sx={{ p: 3, borderRadius: 2, minHeight: '500px' }} elevation={2}>
-                                    <Typography variant="h6" fontWeight="bold" color="#1e293b" mb={3}>Comparativo Geral (Pontuação)</Typography>
-                                    {processedData.chartData.length > 0 ? (
-                                        <Box sx={{ height: Math.max(500, processedData.chartData.length * 80) }}>
-                                            <ResponsiveContainer width="100%" height="100%">
-                                                <BarChart 
-                                                    data={processedData.chartData} 
-                                                    layout="vertical" 
-                                                    margin={{ top: 10, right: 50, left: 10, bottom: 5 }} 
-                                                    barGap={2}
-                                                    barSize={20}
-                                                >
-                                                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
-                                                    <XAxis type="number" domain={[0, 10]} stroke="#94a3b8" />
-                                                    <YAxis 
-                                                        dataKey="name" 
-                                                        type="category" 
-                                                        width={150} 
-                                                        tick={{fontSize: 12, fontWeight: 600, fill: '#334155'}} 
-                                                    />
-                                                    <Tooltip 
-                                                        cursor={{fill: '#f1f5f9'}}
-                                                        contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
-                                                    />
-                                                    <Legend verticalAlign="top" height={36}/>
-                                                    
-                                                    {/* BARRAS LADO A LADO (SEM STACKID) */}
-                                                    <Bar dataKey="triagem" name="Triagem" fill="#93c5fd" radius={[0, 4, 4, 0]}>
-                                                         <LabelList dataKey="triagem" position="right" style={{fontSize: '0.7rem', fill: '#64748b'}} />
-                                                    </Bar>
-                                                    <Bar dataKey="cultura" name="Fit Cultural" fill="#86efac" radius={[0, 4, 4, 0]}>
-                                                         <LabelList dataKey="cultura" position="right" style={{fontSize: '0.7rem', fill: '#64748b'}} />
-                                                    </Bar>
-                                                    <Bar dataKey="tecnico" name="Técnico" fill="#fca5a5" radius={[0, 4, 4, 0]}>
-                                                         <LabelList dataKey="tecnico" position="right" style={{fontSize: '0.7rem', fill: '#64748b'}} />
-                                                    </Bar>
-
-                                                    <ReferenceLine x={processedData.benchmarkValue} stroke="#fbbf24" strokeDasharray="3 3" label={{ position: 'top', value: 'Meta', fill: '#fbbf24', fontSize: 10 }} />
-                                                </BarChart>
-                                            </ResponsiveContainer>
-                                        </Box>
-                                    ) : (
-                                        <Typography align="center" color="text.secondary" py={10}>Sem dados para exibir.</Typography>
-                                    )}
+                                <Paper sx={{ p: 3, height: '500px', borderRadius: 2 }} elevation={2}>
+                                    <Typography variant="h6" mb={2}>Ranking por {metricFilter}</Typography>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart 
+                                            data={processedData.chartData} 
+                                            layout="vertical" 
+                                            margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                                            barSize={24} /* Tamanho fixo para legibilidade */
+                                        >
+                                            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                                            <XAxis type="number" domain={[0, 10]} hide />
+                                            <YAxis dataKey="name" type="category" width={150} tick={{fontSize: 12}} />
+                                            <Tooltip cursor={{fill: '#f5f5f5'}} />
+                                            <Legend />
+                                            
+                                            {/* BARRA ÚNICA BASEADA NO FILTRO (NÃO EMPILHADA) */}
+                                            <Bar dataKey={activeDataKey} name={metricFilter} fill="#8884d8" radius={[0, 4, 4, 0]}>
+                                                <LabelList dataKey={activeDataKey} position="right" formatter={(v) => v.toFixed(1)} />
+                                            </Bar>
+                                            
+                                            {/* LINHA DE REFERÊNCIA DO IDEAL */}
+                                            <ReferenceLine x={processedData.idealCandidate[activeDataKey]} stroke="orange" label="Ideal" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
                                 </Paper>
                             </Grid>
                         </Grid>
@@ -554,64 +463,49 @@ export default function JobDetails() {
                 </Grid>
             )}
 
-            {/* ABA 2: CONFIGURAÇÕES (CRITÉRIOS) */}
+            {/* ABA 2: CONFIGURAÇÕES */}
             {tabValue === 2 && (
-                <Box p={3} sx={{ bgcolor: 'white', borderRadius: 2, boxShadow: 1, maxWidth: '1000px', mx: 'auto' }}>
-                    <Box display="flex" justifyContent="space-between" mb={3}>
-                        <Typography variant="h5" fontWeight="bold">Configuração de Critérios</Typography>
-                        <Button variant="outlined" startIcon={<ContentCopyIcon />} onClick={() => setIsCopyModalOpen(true)}>Importar de Outra Vaga</Button>
+                <Box p={3} sx={{ bgcolor: 'white', borderRadius: 2 }}>
+                    <Box display="flex" justifyContent="space-between" mb={2}>
+                        <Typography variant="h6">Critérios de Avaliação</Typography>
+                        <Button startIcon={<ContentCopyIcon />} onClick={() => setIsCopyModalOpen(true)}>Importar</Button>
+                    </Box>
+                    <ParametersSection criteria={parameters?.triagem} onCriteriaChange={c => setParameters({...parameters, triagem: c})} />
+                    <ParametersSection criteria={parameters?.cultura} onCriteriaChange={c => setParameters({...parameters, cultura: c})} />
+                    <ParametersSection criteria={parameters?.tecnico} onCriteriaChange={c => setParameters({...parameters, tecnico: c})} />
+                    
+                    <Box mt={4} p={2} bgcolor="#fff3e0" borderRadius={2}>
+                        <Typography variant="subtitle1" fontWeight="bold" color="orange">Régua de Notas</Typography>
+                        <RatingScaleSection notes={parameters?.notas} onNotesChange={n => setParameters({...parameters, notas: n})} />
                     </Box>
 
-                    <Paper variant="outlined" sx={{p:3, mb:3, borderColor: '#e2e8f0'}}>
-                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom color="primary">1. Triagem (RH)</Typography>
-                        <Typography variant="caption" color="text.secondary">Critérios eliminatórios e básicos.</Typography>
-                        <ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} />
-                    </Paper>
-
-                    <Paper variant="outlined" sx={{p:3, mb:3, borderColor: '#e2e8f0'}}>
-                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom color="success.main">2. Fit Cultural (Comportamental)</Typography>
-                        <Typography variant="caption" color="text.secondary">Alinhamento com valores da empresa.</Typography>
-                        <ParametersSection criteria={parameters?.cultura || []} onCriteriaChange={(c) => setParameters({...parameters, cultura: c})} />
-                    </Paper>
-
-                    <Paper variant="outlined" sx={{p:3, mb:3, borderColor: '#e2e8f0'}}>
-                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom color="info.main">3. Teste Técnico (Hard Skills)</Typography>
-                        <Typography variant="caption" color="text.secondary">Avaliação técnica específica da função.</Typography>
-                        <ParametersSection criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} />
-                    </Paper>
-                    
-                    <Paper variant="outlined" sx={{p:3, mb:3, borderColor: 'orange', bgcolor: '#fffaf0'}}>
-                        <Box display="flex" alignItems="center" gap={1} mb={1}>
-                            <StarIcon sx={{color: 'orange'}} />
-                            <Typography variant="subtitle1" fontWeight="bold" color="orange">4. Régua de Notas</Typography>
-                        </Box>
-                        <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                            Defina os nomes e valores (0 a 10) que aparecerão nos botões de avaliação. O valor "Atende" (padrão 5) define o Candidato Ideal.
-                        </Typography>
-                        <RatingScaleSection 
-                            notes={parameters?.notas || []} 
-                            onNotesChange={(n) => setParameters({...parameters, notas: n})} 
-                        />
-                    </Paper>
-
-                    <Box display="flex" justifyContent="flex-end" pt={2}>
-                        <Button 
-                            variant="contained" 
-                            color="primary" 
-                            size="large"
-                            onClick={handleSaveParameters}
-                            disabled={saving}
-                            startIcon={<SaveIcon />}
-                            sx={{ px: 5, py: 1.5, fontWeight: 'bold' }} 
-                        >
-                            {saving ? 'Salvando...' : 'Salvar Todas Configurações'}
-                        </Button>
+                    <Box mt={3} display="flex" justifyContent="flex-end">
+                        <Button variant="contained" onClick={handleSaveParameters} disabled={saving} startIcon={<SaveIcon />}>Salvar Configurações</Button>
                     </Box>
                 </Box>
             )}
         </Container>
-        
+
+        {/* MODAIS */}
         <CopyParametersModal open={isCopyModalOpen} onClose={() => setIsCopyModalOpen(false)} currentJobId={jobId} onCopy={(p) => { setParameters(p); setFeedback({open:true, message:'Copiado!', severity:'info'}); }} />
+        
+        {/* MODAL EDITAR IDEAL */}
+        <Modal open={isIdealModalOpen} onClose={() => setIsIdealModalOpen(false)}>
+            <Box sx={formModalStyle}>
+                <Box p={2} borderBottom="1px solid #eee" display="flex" justifyContent="space-between" alignItems="center">
+                    <Typography variant="h6">Editar Avaliação do Candidato Ideal</Typography>
+                    <Button onClick={() => setIsIdealModalOpen(false)}>Fechar</Button>
+                </Box>
+                <Box p={2} sx={{ height: 'calc(100% - 60px)', overflowY: 'auto' }}>
+                     <EvaluationForm 
+                        jobParameters={parameters} 
+                        initialData={{ scores: processedData.idealCandidate.rawScores }} // Passa as notas atuais
+                        customSubmit={handleSaveIdeal} // Salva no JSON da vaga, não no banco
+                     />
+                </Box>
+            </Box>
+        </Modal>
+
         <Snackbar open={feedback.open} autoHideDuration={4000} onClose={() => setFeedback({...feedback, open:false})}><Alert severity={feedback.severity} variant="filled">{feedback.message}</Alert></Snackbar>
     </Box>
   );
