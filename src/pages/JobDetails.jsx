@@ -36,7 +36,7 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
     <Box sx={{mt:2}}>
         {criteria.map((c, i) => (
             <Box key={i} display="flex" gap={2} mb={1}>
-                <TextField value={c.name} onChange={e=>handleChange(i,'name',e.target.value)} fullWidth size="small" label="CritÃ©rio" />
+                <TextField value={c.name} onChange={e=>handleChange(i,'name',e.target.value)} fullWidth size="small" label="Critério" />
                 <TextField type="number" value={c.weight} onChange={e=>handleChange(i,'weight',e.target.value)} sx={{width:100}} size="small" label="Peso %" />
                 <IconButton onClick={()=>onCriteriaChange(criteria.filter((_,idx)=>idx!==i))} color="error"><DeleteIcon/></IconButton>
             </Box>
@@ -220,7 +220,7 @@ export default function JobDetails() {
   };
 
   if (loading) return <Box p={5} display="flex" justifyContent="center"><CircularProgress /></Box>;
-  if (!job) return <Box p={5} textAlign="center">Vaga nÃ£o encontrada</Box>;
+  if (!job) return <Box p={5} textAlign="center">Vaga não encontrada</Box>;
 
   return (
     <Box>
@@ -269,7 +269,7 @@ export default function JobDetails() {
                         startIcon={<Share2 size={18}/>}
                         sx={{ textTransform: 'none', fontWeight: 'bold' }}
                     >
-                        {job.status === 'active' ? 'Compartilhar FormulÃ¡rio' : 'Link IndisponÃ­vel (Vaga Inativa)'}
+                        {job.status === 'active' ? 'Compartilhar FormulÃ¡rio' : 'Link Indisponí­vel (Vaga Inativa)'}
                     </Button>
                 </Box>
             </Box>
@@ -314,7 +314,7 @@ export default function JobDetails() {
                                 <FormControl size="small" sx={{ minWidth: 220 }}>
                                     <InputLabel>Filtrar por Avaliador</InputLabel>
                                     <Select value={evaluatorFilter} label="Filtrar por Avaliador" onChange={(e) => setEvaluatorFilter(e.target.value)}>
-                                        <MenuItem value="all">VisÃ£o Geral (MÃ©dia da Equipe)</MenuItem>
+                                        <MenuItem value="all">Visão Geral (Média da Equipe)</MenuItem>
                                         {processedData.evaluators.map(ev => <MenuItem key={ev.id} value={ev.id}>{ev.name}</MenuItem>)}
                                     </Select>
                                 </FormControl>
@@ -335,15 +335,15 @@ export default function JobDetails() {
                                             <Legend verticalAlign="top" height={40} iconType="circle" />
                                             <Bar dataKey="triagem" name="Triagem" fill="#90caf9" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="triagem" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/></Bar>
                                             <Bar dataKey="cultura" name="Fit Cultural" fill="#a5d6a7" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="cultura" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/></Bar>
-                                            <Bar dataKey="tecnico" name="TÃ©cnico" fill="#ffcc80" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="tecnico" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/></Bar>
-                                            <Bar dataKey="total" name="MÃ©dia Geral" fill="#4caf50" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="total" position="right" style={{fontSize:'0.8rem', fontWeight:'bold', fill:'#2e7d32'}} /></Bar>
+                                            <Bar dataKey="tecnico" name="Técnico" fill="#ffcc80" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="tecnico" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/></Bar>
+                                            <Bar dataKey="total" name="Média Geral" fill="#4caf50" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="total" position="right" style={{fontSize:'0.8rem', fontWeight:'bold', fill:'#2e7d32'}} /></Bar>
                                             <ReferenceLine x={5} stroke="red" strokeDasharray="3 3" />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </Box>
                             ) : (
                                 <Box sx={{ flex: 1, display: 'flex', flexDirection:'column', alignItems: 'center', justifyContent: 'center', color: 'text.secondary', bgcolor:'#fafafa', borderRadius:2 }}>
-                                    <Typography variant="body1">Ainda nÃ£o hÃ¡ dados suficientes.</Typography>
+                                    <Typography variant="body1">Ainda não hÃ¡ dados suficientes.</Typography>
                                     <Typography variant="caption">Realize avaliações para visualizar o grÃ¡fico.</Typography>
                                 </Box>
                             )}
@@ -358,7 +358,7 @@ export default function JobDetails() {
                                         <ListItem secondaryAction={<Checkbox checked={d.hired || false} onChange={() => handleHireToggle(d.appId, d.hired)} color="success" />}>
                                             <ListItemText 
                                                 primary={<Typography variant="body2" fontWeight="bold">#{index + 1} {d.name}</Typography>} 
-                                                secondary={<Typography variant="caption" color="text.secondary">MÃ©dia: <strong style={{color:'#2e7d32', fontSize:'0.9rem'}}>{d.total.toFixed(1)}</strong></Typography>} 
+                                                secondary={<Typography variant="caption" color="text.secondary">Média: <strong style={{color:'#2e7d32', fontSize:'0.9rem'}}>{d.total.toFixed(1)}</strong></Typography>} 
                                             />
                                         </ListItem>
                                         <Divider component="li" />
@@ -381,14 +381,14 @@ export default function JobDetails() {
                         <ParametersSection criteria={parameters?.cultura || []} onCriteriaChange={(c) => setParameters({...parameters, cultura: c})} />
                     </Paper>
                     <Paper variant="outlined" sx={{p:3, mb:3}}>
-                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>3. Teste TÃ©cnico</Typography>
-                        <ParametersSection criteria={parameters?.tecnico || parameters?.['tÃ©cnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} />
+                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>3. Teste Técnico</Typography>
+                        <ParametersSection criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} />
                     </Paper>
                     
                     <Paper variant="outlined" sx={{p:3, mb:3, borderColor: 'orange'}}>
-                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom color="orange">4. RÃ©gua de Notas</Typography>
+                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom color="orange">4. Régua de Notas</Typography>
                         <Typography variant="caption" color="text.secondary" gutterBottom>
-                            Defina os nomes e valores (0 a 100) que aparecerÃ£o nas opções de avaliação.
+                            Defina os nomes e valores (0 a 100) que aparecerão nas opções de avaliação.
                         </Typography>
                         <RatingScaleSection 
                             notes={parameters?.notas || []} 
