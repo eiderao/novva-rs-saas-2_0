@@ -5,8 +5,8 @@ import {
     Container, Typography, Box, AppBar, Toolbar, Button, CircularProgress, 
     Paper, Tabs, Tab, TextField, IconButton, Snackbar,
     List, ListItem, ListItemText, Divider, Grid,
-    Table, TableHead, TableRow, TableCell, TableBody, 
-    FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert, Switch, Tooltip as MuiTooltip, Card, CardContent
+    Table, TableHead, TableRow, TableCell, TableBody, Checkbox,
+    FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert, Switch
 } from '@mui/material';
 import { 
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList,
@@ -24,10 +24,7 @@ import {
 } from '@mui/icons-material';
 import { processEvaluation } from '../utils/evaluationLogic';
 
-// --- ESTILOS AUXILIARES ---
-const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 600, bgcolor: 'background.paper', boxShadow: 24, p: 4, borderRadius: 2 };
-
-// --- COMPONENTE DE Ã CONE (DEFINIDO FORA DO COMPONENTE PRINCIPAL) ---
+// --- ÍCONE SVG (DEFINIDO FORA PARA EVITAR ERRO DE BUILD) ---
 const ArrowIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <line x1="19" y1="12" x2="5" y2="12"></line>
@@ -35,7 +32,10 @@ const ArrowIcon = () => (
     </svg>
 );
 
-// --- COMPONENTE MODAL DE CÃ“PIA ---
+// --- ESTILOS AUXILIARES ---
+const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 600, bgcolor: 'background.paper', boxShadow: 24, p: 4, borderRadius: 2 };
+
+// --- MODAL DE CÓPIA ---
 const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState('');
@@ -59,7 +59,7 @@ const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   return ( 
       <Modal open={open} onClose={onClose}>
           <Box sx={modalStyle}>
-              <Typography variant="h6" fontWeight="bold" mb={2}>Copiar CritÃ©rios de Outra Vaga</Typography>
+              <Typography variant="h6" fontWeight="bold" mb={2}>Copiar Critérios de Outra Vaga</Typography>
               <FormControl fullWidth margin="normal">
                   <InputLabel>Selecionar Vaga de Origem</InputLabel>
                   <Select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)} label="Selecionar Vaga de Origem">
@@ -75,7 +75,7 @@ const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   );
 };
 
-// --- COMPONENTE DE SEÃ‡ÃƒO DE CRITÃ‰RIOS ---
+// --- SEÇÃO DE CRITÉRIOS ---
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
   const handleChange = (i, f, v) => { const n = [...criteria]; n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; onCriteriaChange(n); };
   const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
@@ -88,7 +88,7 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
                     onChange={e=>handleChange(i,'name',e.target.value)} 
                     fullWidth 
                     size="small" 
-                    label={`CritÃ©rio #${i+1}`}
+                    label={`Critério #${i+1}`}
                     variant="outlined"
                     sx={{ bgcolor: 'white' }}
                 />
@@ -104,14 +104,14 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
             </Box>
         ))}
         <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>
-            <Button onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small" startIcon={<AddIcon />}>Adicionar CritÃ©rio</Button>
+            <Button onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small" startIcon={<AddIcon />}>Adicionar Critério</Button>
             <Typography color={total===100?'success.main':'error.main'} variant="body2" fontWeight="bold">Total: {total}% {total!==100 && '(Deve ser 100%)'}</Typography>
         </Box>
     </Box>
   );
 };
 
-// --- COMPONENTE RÃ‰GUA DE NOTAS ---
+// --- RÉGUA DE NOTAS ---
 const RatingScaleSection = ({ notes = [], onNotesChange }) => {
     const handleChange = (i, field, value) => {
         const newNotes = [...notes];
@@ -128,17 +128,17 @@ const RatingScaleSection = ({ notes = [], onNotesChange }) => {
         <Box sx={{ mt: 2, bgcolor: '#fff3e0', p: 2, borderRadius: 2 }}>
             {notes.map((n, i) => (
                 <Box key={n.id || i} display="flex" gap={2} mb={1} alignItems="center">
-                    <TextField value={n.nome} onChange={(e) => handleChange(i, 'nome', e.target.value)} fullWidth size="small" label="RÃ³tulo (Ex: Supera)" sx={{bgcolor: 'white'}} />
-                    <TextField type="number" value={n.valor} onChange={(e) => handleChange(i, 'valor', e.target.value)} sx={{ width: 120, bgcolor: 'white' }} size="small" label="Valor (0-100)" />
+                    <TextField value={n.nome} onChange={(e) => handleChange(i, 'nome', e.target.value)} fullWidth size="small" label="Rótulo (Ex: Supera)" sx={{bgcolor: 'white'}} />
+                    <TextField type="number" value={n.valor} onChange={(e) => handleChange(i, 'valor', e.target.value)} sx={{ width: 120, bgcolor: 'white' }} size="small" label="Valor" />
                     <IconButton onClick={() => handleRemove(i)} color="error"><DeleteIcon /></IconButton>
                 </Box>
             ))}
-            <Button onClick={handleAdd} variant="outlined" color="warning" size="small" startIcon={<AddIcon />}>Adicionar NÃ­vel</Button>
+            <Button onClick={handleAdd} variant="outlined" color="warning" size="small" startIcon={<AddIcon />}>Adicionar Nível</Button>
         </Box>
     );
 };
 
-// --- PÃ GINA PRINCIPAL ---
+// --- PÁGINA PRINCIPAL ---
 export default function JobDetails() {
   const { jobId } = useParams();
   const navigate = useNavigate();
@@ -146,7 +146,7 @@ export default function JobDetails() {
   const [parameters, setParameters] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [tabValue, setTabValue] = useState(1); // Inicia na aba de ClassificaÃ§Ã£o para UX imediata
+  const [tabValue, setTabValue] = useState(1); 
   const [applicants, setApplicants] = useState([]);
   const [allEvaluations, setAllEvaluations] = useState([]);
   const [usersMap, setUsersMap] = useState({});
@@ -154,7 +154,6 @@ export default function JobDetails() {
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [feedback, setFeedback] = useState({ open: false, message: '', severity: 'success' });
 
-  // Busca dados iniciais
   useEffect(() => {
     const fetchAllData = async () => {
       setLoading(true);
@@ -163,7 +162,7 @@ export default function JobDetails() {
         setJob(jobData);
         setParameters(jobData.parameters || { 
             triagem: [], cultura: [], tecnico: [], 
-            notas: [{id:'1',nome:'Abaixo',valor:0}, {id:'2',nome:'Atende',valor:50}, {id:'3',nome:'Supera',valor:100}] 
+            notas: [{id:'1',nome:'Abaixo',valor:0}, {id:'2',nome:'Atende',valor:5}, {id:'3',nome:'Supera',valor:10}] 
         });
 
         const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', jobId);
@@ -187,11 +186,15 @@ export default function JobDetails() {
     fetchAllData();
   }, [jobId]);
 
-  // Processamento de Dados para GrÃ¡ficos e Tabelas
   const processedData = useMemo(() => {
     if (!parameters) return { chartData: [], evaluators: [] };
 
     const evaluators = Object.keys(usersMap).map(id => ({ id, name: usersMap[id] || 'Desconhecido' }));
+
+    // 1. Encontra o valor de "Atende" para o Benchmark (Candidato Ideal)
+    // Se não encontrar, assume 5 (padrão 0-10) ou 50 (padrão 0-100)
+    const atendeObj = parameters.notas?.find(n => n.nome.toLowerCase().includes('atende'));
+    const benchmarkValue = atendeObj ? Number(atendeObj.valor) : 5;
 
     let chartData = applicants.map(app => {
         const appEvals = allEvaluations.filter(e => 
@@ -226,32 +229,29 @@ export default function JobDetails() {
         };
     });
 
-    // --- LÃ“GICA DO CANDIDATO IDEAL (BENCHMARK) ---
-    // Adiciona o candidato ideal na lista se estiver na aba de classificaÃ§Ã£o
+    // Adiciona Candidato Ideal (Benchmark - Média/Atende)
     const idealCandidate = {
         appId: 'ideal-benchmark',
         name: 'Candidato Ideal (Meta)',
-        email: 'benchmark@sistema',
-        triagem: 100,
-        cultura: 100,
-        tecnico: 100,
-        total: 100,
+        email: 'Referência',
+        triagem: benchmarkValue,
+        cultura: benchmarkValue,
+        tecnico: benchmarkValue,
+        total: benchmarkValue,
         count: 1,
         hired: false,
         isIdeal: true
     };
     
-    // Adiciona o ideal no topo para comparaÃ§Ã£o
     chartData = [idealCandidate, ...chartData];
 
-    // Ordena: Ideal primeiro (fixo), depois por nota decrescente
     chartData.sort((a, b) => {
         if (a.isIdeal) return -1;
         if (b.isIdeal) return 1;
         return b.total - a.total;
     });
 
-    return { chartData, evaluators };
+    return { chartData, evaluators, benchmarkValue };
   }, [applicants, allEvaluations, evaluatorFilter, parameters, usersMap]);
 
   const handleHireToggle = async (appId, currentStatus) => {
@@ -265,7 +265,7 @@ export default function JobDetails() {
       } else {
           setFeedback({ 
               open: true, 
-              message: newStatus ? 'Candidato marcado como CONTRATADO!' : 'Status de contrataÃ§Ã£o removido.', 
+              message: newStatus ? 'Candidato marcado como CONTRATADO!' : 'Status de contratação removido.', 
               severity: newStatus ? 'success' : 'info' 
           });
       }
@@ -275,7 +275,7 @@ export default function JobDetails() {
       setSaving(true);
       await supabase.from('jobs').update({ parameters }).eq('id', jobId);
       setSaving(false);
-      setFeedback({ open: true, message: 'ConfiguraÃ§Ãµes salvas com sucesso!', severity: 'success' });
+      setFeedback({ open: true, message: 'Configurações salvas com sucesso!', severity: 'success' });
   };
 
   const jumpToSettings = () => setTabValue(2);
@@ -284,7 +284,6 @@ export default function JobDetails() {
 
   return (
     <Box sx={{ bgcolor: '#f4f6f8', minHeight: '100vh', pb: 8 }}>
-        {/* HEADER */}
         <AppBar position="static" color="default" elevation={0} sx={{ borderBottom: '1px solid #e0e0e0', bgcolor: 'white' }}>
             <Toolbar>
                 <IconButton edge="start" color="inherit" onClick={() => navigate('/')} sx={{ mr: 2 }}>
@@ -301,8 +300,8 @@ export default function JobDetails() {
             <Paper sx={{ mb: 3, borderRadius: 2 }}>
                 <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} centered indicatorColor="primary" textColor="primary">
                     <Tab label={`Candidatos (${applicants.length})`} />
-                    <Tab label="ClassificaÃ§Ã£o & Ranking" icon={<TrophyIcon />} iconPosition="start" />
-                    <Tab label="ConfiguraÃ§Ã£o da Vaga" />
+                    <Tab label="Classificação & Ranking" icon={<TrophyIcon />} iconPosition="start" />
+                    <Tab label="Configuração da Vaga" />
                 </Tabs>
             </Paper>
             
@@ -315,7 +314,7 @@ export default function JobDetails() {
                                 <TableCell><strong>Nome</strong></TableCell>
                                 <TableCell><strong>Email</strong></TableCell>
                                 <TableCell align="center"><strong>Status</strong></TableCell>
-                                <TableCell align="center"><strong>AvaliaÃ§Ãµes</strong></TableCell>
+                                <TableCell align="center"><strong>Avaliações</strong></TableCell>
                                 <TableCell align="center"><strong>Nota Geral</strong></TableCell>
                             </TableRow>
                         </TableHead>
@@ -324,10 +323,16 @@ export default function JobDetails() {
                                 <TableRow key={d.appId} hover component={RouterLink} to={`/applications/${d.appId}`} style={{textDecoration:'none', cursor:'pointer'}}>
                                     <TableCell sx={{fontWeight:500}}>{d.name}</TableCell>
                                     <TableCell>{d.email}</TableCell>
-                                    <TableCell align="center">{d.hired ? <Chip label="Contratado" color="success" size="small" icon={<CheckCircleIcon/>}/> : <Chip label="Em anÃ¡lise" size="small"/>}</TableCell>
+                                    <TableCell align="center">{d.hired ? <Chip label="Contratado" color="success" size="small" icon={<CheckCircleIcon/>}/> : <Chip label="Em análise" size="small"/>}</TableCell>
                                     <TableCell align="center"><Chip label={d.count} size="small" variant="outlined" /></TableCell>
                                     <TableCell align="center">
-                                        <Chip label={d.total.toFixed(1)} color={d.total >= 80 ? 'success' : d.total >= 50 ? 'warning' : 'error'} variant={d.count > 0 ? 'filled' : 'outlined'} fontWeight="bold"/>
+                                        {/* LÓGICA DE CORES RESTAURADA: >=8 (Success), >=5 (Warning), else Default */}
+                                        <Chip 
+                                            label={d.total.toFixed(1)} 
+                                            color={d.total >= 8 ? 'success' : d.total >= 5 ? 'warning' : 'default'} 
+                                            variant={d.count > 0 ? 'filled' : 'outlined'} 
+                                            fontWeight="bold"
+                                        />
                                     </TableCell>
                                 </TableRow>
                             ))}
@@ -339,7 +344,7 @@ export default function JobDetails() {
                 </Paper>
             )}
 
-            {/* ABA 1: CLASSIFICAÃ‡ÃƒO & DASHBOARD (REFORMULADA) */}
+            {/* ABA 1: CLASSIFICAÇÃO & DASHBOARD */}
             {tabValue === 1 && (
                 <Grid container spacing={3}>
                     {/* COLUNA ESQUERDA: RANKING */}
@@ -354,7 +359,7 @@ export default function JobDetails() {
                                 <FormControl fullWidth size="small" sx={{ bgcolor: 'white', borderRadius: 1 }}>
                                     <InputLabel>Filtrar por Avaliador</InputLabel>
                                     <Select value={evaluatorFilter} label="Filtrar por Avaliador" onChange={(e) => setEvaluatorFilter(e.target.value)}>
-                                        <MenuItem value="all">MÃ©dia de Todos os Avaliadores</MenuItem>
+                                        <MenuItem value="all">Média de Todos os Avaliadores</MenuItem>
                                         {processedData.evaluators.map(ev => <MenuItem key={ev.id} value={ev.id}>{ev.name}</MenuItem>)}
                                     </Select>
                                 </FormControl>
@@ -362,7 +367,7 @@ export default function JobDetails() {
 
                             <List sx={{ overflowY: 'auto', flex: 1, p: 0 }}>
                                 {processedData.chartData.map((d, index) => {
-                                    const isWinner = index === 1 && !d.isIdeal; // Primeiro real (apÃ³s o ideal)
+                                    const isWinner = index === 1 && !d.isIdeal; 
                                     
                                     if (d.isIdeal) {
                                         return (
@@ -370,10 +375,10 @@ export default function JobDetails() {
                                                 <ListItem button onClick={jumpToSettings} sx={{ bgcolor: '#fff7ed', borderBottom: '1px dashed #fdba74' }}>
                                                     <Box sx={{ mr: 2, color: 'orange' }}><StarIcon /></Box>
                                                     <ListItemText 
-                                                        primary={<Typography variant="body2" fontWeight="bold" color="orange">Candidato Ideal (Benchmark)</Typography>}
-                                                        secondary="Clique para editar critÃ©rios"
+                                                        primary={<Typography variant="body2" fontWeight="bold" color="orange">Candidato Ideal (Meta)</Typography>}
+                                                        secondary="Clique para editar critérios"
                                                     />
-                                                    <Chip label="100.0" size="small" sx={{ bgcolor: 'orange', color: 'white', fontWeight: 'bold' }} />
+                                                    <Chip label={d.total.toFixed(1)} size="small" sx={{ bgcolor: 'orange', color: 'white', fontWeight: 'bold' }} />
                                                 </ListItem>
                                             </React.Fragment>
                                         )
@@ -391,7 +396,7 @@ export default function JobDetails() {
                                                 }}
                                                 secondaryAction={
                                                     <Box display="flex" flexDirection="column" alignItems="center" gap={1}>
-                                                        <Typography variant="h6" fontWeight="bold" color={d.total >= 80 ? 'success.main' : 'text.primary'}>
+                                                        <Typography variant="h6" fontWeight="bold" color={d.total >= 8 ? 'success.main' : 'text.primary'}>
                                                             {d.total.toFixed(1)}
                                                         </Typography>
                                                         <Switch 
@@ -420,7 +425,7 @@ export default function JobDetails() {
                                                             <Typography variant="caption" display="block" color="text.secondary">{d.email}</Typography>
                                                             <Box display="flex" gap={1} mt={0.5}>
                                                                 <Chip label={`Triagem: ${d.triagem.toFixed(0)}`} size="small" sx={{height: 20, fontSize: '0.65rem'}} variant="outlined"/>
-                                                                <Chip label={`TÃ©c: ${d.tecnico.toFixed(0)}`} size="small" sx={{height: 20, fontSize: '0.65rem'}} variant="outlined"/>
+                                                                <Chip label={`Téc: ${d.tecnico.toFixed(0)}`} size="small" sx={{height: 20, fontSize: '0.65rem'}} variant="outlined"/>
                                                                 <Chip label={`Cult: ${d.cultura.toFixed(0)}`} size="small" sx={{height: 20, fontSize: '0.65rem'}} variant="outlined"/>
                                                             </Box>
                                                         </Box>
@@ -440,27 +445,27 @@ export default function JobDetails() {
                         </Paper>
                     </Grid>
 
-                    {/* COLUNA DIREITA: VISUALIZAÃ‡ÃƒO GRÃ FICA */}
+                    {/* COLUNA DIREITA: VISUALIZAÇÃO GRÁFICA */}
                     <Grid item xs={12} md={7} lg={8}>
                         <Grid container spacing={3}>
                             
-                            {/* 1. GRÃ FICO RADAR (ANÃ LISE DE PERFIL) */}
+                            {/* 1. GRÁFICO RADAR (ANÁLISE DE PERFIL) */}
                             <Grid item xs={12}>
                                 <Paper sx={{ p: 3, borderRadius: 2, height: '450px', position: 'relative' }} elevation={2}>
-                                    <Typography variant="h6" fontWeight="bold" color="#1e293b" mb={2}>AnÃ¡lise de Perfil (Radar)</Typography>
+                                    <Typography variant="h6" fontWeight="bold" color="#1e293b" mb={2}>Análise de Perfil (Radar)</Typography>
                                     {processedData.chartData.length > 1 ? (
                                         <ResponsiveContainer width="100%" height="100%">
                                             <RadarChart cx="50%" cy="50%" outerRadius="80%" data={[
-                                                { subject: 'Triagem', ideal: 100, media: 0, ...processedData.chartData.slice(1).reduce((acc, curr, i) => ({ ...acc, [`c${i}`]: curr.triagem }), {}) },
-                                                { subject: 'Cultura', ideal: 100, media: 0, ...processedData.chartData.slice(1).reduce((acc, curr, i) => ({ ...acc, [`c${i}`]: curr.cultura }), {}) },
-                                                { subject: 'TÃ©cnico', ideal: 100, media: 0, ...processedData.chartData.slice(1).reduce((acc, curr, i) => ({ ...acc, [`c${i}`]: curr.tecnico }), {}) },
+                                                { subject: 'Triagem', ideal: processedData.benchmarkValue, media: 0, ...processedData.chartData.slice(1).reduce((acc, curr, i) => ({ ...acc, [`c${i}`]: curr.triagem }), {}) },
+                                                { subject: 'Cultura', ideal: processedData.benchmarkValue, media: 0, ...processedData.chartData.slice(1).reduce((acc, curr, i) => ({ ...acc, [`c${i}`]: curr.cultura }), {}) },
+                                                { subject: 'Técnico', ideal: processedData.benchmarkValue, media: 0, ...processedData.chartData.slice(1).reduce((acc, curr, i) => ({ ...acc, [`c${i}`]: curr.tecnico }), {}) },
                                             ]}>
                                                 <PolarGrid />
                                                 <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontWeight: 'bold', fontSize: 14 }} />
-                                                <PolarRadiusAxis angle={30} domain={[0, 100]} />
+                                                <PolarRadiusAxis angle={30} domain={[0, 10]} />
                                                 
                                                 {/* Candidato Ideal (Fixo) */}
-                                                <Radar name="Candidato Ideal" dataKey="ideal" stroke="#fbbf24" strokeWidth={3} fill="#fbbf24" fillOpacity={0.1} />
+                                                <Radar name="Candidato Ideal" dataKey="ideal" stroke="#fbbf24" strokeWidth={3} fill="#fbbf24" fillOpacity={0.2} />
                                                 
                                                 {/* Top 3 Candidatos */}
                                                 {processedData.chartData.slice(1, 4).map((c, i) => (
@@ -471,7 +476,7 @@ export default function JobDetails() {
                                                         stroke={['#3b82f6', '#10b981', '#8b5cf6'][i]} 
                                                         strokeWidth={2} 
                                                         fill={['#3b82f6', '#10b981', '#8b5cf6'][i]} 
-                                                        fillOpacity={0.3} 
+                                                        fillOpacity={0.1} 
                                                     />
                                                 ))}
                                                 <Legend />
@@ -485,7 +490,6 @@ export default function JobDetails() {
                                             <Typography>Dados insuficientes para o Radar.</Typography>
                                         </Box>
                                     )}
-                                    {/* BotÃ£o de Atalho para Editar Ideal */}
                                     <Button 
                                         size="small" 
                                         onClick={jumpToSettings}
@@ -497,26 +501,26 @@ export default function JobDetails() {
                                 </Paper>
                             </Grid>
 
-                            {/* 2. GRÃ FICO DE BARRAS (COMPARATIVO GERAL) */}
+                            {/* 2. GRÁFICO DE BARRAS (COMPARATIVO GERAL) - CORRIGIDO PARA BARRAS AGRUPADAS */}
                             <Grid item xs={12}>
                                 <Paper sx={{ p: 3, borderRadius: 2, minHeight: '500px' }} elevation={2}>
-                                    <Typography variant="h6" fontWeight="bold" color="#1e293b" mb={3}>Comparativo Geral (PontuaÃ§Ã£o)</Typography>
+                                    <Typography variant="h6" fontWeight="bold" color="#1e293b" mb={3}>Comparativo Geral (Pontuação)</Typography>
                                     {processedData.chartData.length > 0 ? (
-                                        <Box sx={{ height: Math.max(500, processedData.chartData.length * 60) }}>
+                                        <Box sx={{ height: Math.max(500, processedData.chartData.length * 80) }}>
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <BarChart 
                                                     data={processedData.chartData} 
                                                     layout="vertical" 
                                                     margin={{ top: 10, right: 50, left: 10, bottom: 5 }} 
-                                                    barGap={6}
-                                                    barSize={32} /* BARRAS MAIS LARGAS */
+                                                    barGap={2}
+                                                    barSize={20}
                                                 >
                                                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
-                                                    <XAxis type="number" domain={[0, 100]} stroke="#94a3b8" />
+                                                    <XAxis type="number" domain={[0, 10]} stroke="#94a3b8" />
                                                     <YAxis 
                                                         dataKey="name" 
                                                         type="category" 
-                                                        width={180} 
+                                                        width={150} 
                                                         tick={{fontSize: 12, fontWeight: 600, fill: '#334155'}} 
                                                     />
                                                     <Tooltip 
@@ -525,14 +529,18 @@ export default function JobDetails() {
                                                     />
                                                     <Legend verticalAlign="top" height={36}/>
                                                     
-                                                    <Bar dataKey="triagem" name="Triagem" fill="#93c5fd" stackId="a" radius={[4, 0, 0, 4]} />
-                                                    <Bar dataKey="cultura" name="Fit Cultural" fill="#86efac" stackId="a" />
-                                                    <Bar dataKey="tecnico" name="TÃ©cnico" fill="#fca5a5" stackId="a" radius={[0, 4, 4, 0]}>
-                                                        <LabelList dataKey="total" position="right" style={{fontWeight: 'bold', fill: '#0f172a'}} formatter={(val) => val.toFixed(1)} />
+                                                    {/* BARRAS LADO A LADO (SEM STACKID) */}
+                                                    <Bar dataKey="triagem" name="Triagem" fill="#93c5fd" radius={[0, 4, 4, 0]}>
+                                                         <LabelList dataKey="triagem" position="right" style={{fontSize: '0.7rem', fill: '#64748b'}} />
+                                                    </Bar>
+                                                    <Bar dataKey="cultura" name="Fit Cultural" fill="#86efac" radius={[0, 4, 4, 0]}>
+                                                         <LabelList dataKey="cultura" position="right" style={{fontSize: '0.7rem', fill: '#64748b'}} />
+                                                    </Bar>
+                                                    <Bar dataKey="tecnico" name="Técnico" fill="#fca5a5" radius={[0, 4, 4, 0]}>
+                                                         <LabelList dataKey="tecnico" position="right" style={{fontSize: '0.7rem', fill: '#64748b'}} />
                                                     </Bar>
 
-                                                    <ReferenceLine x={50} stroke="#94a3b8" strokeDasharray="3 3" label={{ position: 'top', value: 'MÃ©dia (50)', fill: '#94a3b8', fontSize: 10 }} />
-                                                    <ReferenceLine x={80} stroke="#22c55e" strokeDasharray="3 3" label={{ position: 'top', value: 'Meta (80)', fill: '#22c55e', fontSize: 10 }} />
+                                                    <ReferenceLine x={processedData.benchmarkValue} stroke="#fbbf24" strokeDasharray="3 3" label={{ position: 'top', value: 'Meta', fill: '#fbbf24', fontSize: 10 }} />
                                                 </BarChart>
                                             </ResponsiveContainer>
                                         </Box>
@@ -546,17 +554,17 @@ export default function JobDetails() {
                 </Grid>
             )}
 
-            {/* ABA 2: CONFIGURAÃ‡Ã•ES (CRITÃ‰RIOS) */}
+            {/* ABA 2: CONFIGURAÇÕES (CRITÉRIOS) */}
             {tabValue === 2 && (
                 <Box p={3} sx={{ bgcolor: 'white', borderRadius: 2, boxShadow: 1, maxWidth: '1000px', mx: 'auto' }}>
                     <Box display="flex" justifyContent="space-between" mb={3}>
-                        <Typography variant="h5" fontWeight="bold">ConfiguraÃ§Ã£o de CritÃ©rios</Typography>
+                        <Typography variant="h5" fontWeight="bold">Configuração de Critérios</Typography>
                         <Button variant="outlined" startIcon={<ContentCopyIcon />} onClick={() => setIsCopyModalOpen(true)}>Importar de Outra Vaga</Button>
                     </Box>
 
                     <Paper variant="outlined" sx={{p:3, mb:3, borderColor: '#e2e8f0'}}>
                         <Typography variant="subtitle1" fontWeight="bold" gutterBottom color="primary">1. Triagem (RH)</Typography>
-                        <Typography variant="caption" color="text.secondary">CritÃ©rios eliminatÃ³rios e bÃ¡sicos.</Typography>
+                        <Typography variant="caption" color="text.secondary">Critérios eliminatórios e básicos.</Typography>
                         <ParametersSection criteria={parameters?.triagem || []} onCriteriaChange={(c) => setParameters({...parameters, triagem: c})} />
                     </Paper>
 
@@ -567,18 +575,18 @@ export default function JobDetails() {
                     </Paper>
 
                     <Paper variant="outlined" sx={{p:3, mb:3, borderColor: '#e2e8f0'}}>
-                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom color="info.main">3. Teste TÃ©cnico (Hard Skills)</Typography>
-                        <Typography variant="caption" color="text.secondary">AvaliaÃ§Ã£o tÃ©cnica especÃ­fica da funÃ§Ã£o.</Typography>
-                        <ParametersSection criteria={parameters?.tecnico || parameters?.['tÃ©cnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} />
+                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom color="info.main">3. Teste Técnico (Hard Skills)</Typography>
+                        <Typography variant="caption" color="text.secondary">Avaliação técnica específica da função.</Typography>
+                        <ParametersSection criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} />
                     </Paper>
                     
                     <Paper variant="outlined" sx={{p:3, mb:3, borderColor: 'orange', bgcolor: '#fffaf0'}}>
                         <Box display="flex" alignItems="center" gap={1} mb={1}>
                             <StarIcon sx={{color: 'orange'}} />
-                            <Typography variant="subtitle1" fontWeight="bold" color="orange">4. RÃ©gua de Notas</Typography>
+                            <Typography variant="subtitle1" fontWeight="bold" color="orange">4. Régua de Notas</Typography>
                         </Box>
                         <Typography variant="caption" color="text.secondary" gutterBottom display="block">
-                            Defina os nomes e valores (0 a 100) que aparecerÃ£o nos botÃµes de avaliaÃ§Ã£o.
+                            Defina os nomes e valores (0 a 10) que aparecerão nos botões de avaliação. O valor "Atende" (padrão 5) define o Candidato Ideal.
                         </Typography>
                         <RatingScaleSection 
                             notes={parameters?.notas || []} 
@@ -596,7 +604,7 @@ export default function JobDetails() {
                             startIcon={<SaveIcon />}
                             sx={{ px: 5, py: 1.5, fontWeight: 'bold' }} 
                         >
-                            {saving ? 'Salvando...' : 'Salvar Todas ConfiguraÃ§Ãµes'}
+                            {saving ? 'Salvando...' : 'Salvar Todas Configurações'}
                         </Button>
                     </Box>
                 </Box>
