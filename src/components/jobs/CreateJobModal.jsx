@@ -135,14 +135,50 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
       parameters: parameters // Salva os critérios copiados ou padrão
     };
 
-    const { error } = await supabase.from('jobs').insert(payload);
+    // ALTERAÇÃO: Usamos .select().single() para pegar o ID da vaga criada
+    const { data: newJob, error } = await supabase.from('jobs').insert(payload).select().single();
 
-    if (error) alert('Erro: ' + error.message);
-    else {
-      setFormData({ title: '', description: '', requirements: '', type: 'CLT', location_type: 'Híbrido', company_department_id: '' });
-      setCopyFromId('');
-      onSuccess();
-      onClose();
+    if (error) {
+        alert('Erro: ' + error.message);
+    } else {
+        // --- CRIAÇÃO AUTOMÁTICA DO CANDIDATO IDEAL ---
+        try {
+            const benchmarkEmail = `ideal_${newJob.id}@novva.benchmark`;
+
+            // Verifica se já existe (upsert safe)
+            let { data: idealCandidate } = await supabase.from('candidates').select('id').eq('email', benchmarkEmail).single();
+
+            if (!idealCandidate) {
+                const { data: createdCand } = await supabase.from('candidates').insert({
+                    name: 'PERFIL IDEAL (Benchmarking)',
+                    email: benchmarkEmail,
+                    phone: '00000000000',
+                    city: 'N/A',
+                    state: 'N/A'
+                }).select().single();
+                idealCandidate = createdCand;
+            }
+
+            if (idealCandidate) {
+                // Cria a aplicação com status especial
+                await supabase.from('applications').insert({
+                    jobId: newJob.id,
+                    candidateId: idealCandidate.id,
+                    tenantId: tenantId,
+                    status: 'BENCHMARK', // Status especial para filtrar se necessário
+                    form_data: { motivation: 'Gabarito oficial da vaga.' }
+                });
+            }
+        } catch (benchmarkError) {
+            console.error("Erro ao criar perfil ideal:", benchmarkError);
+            // Não bloqueia o sucesso da vaga se isso falhar
+        }
+        // ----------------------------------------------
+
+        setFormData({ title: '', description: '', requirements: '', type: 'CLT', location_type: 'Híbrido', company_department_id: '' });
+        setCopyFromId('');
+        onSuccess();
+        onClose();
     }
     setLoading(false);
   };
