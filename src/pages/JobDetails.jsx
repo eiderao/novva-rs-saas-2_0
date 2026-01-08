@@ -24,15 +24,16 @@ import {
 import { processEvaluation, generateDefaultBenchmarkScores } from '../utils/evaluationLogic';
 import EvaluationForm from '../components/EvaluationForm'; 
 
-// --- ÍCONE SVG ---
+// --- ÍCONE SVG (Definido internamente para evitar erros de importação) ---
 const ArrowIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
 );
 
+// --- ESTILOS DOS MODAIS ---
 const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 600, bgcolor: 'background.paper', boxShadow: 24, p: 4, borderRadius: 2 };
 const formModalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '90%', maxWidth: 800, height: '85vh', bgcolor: 'background.paper', boxShadow: 24, p: 0, borderRadius: 2, overflow: 'hidden' };
 
-// --- COMPONENTE DE CRITÉRIOS ---
+// --- COMPONENTE INTERNO: SEÇÃO DE CRITÉRIOS ---
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
   const handleChange = (i, f, v) => { const n = [...criteria]; n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; onCriteriaChange(n); };
   const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
@@ -53,7 +54,7 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
   );
 };
 
-// --- RÉGUA DE NOTAS ---
+// --- COMPONENTE INTERNO: RÉGUA DE NOTAS ---
 const RatingScaleSection = ({ notes = [], onNotesChange }) => {
     const handleChange = (i, field, value) => {
         const newNotes = [...notes];
@@ -76,7 +77,7 @@ const RatingScaleSection = ({ notes = [], onNotesChange }) => {
     );
 };
 
-// --- MODAL DE CÓPIA ---
+// --- COMPONENTE INTERNO: MODAL DE CÓPIA ---
 const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState('');
@@ -114,41 +115,48 @@ const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   );
 };
 
+// --- COMPONENTE PRINCIPAL DA PÁGINA ---
 export default function JobDetails() {
   const { jobId } = useParams();
   const navigate = useNavigate();
+  
+  // ESTADOS GERAIS
   const [job, setJob] = useState(null);
   const [parameters, setParameters] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [tabValue, setTabValue] = useState(1); 
+  const [tabValue, setTabValue] = useState(0); // Inicia na aba Candidatos (Tab 0)
+  
+  // DADOS DE CANDIDATOS E AVALIAÇÕES
   const [applicants, setApplicants] = useState([]);
   const [allEvaluations, setAllEvaluations] = useState([]);
   const [usersMap, setUsersMap] = useState({});
   const [currentUser, setCurrentUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   
-  // Filtros
+  // FILTROS
   const [evaluatorFilter, setEvaluatorFilter] = useState('all');
-  const [metricFilter, setMetricFilter] = useState('Geral'); 
+  const [metricFilter, setMetricFilter] = useState('Geral'); // 'Geral', 'Triagem', 'Fit Cultural', 'Teste Técnico'
 
+  // MODAIS E FEEDBACK
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [isIdealModalOpen, setIsIdealModalOpen] = useState(false);
   const [editingAppId, setEditingAppId] = useState(null); 
   const [feedback, setFeedback] = useState({ open: false, message: '', severity: 'success' });
+  const [refreshTrigger, setRefreshTrigger] = useState(0); // Gatilho para recarregar dados
 
-  useEffect(() => {
-    const fetchAllData = async () => {
+  // --- BUSCA DE DADOS (COM AUTO-HEALING DO IDEAL) ---
+  const fetchData = async () => {
       setLoading(true);
       try {
         const { data: { user } } = await supabase.auth.getUser();
         setCurrentUser(user);
         
-        // Verificação simples de Admin (Email hardcoded ou metadados se existissem)
+        // Verifica admin pelo email hardcoded ou lógica de role
         const isSuperAdmin = user?.email === 'eider@novvaempresa.com.br';
         setIsAdmin(isSuperAdmin);
 
-        // A. Dados da Vaga
+        // 1. Dados da Vaga
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', jobId).single();
         setJob(jobData);
         
@@ -158,41 +166,61 @@ export default function JobDetails() {
         };
         setParameters(safeParams);
 
-        // B. Candidatos
+        // 2. Candidatos
         const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', jobId);
         
-        // --- AUTO-HEALING: GARANTE QUE O IDEAL EXISTA ---
+        let evaluations = [];
+
+        // --- LÓGICA DO CANDIDATO IDEAL (AUTO-CRIAÇÃO SE NÃO EXISTIR) ---
         const idealEmail = `benchmark_${jobId}@novva.app`;
         let idealApp = appsData?.find(a => a.candidate?.email === idealEmail);
 
         if (!idealApp && user) {
+            console.log("Criando Candidato Ideal automaticamente...");
+            // Cria candidato na tabela candidates
             const { data: cand } = await supabase.from('candidates').upsert(
                 { name: 'Candidato Ideal (Referência)', email: idealEmail, city: 'N/A', state: 'N/A' }, 
                 { onConflict: 'email' }
             ).select().single();
             
+            // Cria aplicação
             const { data: app } = await supabase.from('applications').insert({
                 jobId: jobId, candidateId: cand.id, status: 'benchmark', isHired: false
             }).select('*, candidate:candidates(*)').single();
 
+            // Cria avaliação padrão (Centro da Régua)
             const defaultScores = generateDefaultBenchmarkScores(safeParams);
-            await supabase.from('evaluations').insert({
+            const { data: newEval } = await supabase.from('evaluations').insert({
                 application_id: app.id, evaluator_id: user.id, scores: defaultScores, final_score: 5, notes: 'Gabarito Padrão'
-            });
+            }).select().single();
 
-            if (app) appsData.push(app); 
+            if (app) {
+                idealApp = app;
+                appsData.push(app); 
+            }
+            if (newEval) {
+                evaluations.push(newEval); 
+            }
         }
+        // -------------------------------------------------------------
         
         setApplicants(appsData || []);
 
-        // C. Avaliações
+        // 3. Avaliações (Busca de todos os candidatos da lista)
         const appIds = (appsData || []).map(a => a.id);
         if (appIds.length > 0) {
             const { data: evalsData } = await supabase.from('evaluations').select('*').in('application_id', appIds);
-            setAllEvaluations(evalsData || []);
+            
+            // Combina avaliações existentes com a nova criada (se houver)
+            const mergedEvaluations = [...(evalsData || [])];
+            evaluations.forEach(ne => {
+                 if(!mergedEvaluations.find(e => e.id === ne.id)) mergedEvaluations.push(ne);
+            });
 
-            // Popula lista de avaliadores
-            const userIds = [...new Set(evalsData.map(e => e.evaluator_id))];
+            setAllEvaluations(mergedEvaluations);
+
+            // Popula lista de avaliadores para o filtro
+            const userIds = [...new Set(mergedEvaluations.map(e => e.evaluator_id))];
             if (userIds.length > 0) {
                 const { data: usersData } = await supabase.from('users').select('id, name, email').in('id', userIds);
                 const map = {};
@@ -202,10 +230,12 @@ export default function JobDetails() {
         }
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
-    fetchAllData();
-  }, [jobId]);
 
-  // PROCESSAMENTO DE DADOS
+  useEffect(() => {
+    fetchData();
+  }, [jobId, refreshTrigger]);
+
+  // --- PROCESSAMENTO DE DADOS (MEMOIZADO) ---
   const processedData = useMemo(() => {
     if (!parameters) return { chartData: [], evaluators: [] };
 
@@ -224,13 +254,21 @@ export default function JobDetails() {
         let lastEvalData = null; 
 
         if (appEvals.length > 0) {
-            appEvals.forEach(ev => {
-                const scores = processEvaluation(ev, parameters);
-                if (scores.total >= 0) {
-                    sumT += scores.triagem; sumC += scores.cultura; sumTc += scores.tecnico; sumTotal += scores.total; count++;
-                    lastEvalData = ev; 
-                }
-            });
+            // Se for Ideal, usamos a última avaliação disponível (para permitir edição)
+            if (isIdeal) {
+                 lastEvalData = appEvals[appEvals.length - 1]; 
+                 const scores = processEvaluation(lastEvalData, parameters);
+                 sumT = scores.triagem; sumC = scores.cultura; sumTc = scores.tecnico; sumTotal = scores.total; count = 1;
+            } else {
+                // Candidatos normais: média das avaliações filtradas
+                appEvals.forEach(ev => {
+                    const scores = processEvaluation(ev, parameters);
+                    if (scores.total >= 0) {
+                        sumT += scores.triagem; sumC += scores.cultura; sumTc += scores.tecnico; sumTotal += scores.total; count++;
+                        lastEvalData = ev; 
+                    }
+                });
+            }
         }
 
         const avgT = count > 0 ? sumT / count : 0;
@@ -249,40 +287,46 @@ export default function JobDetails() {
             count: count,
             hired: app.isHired,
             isIdeal: isIdeal,
-            lastEval: lastEvalData 
+            lastEval: lastEvalData // Importante para carregar o form de edição
         };
     });
 
-    // Se filtro de avaliador ativo, remove quem não tem avaliação (exceto Ideal)
+    // Se houver filtro de avaliador, remove quem não tem avaliação (exceto Ideal, que sempre mostramos)
     if (evaluatorFilter !== 'all') {
         chartData = chartData.filter(c => c.count > 0 || c.isIdeal);
     }
 
-    // Ordenação
+    // Ordenação dinâmica
     chartData.sort((a, b) => {
-        if (a.isIdeal) return -1;
+        if (a.isIdeal) return -1; // Ideal sempre no topo
         if (b.isIdeal) return 1;
 
         let key = 'total';
         if (metricFilter === 'Triagem') key = 'triagem';
         if (metricFilter === 'Fit Cultural') key = 'cultura';
         if (metricFilter === 'Teste Técnico') key = 'tecnico';
+        
         return b[key] - a[key];
     });
 
+    // Encontra o objeto do Ideal para referência nos gráficos
     const idealCandidate = chartData.find(c => c.isIdeal) || { triagem:0, cultura:0, tecnico:0, total:0 };
 
     return { chartData, evaluators, idealCandidate };
   }, [applicants, allEvaluations, evaluatorFilter, parameters, usersMap, metricFilter]);
 
 
-  // AÇÕES
+  // --- FUNÇÕES DE AÇÃO ---
   const handleHireToggle = async (appId, currentStatus) => {
       const newStatus = !currentStatus;
       setApplicants(prev => prev.map(a => a.id === appId ? {...a, isHired: newStatus} : a));
       const { error } = await supabase.from('applications').update({ isHired: newStatus }).eq('id', appId);
       if (!error) {
           setFeedback({ open: true, message: newStatus ? 'Contratado!' : 'Descontratado.', severity: 'success' });
+      } else {
+          // Reverte em caso de erro
+          setApplicants(prev => prev.map(a => a.id === appId ? {...a, isHired: currentStatus} : a));
+          alert("Erro ao atualizar status.");
       }
   };
 
@@ -294,6 +338,7 @@ export default function JobDetails() {
   };
 
   const handleOpenEvaluation = (appId, isIdeal) => {
+      // Bloqueia edição do ideal se não for admin
       if (isIdeal && !isAdmin) {
           alert("Apenas administradores podem alterar o Candidato Ideal.");
           return;
@@ -304,9 +349,12 @@ export default function JobDetails() {
 
   const onEvaluationSaved = () => {
       setIsIdealModalOpen(false);
-      window.location.reload(); 
+      // Força refresh dos dados para atualizar médias e gráficos
+      setRefreshTrigger(prev => prev + 1);
+      setFeedback({ open: true, message: 'Avaliação salva com sucesso!', severity: 'success' });
   };
 
+  // Cores de feedback visual
   const getScoreColor = (val) => {
       if (val >= 8) return 'success';
       if (val >= 5) return 'warning';
@@ -318,6 +366,7 @@ export default function JobDetails() {
       return '#94a3b8';
   };
 
+  // Determina chave ativa para gráfico de barras simples
   const activeDataKey = useMemo(() => {
       if (metricFilter === 'Triagem') return 'triagem';
       if (metricFilter === 'Fit Cultural') return 'cultura';
@@ -346,7 +395,7 @@ export default function JobDetails() {
                 </Tabs>
             </Paper>
             
-            {/* ABA 0: LISTA SIMPLES (CANDIDATO IDEAL INCLUÍDO) */}
+            {/* ABA 0: LISTA DE CANDIDATOS (Ideal incluído e editável) */}
             {tabValue === 0 && (
                 <Paper sx={{ p: 0, borderRadius: 2, overflow: 'hidden' }}>
                     <Table>
@@ -361,7 +410,7 @@ export default function JobDetails() {
                         </TableHead>
                         <TableBody>
                             {processedData.chartData.map(d => {
-                                const isClickable = d.isIdeal ? isAdmin : true; // Ideal só admin clica
+                                const isClickable = d.isIdeal ? isAdmin : true; 
                                 const rowBg = d.isIdeal ? '#fff7ed' : 'inherit';
 
                                 return (
@@ -370,8 +419,11 @@ export default function JobDetails() {
                                         hover 
                                         sx={{ bgcolor: rowBg, cursor: isClickable ? 'pointer' : 'default' }}
                                         onClick={() => {
-                                            if (d.isIdeal) handleOpenEvaluation(d.appId, true);
-                                            else navigate(`/applications/${d.appId}`);
+                                            if (d.isIdeal) {
+                                                if(isAdmin) handleOpenEvaluation(d.appId, true);
+                                            } else {
+                                                navigate(`/applications/${d.appId}`);
+                                            }
                                         }}
                                     >
                                         <TableCell sx={{ fontWeight: d.isIdeal ? 'bold' : 'normal', color: d.isIdeal ? 'orange' : 'inherit' }}>
@@ -396,15 +448,16 @@ export default function JobDetails() {
                 </Paper>
             )}
 
-            {/* ABA 1: RANKING */}
+            {/* ABA 1: RANKING (Visualização e Gráficos) */}
             {tabValue === 1 && (
                 <Grid container spacing={3}>
-                    {/* ESQUERDA: LISTA + FILTROS */}
+                    {/* COLUNA ESQUERDA: LISTA & FILTROS */}
                     <Grid item xs={12} md={4}>
                         <Paper sx={{ height: '100%', maxHeight: '800px', display: 'flex', flexDirection: 'column', borderRadius: 2 }} elevation={2}>
                             <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                                 <Typography variant="subtitle2" color="text.secondary" mb={1} fontWeight="bold">FILTROS</Typography>
                                 
+                                {/* Filtro Avaliador Dropdown */}
                                 <FormControl fullWidth size="small" sx={{ mb: 2, bgcolor: 'white' }}>
                                     <InputLabel>Avaliador</InputLabel>
                                     <Select value={evaluatorFilter} label="Avaliador" onChange={(e) => setEvaluatorFilter(e.target.value)}>
@@ -413,6 +466,7 @@ export default function JobDetails() {
                                     </Select>
                                 </FormControl>
 
+                                {/* Filtro Pilar Dropdown */}
                                 <FormControl fullWidth size="small" sx={{ bgcolor: 'white' }}>
                                     <InputLabel>Pilar / Critério</InputLabel>
                                     <Select value={metricFilter} label="Pilar / Critério" onChange={(e) => setMetricFilter(e.target.value)}>
@@ -424,15 +478,17 @@ export default function JobDetails() {
                                 </FormControl>
                             </Box>
 
+                            {/* Lista de Ranking */}
                             <List sx={{ overflowY: 'auto', flex: 1 }}>
                                 {processedData.chartData.map((d, index) => {
+                                    // Valor exibido depende do filtro
                                     let displayVal = d.total;
                                     if(metricFilter === 'Triagem') displayVal = d.triagem;
                                     if(metricFilter === 'Fit Cultural') displayVal = d.cultura;
                                     if(metricFilter === 'Teste Técnico') displayVal = d.tecnico;
                                     
                                     if (d.isIdeal) {
-                                        // Ideal na aba Ranking é apenas visual (sem clique)
+                                        // Ideal aqui é apenas visual, não editável
                                         return (
                                             <ListItem key="ideal" sx={{ bgcolor: '#fff7ed', borderBottom: '1px dashed orange' }}>
                                                 <StarIcon sx={{ color: 'orange', mr: 1, fontSize: 20 }} />
@@ -451,6 +507,7 @@ export default function JobDetails() {
                                                         <Typography variant="body2" fontWeight="bold" sx={{color: getScoreColorHex(displayVal), fontSize: '0.9rem'}}>
                                                             {displayVal.toFixed(1)}
                                                         </Typography>
+                                                        {/* Checkbox em vez de Switch, bloqueado para Ideal */}
                                                         <Checkbox 
                                                             checked={d.hired || false} 
                                                             onChange={() => handleHireToggle(d.appId, d.hired)} 
@@ -474,10 +531,10 @@ export default function JobDetails() {
                         </Paper>
                     </Grid>
 
-                    {/* DIREITA: GRÁFICOS MAIORES */}
+                    {/* COLUNA DIREITA: GRÁFICOS */}
                     <Grid item xs={12} md={8}>
                         <Grid container spacing={3}>
-                            {/* RADAR */}
+                            {/* GRÁFICO RADAR (Com rótulos e Ideal destacado) */}
                             <Grid item xs={12}>
                                 <Paper sx={{ p: 3, height: '550px', borderRadius: 2 }} elevation={2}>
                                     <Typography variant="h6" mb={2} fontWeight="bold" color="#334155">Comparativo de Perfil</Typography>
@@ -491,8 +548,10 @@ export default function JobDetails() {
                                             <PolarAngleAxis dataKey="subject" tick={{ fill: '#333', fontWeight: 'bold', fontSize: 14 }} />
                                             <PolarRadiusAxis angle={30} domain={[0, 'auto']} /> 
                                             
+                                            {/* Ideal: Preto, Pontilhado, Grosso */}
                                             <Radar name="Ideal" dataKey="ideal" stroke="#000000" strokeWidth={3} strokeDasharray="5 5" fill="none" />
                                             
+                                            {/* Candidatos (Top 3) */}
                                             {processedData.chartData.slice(1, 4).map((c, i) => (
                                                 <Radar 
                                                     key={i} 
@@ -511,7 +570,7 @@ export default function JobDetails() {
                                 </Paper>
                             </Grid>
 
-                            {/* BARRAS */}
+                            {/* GRÁFICO DE BARRAS (Lógica 4 barras se Geral) */}
                             <Grid item xs={12}>
                                 <Paper sx={{ p: 3, minHeight: '600px', borderRadius: 2 }} elevation={2}>
                                     <Typography variant="h6" mb={3} fontWeight="bold" color="#334155">Comparativo por {metricFilter}</Typography>
@@ -522,7 +581,7 @@ export default function JobDetails() {
                                                     data={processedData.chartData} 
                                                     layout="vertical" 
                                                     margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
-                                                    barSize={metricFilter === 'Geral' ? 12 : 24} 
+                                                    barSize={metricFilter === 'Geral' ? 12 : 24} // Barras mais finas no Geral para caber as 4
                                                     barGap={2}
                                                 >
                                                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
@@ -582,10 +641,11 @@ export default function JobDetails() {
         {/* MODAIS */}
         <CopyParametersModal open={isCopyModalOpen} onClose={() => setIsCopyModalOpen(false)} currentJobId={jobId} onCopy={(p) => { setParameters(p); setFeedback({open:true, message:'Copiado!', severity:'info'}); }} />
         
+        {/* MODAL DE EDIÇÃO DE AVALIAÇÃO (USADO PARA O IDEAL TAMBÉM) */}
         <Modal open={isIdealModalOpen} onClose={() => setIsIdealModalOpen(false)}>
             <Box sx={formModalStyle}>
                 <Box p={2} borderBottom="1px solid #eee" display="flex" justifyContent="space-between" alignItems="center">
-                    <Typography variant="h6">Editar Avaliação do Candidato Ideal</Typography>
+                    <Typography variant="h6">Editar Avaliação</Typography>
                     <Button onClick={() => setIsIdealModalOpen(false)}>Fechar</Button>
                 </Box>
                 <Box p={2} sx={{ height: 'calc(100% - 60px)', overflowY: 'auto' }}>
@@ -593,6 +653,7 @@ export default function JobDetails() {
                          <EvaluationForm 
                             applicationId={editingAppId}
                             jobParameters={parameters} 
+                            // Garante que pega a avaliação mais recente carregada para este app
                             initialData={applicants.find(a=>a.id===editingAppId)?.lastEval}
                             onSaved={onEvaluationSaved}
                          />
