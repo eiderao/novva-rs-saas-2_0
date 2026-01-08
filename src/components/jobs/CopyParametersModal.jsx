@@ -49,7 +49,7 @@ export default function CopyParametersModal({ open, onClose, onSelect }) {
       onSelect(job.parameters);
       onClose();
     } else {
-      setError('Esta vaga não possui parâmetros salvos.');
+      setError('Esta vaga nÃ£o possui parÃ¢metros salvos.');
     }
   };
 
@@ -57,7 +57,7 @@ export default function CopyParametersModal({ open, onClose, onSelect }) {
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Copy size={20} />
-        Copiar Critérios de Avaliação
+        Copiar CritÃ©rios de AvaliaÃ§Ã£o
       </DialogTitle>
       <DialogContent dividers>
         {loading && <Box display="flex" justifyContent="center" p={3}><CircularProgress /></Box>}

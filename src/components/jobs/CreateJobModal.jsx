@@ -7,14 +7,14 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
   const [tenantId, setTenantId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [limitError, setLimitError] = useState(null);
-  const [previousJobs, setPreviousJobs] = useState([]); // Lista de vagas para cópia
-  const [copyFromId, setCopyFromId] = useState(''); // ID da vaga selecionada para cópia
+  const [previousJobs, setPreviousJobs] = useState([]); // Lista de vagas para cÃ³pia
+  const [copyFromId, setCopyFromId] = useState(''); // ID da vaga selecionada para cÃ³pia
 
   const [formData, setFormData] = useState({
-    title: '', description: '', requirements: '', type: 'CLT', location_type: 'Híbrido', company_department_id: ''
+    title: '', description: '', requirements: '', type: 'CLT', location_type: 'HÃ­brido', company_department_id: ''
   });
 
-  // Critérios da Vaga Exemplo (Fixos)
+  // CritÃ©rios da Vaga Exemplo (Fixos)
   const EXAMPLE_CRITERIA = {
     "notas": [
       {
@@ -34,28 +34,28 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
       }
     ],
     "cultura": [
-      { "name": "O Cliente é a nossa razão de existir", "weight": "20" },
-      { "name": "Transparência é essencial", "weight": "20" },
+      { "name": "O Cliente Ã© a nossa razÃ£o de existir", "weight": "20" },
+      { "name": "TransparÃªncia Ã© essencial", "weight": "20" },
       { "name": "Colaborar mais do que competir", "weight": "20" },
       { "name": "A busca pelo melhor nunca termina", "weight": "20" },
-      { "name": "Não há tempo a perder", "weight": "20" }
+      { "name": "NÃ£o hÃ¡ tempo a perder", "weight": "20" }
     ],
     "tecnico": [
-      { "name": "Compreensão do escopo da demanda", "weight": "20" },
-      { "name": "Capacidade de resolução de problemas", "weight": "20" },
-      { "name": "Organização e Método", "weight": "20" },
+      { "name": "CompreensÃ£o do escopo da demanda", "weight": "20" },
+      { "name": "Capacidade de resoluÃ§Ã£o de problemas", "weight": "20" },
+      { "name": "OrganizaÃ§Ã£o e MÃ©todo", "weight": "20" },
       { "name": "Capacidade de estruturar dados de forma eficaz", "weight": "20" },
-      { "name": "Capacidade de otimização", "weight": "20" }
+      { "name": "Capacidade de otimizaÃ§Ã£o", "weight": "20" }
     ],
     "triagem": [
       { "name": "Escolaridade", "weight": "12.5" },
-      { "name": "Qualificação exigível", "weight": "12.5" },
-      { "name": "Qualificação desejável", "weight": "12.5" },
-      { "name": "Experiência Geral", "weight": "12.5" },
-      { "name": "Experiência Específica", "weight": "12.5" },
+      { "name": "QualificaÃ§Ã£o exigÃ­vel", "weight": "12.5" },
+      { "name": "QualificaÃ§Ã£o desejÃ¡vel", "weight": "12.5" },
+      { "name": "ExperiÃªncia Geral", "weight": "12.5" },
+      { "name": "ExperiÃªncia EspecÃ­fica", "weight": "12.5" },
       { "name": "Habilidade hard", "weight": "12.5" },
       { "name": "Habilidade soft", "weight": "12.5" },
-      { "name": "Línguas", "weight": "12.5" }
+      { "name": "LÃ­nguas", "weight": "12.5" }
     ]
   };
 
@@ -92,7 +92,7 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
         setLimitError(`Limite de vagas ativas atingido (${limit}).`);
     }
 
-    // 3. Busca vagas anteriores para permitir cópia de critérios
+    // 3. Busca vagas anteriores para permitir cÃ³pia de critÃ©rios
     const { data: jobs } = await supabase
         .from('jobs')
         .select('id, title')
@@ -107,20 +107,20 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
     
     setLoading(true);
     
-    let parameters = {}; // Padrão vazio
+    let parameters = {}; // PadrÃ£o vazio
 
-    // Verifica a origem dos critérios
+    // Verifica a origem dos critÃ©rios
     if (copyFromId === 'EXAMPLE_TEMPLATE') {
-        // Opção Fixa: Vaga Exemplo
+        // OpÃ§Ã£o Fixa: Vaga Exemplo
         parameters = EXAMPLE_CRITERIA;
     } else if (copyFromId) {
-        // Opção Dinâmica: Vaga existente no banco
+        // OpÃ§Ã£o DinÃ¢mica: Vaga existente no banco
         const { data } = await supabase.from('jobs').select('parameters').eq('id', copyFromId).single();
         if (data?.parameters) {
             parameters = data.parameters;
         }
     } else {
-        // Parâmetros Default (Zero)
+        // ParÃ¢metros Default (Zero)
         parameters = {
             triagem: [], cultura: [], tecnico: [],
             notas: [{id:'1',nome:'Abaixo',valor:0}, {id:'2',nome:'Atende',valor:50}, {id:'3',nome:'Supera',valor:100}]
@@ -132,53 +132,17 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
       tenantId: tenantId,
       status: 'active',
       company_department_id: formData.company_department_id ? parseInt(formData.company_department_id) : null,
-      parameters: parameters // Salva os critérios copiados ou padrão
+      parameters: parameters // Salva os critÃ©rios copiados ou padrÃ£o
     };
 
-    // ALTERAÇÃO: Usamos .select().single() para pegar o ID da vaga criada
-    const { data: newJob, error } = await supabase.from('jobs').insert(payload).select().single();
+    const { error } = await supabase.from('jobs').insert(payload);
 
-    if (error) {
-        alert('Erro: ' + error.message);
-    } else {
-        // --- CRIAÇÃO AUTOMÁTICA DO CANDIDATO IDEAL ---
-        try {
-            const benchmarkEmail = `ideal_${newJob.id}@novva.benchmark`;
-
-            // Verifica se já existe (upsert safe)
-            let { data: idealCandidate } = await supabase.from('candidates').select('id').eq('email', benchmarkEmail).single();
-
-            if (!idealCandidate) {
-                const { data: createdCand } = await supabase.from('candidates').insert({
-                    name: 'PERFIL IDEAL (Benchmarking)',
-                    email: benchmarkEmail,
-                    phone: '00000000000',
-                    city: 'N/A',
-                    state: 'N/A'
-                }).select().single();
-                idealCandidate = createdCand;
-            }
-
-            if (idealCandidate) {
-                // Cria a aplicação com status especial
-                await supabase.from('applications').insert({
-                    jobId: newJob.id,
-                    candidateId: idealCandidate.id,
-                    tenantId: tenantId,
-                    status: 'BENCHMARK', // Status especial para filtrar se necessário
-                    form_data: { motivation: 'Gabarito oficial da vaga.' }
-                });
-            }
-        } catch (benchmarkError) {
-            console.error("Erro ao criar perfil ideal:", benchmarkError);
-            // Não bloqueia o sucesso da vaga se isso falhar
-        }
-        // ----------------------------------------------
-
-        setFormData({ title: '', description: '', requirements: '', type: 'CLT', location_type: 'Híbrido', company_department_id: '' });
-        setCopyFromId('');
-        onSuccess();
-        onClose();
+    if (error) alert('Erro: ' + error.message);
+    else {
+      setFormData({ title: '', description: '', requirements: '', type: 'CLT', location_type: 'HÃ­brido', company_department_id: '' });
+      setCopyFromId('');
+      onSuccess();
+      onClose();
     }
     setLoading(false);
   };
@@ -190,7 +154,7 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
       <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b flex justify-between items-center">
           <h2 className="text-xl font-bold">Nova Vaga</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">âœ•</button>
         </div>
         
         {limitError ? (
@@ -207,21 +171,21 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
         ) : (
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
             
-            {/* Seletor de Cópia - NOVIDADE */}
+            {/* Seletor de CÃ³pia - NOVIDADE */}
             <div className="bg-blue-50 p-3 rounded border border-blue-100 mb-4">
                 <label className="block text-xs font-bold text-blue-800 mb-1 flex items-center gap-1">
-                    <Copy size={12}/> Copiar critérios de avaliação de:
+                    <Copy size={12}/> Copiar critÃ©rios de avaliaÃ§Ã£o de:
                 </label>
                 <select 
                     className="w-full border p-2 rounded text-sm bg-white"
                     value={copyFromId}
                     onChange={e => setCopyFromId(e.target.value)}
                 >
-                    <option value="">-- Começar do Zero --</option>
+                    <option value="">-- ComeÃ§ar do Zero --</option>
                     
-                    {/* Opção Fixa de Exemplo */}
+                    {/* OpÃ§Ã£o Fixa de Exemplo */}
                     <option value="EXAMPLE_TEMPLATE" className="font-bold text-blue-600">
-                        ★ Vaga Exemplo (Modelo Padrão)
+                        â˜… Vaga Exemplo (Modelo PadrÃ£o)
                     </option>
 
                     {/* Vagas Existentes */}
@@ -236,7 +200,7 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Título da Vaga *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">TÃ­tulo da Vaga *</label>
                 <input required className="w-full border p-2 rounded outline-none focus:ring-2 focus:ring-blue-500" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
             </div>
 
@@ -246,18 +210,18 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
                 <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Modelo</label>
                 <select className="w-full border p-2 rounded bg-white" value={formData.location_type} onChange={e => setFormData({...formData, location_type: e.target.value})}>
-                    <option>Presencial</option><option>Híbrido</option><option>Remoto</option>
+                    <option>Presencial</option><option>HÃ­brido</option><option>Remoto</option>
                 </select>
                 </div>
                 <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Contrato</label>
                 <select className="w-full border p-2 rounded bg-white" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
-                    <option>CLT</option><option>PJ</option><option>Estágio</option>
+                    <option>CLT</option><option>PJ</option><option>EstÃ¡gio</option>
                 </select>
                 </div>
             </div>
 
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label><textarea className="w-full border p-2 rounded outline-none" rows="3" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">DescriÃ§Ã£o</label><textarea className="w-full border p-2 rounded outline-none" rows="3" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} /></div>
             <div><label className="block text-sm font-medium text-gray-700 mb-1">Requisitos</label><textarea className="w-full border p-2 rounded outline-none" rows="3" value={formData.requirements} onChange={e => setFormData({...formData, requirements: e.target.value})} /></div>
 
             <div className="flex justify-end gap-2 pt-4">
