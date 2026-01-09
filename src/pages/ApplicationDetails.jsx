@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import EvaluationForm from '../components/EvaluationForm';
-import { ArrowLeft, Mail, MapPin, BookOpen, FileText, Download, Linkedin, Github, Phone, Calendar } from 'lucide-react';
+import { ArrowLeft, Mail, MapPin, BookOpen, FileText, Download, Linkedin, Github, Phone, Calendar, Languages } from 'lucide-react';
 import { Box, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar } from '@mui/material';
 import { processEvaluation } from '../utils/evaluationLogic';
 import { formatPhone, formatUrl } from '../utils/formatters';
@@ -26,7 +26,7 @@ export default function ApplicationDetails() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getSession();
       const { data: application } = await supabase.from('applications').select('*, candidates(*)').eq('id', appId).single();
       const candidateObj = Array.isArray(application.candidates) ? application.candidates[0] : application.candidates;
       
@@ -78,12 +78,17 @@ export default function ApplicationDetails() {
   const renderInfo = (data) => {
     if (!data) return null;
     
-    // Suporte para estrutura plana (novo JSON) ou aninhada (antigo)
-    const course = data.course || data.education?.course;
+    // Mapeamento Inteligente (Suporte a V1 e V2 do formulário)
+    // V1 usava 'course', V2 usa 'course_name'
+    const course = data.course_name || data.course || data.education?.course;
     const institution = data.institution || data.education?.institution;
-    const year = data.completionYear || data.education?.date;
+    // V1 usava 'completionYear', V2 usa 'conclusion_date'
+    const year = data.conclusion_date || data.completionYear || data.education?.date;
+    const status = data.education_status || (data.hasGraduated === 'sim' ? 'Completo' : 'Cursando');
+    
     const birth = data.birthDate;
     const eng = data.englishLevel;
+    const spa = data.spanishLevel;
 
     return (
         <>
@@ -95,19 +100,23 @@ export default function ApplicationDetails() {
                 <Box sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 0.5 }}>
                     <Typography variant="caption" display="block" fontWeight="bold">{course || 'Curso não informado'}</Typography>
                     <Typography variant="caption" display="block" color="text.secondary">{institution || 'Instituição não informada'}</Typography>
-                    {year && <Typography variant="caption" display="block" color="text.secondary">Conclusão: {year}</Typography>}
+                    <Box display="flex" gap={2} mt={0.5}>
+                        {year && <Typography variant="caption" display="block" color="text.secondary">Conclusão: {year}</Typography>}
+                        {status && <Typography variant="caption" display="block" color="primary" fontWeight="bold" sx={{textTransform:'capitalize'}}>{status}</Typography>}
+                    </Box>
                 </Box>
             </Box>
 
-            {/* Bloco Extras (Inglês, Nasc) */}
-            {(birth || eng) && (
+            {/* Bloco Extras (Idiomas, Nasc) */}
+            {(birth || eng || spa) && (
                 <Box sx={{ mt: 2 }}>
                     <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}>
-                        <Calendar size={14}/> Detalhes
+                        <Languages size={14}/> Detalhes & Idiomas
                     </Typography>
                     <Box sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 0.5 }}>
-                        {birth && <Typography variant="caption" display="block">Nascimento: {birth}</Typography>}
-                        {eng && <Typography variant="caption" display="block">Inglês: {eng}</Typography>}
+                        {birth && <Typography variant="caption" display="block" sx={{mb:0.5}}>🎂 Nascimento: {new Date(birth).toLocaleDateString('pt-BR')}</Typography>}
+                        {eng && <Typography variant="caption" display="block">🇺🇸 Inglês: <strong>{eng}</strong></Typography>}
+                        {spa && <Typography variant="caption" display="block">🇪🇸 Espanhol: <strong>{spa}</strong></Typography>}
                     </Box>
                 </Box>
             )}
@@ -145,7 +154,7 @@ export default function ApplicationDetails() {
   const displayCity = candidate.city || formData.city;
   const displayState = candidate.state || formData.state;
   const linkedIn = candidate.linkedin_profile || formData.linkedinProfile || formData.linkedin_profile;
-  const gitHub = candidate.github_profile || formData.githubProfile;
+  const gitHub = candidate.github_profile || formData.githubProfile || formData.github_profile;
 
   return (
     <Box sx={{ bgcolor: '#f8f9fa', minHeight: '100vh', p: 2 }}>
