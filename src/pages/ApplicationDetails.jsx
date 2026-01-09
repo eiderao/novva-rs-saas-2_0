@@ -49,11 +49,18 @@ export default function ApplicationDetails() {
       if (allEvals) {
           const userIds = [...new Set(allEvals.map(e => e.evaluator_id))];
           let usersMap = {};
+          
           if (userIds.length > 0) {
-              const { data: users } = await supabase.from('users').select('id, name, email').in('id', userIds);
+              // CORREÇÃO: Busca na tabela correta (user_profiles)
+              const { data: users } = await supabase.from('user_profiles').select('id, name, email').in('id', userIds);
               users?.forEach(u => usersMap[u.id] = u.name || u.email);
           }
-          const evalsWithNames = allEvals.map(e => ({ ...e, evaluator_name: usersMap[e.evaluator_id] || 'Avaliador' }));
+
+          const evalsWithNames = allEvals.map(e => ({ 
+              ...e, 
+              evaluator_name: usersMap[e.evaluator_id] || 'Avaliador Desconhecido' 
+          }));
+          
           setAllEvaluations(evalsWithNames);
           setEvaluatorsCount(evalsWithNames.length);
           
@@ -84,7 +91,16 @@ export default function ApplicationDetails() {
     const institution = data.institution || data.education?.institution;
     // V1 usava 'completionYear', V2 usa 'conclusion_date'
     const year = data.conclusion_date || data.completionYear || data.education?.date;
-    const status = data.education_status || (data.hasGraduated === 'sim' ? 'Completo' : 'Cursando');
+    
+    // CORREÇÃO: Lógica de Status Robustecida
+    // 1. Tenta pegar do campo plano (V2)
+    // 2. Tenta pegar do campo aninhado (V1)
+    // 3. Tenta inferir pelo hasGraduated
+    // 4. Se não tiver nada, retorna null (não exibe nada, em vez de chutar 'Cursando')
+    let status = data.education_status || data.education?.status;
+    if (!status && data.hasGraduated) {
+        status = data.hasGraduated === 'sim' ? 'Completo' : 'Cursando';
+    }
     
     const birth = data.birthDate;
     const eng = data.englishLevel;
@@ -114,7 +130,7 @@ export default function ApplicationDetails() {
                         <Languages size={14}/> Detalhes & Idiomas
                     </Typography>
                     <Box sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 0.5 }}>
-                        {birth && <Typography variant="caption" display="block" sx={{mb:0.5}}>🎂 Nascimento: {new Date(birth).toLocaleDateString('pt-BR')}</Typography>}
+                        {birth && <Typography variant="caption" display="block" sx={{mb:0.5}}>🎂 Nascimento: {new Date(birth).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</Typography>}
                         {eng && <Typography variant="caption" display="block">🇺🇸 Inglês: <strong>{eng}</strong></Typography>}
                         {spa && <Typography variant="caption" display="block">🇪🇸 Espanhol: <strong>{spa}</strong></Typography>}
                     </Box>
