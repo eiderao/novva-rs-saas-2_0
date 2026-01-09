@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase/client';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Building, Users, CreditCard, Edit, Trash2, Plus, Save, X, ArrowLeft, Mail, Crown, Briefcase, Check, Search } from 'lucide-react';
+import { Shield, Building, Users, CreditCard, Edit, Trash2, Plus, Save, X, ArrowLeft, Mail, Crown, Briefcase, Check, Search, FileText } from 'lucide-react';
 
 export default function SuperAdminDashboard() {
   const navigate = useNavigate();
@@ -380,8 +380,8 @@ export default function SuperAdminDashboard() {
                                     {Number(plan.price).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
                                 </div>
                                 <div className="flex gap-1">
-                                    <button onClick={() => handleEditPlan(plan)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"><Edit size={18}/></button>
-                                    <button onClick={() => handleDeletePlan(plan.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"><Trash2 size={18}/></button>
+                                    <button onClick={() => handleEditPlan(plan)} className="p-2 text-slate-400 hover:text-blue-600"><Edit size={18}/></button>
+                                    <button onClick={() => handleDeletePlan(plan.id)} className="p-2 text-slate-400 hover:text-red-600"><Trash2 size={18}/></button>
                                 </div>
                             </div>
                         </div>
@@ -596,7 +596,7 @@ export default function SuperAdminDashboard() {
                                             <div className="col-span-2 md:col-span-1">
                                                 <label className="block text-xs font-bold text-gray-500 mb-1">Nível de Acesso</label>
                                                 <select className="w-full border p-2 rounded text-sm bg-white outline-none focus:border-blue-500" value={userForm.role} onChange={e => setUserForm({...userForm, role: e.target.value})}>
-                                                    <option value="avaliador">Avaliador</option>
+                                                    <option value="avaliador">Avaliador (Padrão)</option>
                                                     <option value="admin">Administrador</option>
                                                 </select>
                                             </div>
