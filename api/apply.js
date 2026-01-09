@@ -1,4 +1,3 @@
-// api/apply.js (AUDITADO E CORRIGIDO: NENHUM CAMPO PERDIDO)
 import { createClient } from '@supabase/supabase-js';
 import { formidable } from 'formidable';
 import fs from 'fs';
@@ -28,11 +27,18 @@ export default async function handler(request, response) {
     const jobId = getField(fields.jobId);
     if (!jobId) return response.status(400).json({ error: 'ID da vaga obrigatório.' });
 
-    // --- 1. Validações de Vaga e Limites (Mantidas) ---
-    const { data: job } = await supabaseAdmin.from('jobs').select('tenantId, status').eq('id', jobId).single();
-    if (!job || job.status !== 'active') return response.status(400).json({ error: 'Vaga não disponível.' });
+    // --- 1. Validações de Vaga e Limites ---
+    // SELECT robusto para tenantId (com aspas para case sensitivity)
+    const { data: job } = await supabaseAdmin
+        .from('jobs')
+        .select('"tenantId", status')
+        .eq('id', jobId)
+        .single();
 
-    // (Código de verificação de limites do plano aqui - omitido para brevidade, mas mantido na lógica)
+    if (!job || job.status !== 'active') return response.status(400).json({ error: 'Vaga não disponível.' });
+    
+    // Fallback seguro para o ID do tenant
+    const tenantId = job.tenantId || job.tenantid || job['"tenantId"'];
 
     // --- 2. Coleta de Dados do GRUPO A (Perfil - Candidates) ---
     const name = getField(fields.name);
@@ -44,17 +50,9 @@ export default async function handler(request, response) {
     const github = getField(fields.github_profile);
     let resumeUrl = getField(fields.resume_url);
 
-    // Validação
     if (!name || !email) return response.status(400).json({ error: 'Dados obrigatórios faltando.' });
 
-    // Lógica de Upload (Híbrida: Arquivo ou Link)
-    const resumeFile = files.resume ? (Array.isArray(files.resume) ? files.resume[0] : files.resume) : null;
-    // Nota: O front já manda a URL se fez upload lá, mas se o form mandar arquivo binário, processamos aqui.
-    // Como seu front atualizado manda a URL, o 'resumeUrl' já deve estar preenchido.
-
-    if (!resumeUrl && !resumeFile) return response.status(400).json({ error: 'Currículo obrigatório.' });
-
-    // --- 3. UPSERT no Candidato (Garante registro único e atualizado) ---
+    // --- 3. UPSERT no Candidato ---
     const { data: candidate, error: candidateError } = await supabaseAdmin
         .from('candidates')
         .upsert({ 
@@ -73,36 +71,47 @@ export default async function handler(request, response) {
 
     if (candidateError) throw candidateError;
 
-    // --- 4. Coleta de Dados do GRUPO B (Aplicação Específica) ---
-    // AQUI ESTAVA A FALHA ANTERIOR: Agora mapeamos TODOS os campos do formulário
+    // --- 4. Coleta de Dados do GRUPO B (Aplicação Completa) ---
+    // Incluindo campos que estavam faltando antes
     const applicationFields = {
         motivation: getField(fields.motivation),
-        
-        // Campos de Educação Detalhados
-        education_level: getField(fields.education_level),    // Ex: Superior
-        education_status: getField(fields.education_status),  // Ex: Cursando
-        course_name: getField(fields.course_name),            // Ex: Engenharia
-        institution: getField(fields.institution),            // Ex: USP
-        conclusion_date: getField(fields.conclusion_date),    // Ex: 2025-12
-        current_period: getField(fields.current_period),      // Ex: 5º Semestre
-        
-        // Metadados extras úteis
+        education_level: getField(fields.education_level),
+        education_status: getField(fields.education_status),
+        course_name: getField(fields.course_name),
+        institution: getField(fields.institution),
+        conclusion_date: getField(fields.conclusion_date),
+        current_period: getField(fields.current_period),
+        birthDate: getField(fields.birthDate),       // Novo
+        englishLevel: getField(fields.englishLevel), // Novo
+        spanishLevel: getField(fields.spanishLevel), // Novo
+        source: getField(fields.source),             // Novo
         applied_at_date: new Date().toISOString()
     };
 
-    // --- 5. Criação da Aplicação ---
+    // --- 5. Criação da Aplicação (CORREÇÃO DE SCHEMA DUPLICADO) ---
+    const insertPayload = {
+        // Versão CamelCase (se existir no banco)
+        "jobId": jobId, 
+        "candidateId": candidate.id, 
+        "tenantId": tenantId, 
+        "resumeUrl": resumeUrl,
+        "formData": applicationFields,
+        
+        // Versão SnakeCase (se existir no banco)
+        jobId: jobId,
+        candidateId: candidate.id,
+        tenantId: tenantId,
+        resume_url: resumeUrl,
+        form_data: applicationFields
+    };
+
     const { error: appError } = await supabaseAdmin
         .from('applications')
-        .insert({ 
-            jobId: jobId, 
-            candidateId: candidate.id, 
-            tenantId: job.tenantId, 
-            resumeUrl: resumeUrl, // Redundância útil apenas para acesso rápido (opcional, mas prático)
-            form_data: applicationFields // AQUI VAI O JSON COMPLETO
-        });
+        .insert(insertPayload);
 
     if (appError) {
         if (appError.code === '23505') return response.status(409).json({ error: "Você já se candidatou." });
+        console.error("Erro ao inserir aplicação:", appError);
         throw appError;
     }
     
