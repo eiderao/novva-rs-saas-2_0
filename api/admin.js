@@ -1,4 +1,4 @@
-// api/admin.js (VERSÃO COMPLETA E FINAL - AUDITADA)
+// api/admin.js (VERSÃO FINAL E COMPLETA - NADA SUPRIMIDO)
 import { createClient } from '@supabase/supabase-js';
 
 // Função auxiliar de segurança e validação
@@ -46,6 +46,7 @@ export default async function handler(request, response) {
     const isSuperAdmin = requesterProfile.is_admin_system === true;
 
     switch (action) {
+      
       // ======================================================================
       // 1. GESTÃO DE EMPRESAS (TENANTS)
       // ======================================================================
@@ -183,14 +184,17 @@ export default async function handler(request, response) {
         const { tenantId } = request.query;
         if (!tenantId) return response.status(400).json({ error: 'ID obrigatório.' });
         
-        if (!isSuperAdmin && requesterProfile.tenantId !== tenantId) {
+        // CORREÇÃO: Permite se for Super Admin OU se o usuário pertence ao tenant
+        const userBelongsToTenant = await supabaseAdmin.from('user_tenants').select('role').eq('user_id', requesterProfile.id).eq('tenant_id', tenantId).maybeSingle();
+        
+        if (!isSuperAdmin && !userBelongsToTenant.data) {
             return response.status(403).json({ error: 'Não autorizado.' });
         }
 
-        const { data: tenant } = await supabaseAdmin.from('tenants').select('id, companyName, planId').eq('id', tenantId).single();
+        const { data: tenant } = await supabaseAdmin.from('tenants').select('id, companyName, planId, cnpj').eq('id', tenantId).single();
         
         // Busca via relacionamento user_tenants -> user_profiles
-        // Isso resolve o problema de relacionamento que causava o erro no painel
+        // Trazendo o role correto de cada usuário neste tenant
         const { data: tenantUsers, error: usersError } = await supabaseAdmin
             .from('user_tenants')
             .select(`
@@ -208,7 +212,7 @@ export default async function handler(request, response) {
             email: tu.user?.email,
             is_admin_system: tu.user?.is_admin_system,
             role: tu.role 
-        })).filter(u => u.id); // Remove nulos caso haja inconsistência
+        })).filter(u => u.id); // Remove nulos
         
         return response.status(200).json({ tenant, users });
       }
@@ -216,14 +220,21 @@ export default async function handler(request, response) {
       case 'createUser': {
         const { email, password, name, role, isAdmin, tenantId } = request.body;
         
-        if (!isSuperAdmin && requesterProfile.tenantId !== tenantId) {
-            return response.status(403).json({ error: 'Não autorizado para esta empresa.' });
+        // Verifica permissão: Super Admin ou Admin do próprio Tenant
+        const targetTenant = tenantId || requesterProfile.tenantId;
+        
+        if (!isSuperAdmin) {
+             // Se não é super admin, verifica se é admin do tenant alvo
+             const userLink = await supabaseAdmin.from('user_tenants').select('role').eq('user_id', requesterProfile.id).eq('tenant_id', targetTenant).single();
+             if (!userLink.data || (userLink.data.role !== 'admin' && userLink.data.role !== 'Administrador')) {
+                 return response.status(403).json({ error: 'Não autorizado para esta empresa.' });
+             }
         }
 
-        const finalRole = role || (isAdmin ? 'Administrador' : 'Recrutador');
+        // Padronização de Role
+        const finalRole = role || (isAdmin ? 'Administrador' : 'Avaliador');
         
         // 1. Verifica se usuário já existe no AUTH (Via RPC segura 'get_user_id_by_email')
-        // Isso previne o erro "Email already registered" e atende o requisito de multi-tenant
         const { data: existingUserIDs } = await supabaseAdmin.rpc('get_user_id_by_email', { email });
         
         if (existingUserIDs && existingUserIDs.length > 0) {
@@ -232,13 +243,13 @@ export default async function handler(request, response) {
             
             // Verifica se já está nesta empresa para não duplicar
             const { data: existingLink } = await supabaseAdmin.from('user_tenants')
-                .select('id').eq('user_id', userId).eq('tenant_id', tenantId).maybeSingle();
+                .select('id').eq('user_id', userId).eq('tenant_id', targetTenant).maybeSingle();
             
             if (existingLink) return response.status(409).json({ error: 'Usuário já está nesta equipe.' });
 
             // Cria o vínculo novo na tabela user_tenants
             const { error: linkErr } = await supabaseAdmin.from('user_tenants').insert({
-                user_id: userId, tenant_id: tenantId, role: finalRole
+                user_id: userId, tenant_id: targetTenant, role: finalRole
             });
             if (linkErr) throw linkErr;
 
@@ -252,7 +263,7 @@ export default async function handler(request, response) {
                 email, password, email_confirm: true, 
                 user_metadata: { 
                     name, 
-                    tenant_id: tenantId, // Trigger vincula a este tenant
+                    tenant_id: targetTenant, // Trigger vincula a este tenant
                     role: finalRole      // Trigger usa este cargo
                 } 
             });
@@ -265,6 +276,8 @@ export default async function handler(request, response) {
 
       case 'updateUserAuth': {
          // Atualização de credenciais pelo Super Admin
+         if (!isSuperAdmin) return response.status(403).json({ error: 'Apenas Super Admin.' });
+         
          const { userId, email, password, name } = request.body;
          const updateData = { email_confirm: true };
          if (email) updateData.email = email;
@@ -288,12 +301,26 @@ export default async function handler(request, response) {
         // Atualiza cargo/função DENTRO DO CONTEXTO da empresa atual
         const { userId, name, role, isAdmin, tenantId } = request.body;
         const targetTenant = tenantId || requesterProfile.tenantId;
+        
+        // Verificação de permissão (igual ao createUser)
+        if (!isSuperAdmin) {
+             const userLink = await supabaseAdmin.from('user_tenants').select('role').eq('user_id', requesterProfile.id).eq('tenant_id', targetTenant).single();
+             if (!userLink.data || (userLink.data.role !== 'admin' && userLink.data.role !== 'Administrador')) {
+                 return response.status(403).json({ error: 'Não autorizado.' });
+             }
+        }
 
         // Atualiza Perfil Global (Nome)
         if (name) await supabaseAdmin.from('user_profiles').update({ name }).eq('id', userId);
 
         // Atualiza Vínculo Específico (Role na empresa)
-        const finalRole = role || (isAdmin ? 'Administrador' : 'Membro');
+        let finalRole = role;
+        if (!finalRole) finalRole = isAdmin ? 'Administrador' : 'Avaliador';
+        
+        // CORREÇÃO: Garante mapeamento correto para tabela
+        if (finalRole === 'admin') finalRole = 'Administrador';
+        if (finalRole === 'avaliador' || finalRole === 'recruiter') finalRole = 'Avaliador';
+
         const { error } = await supabaseAdmin.from('user_tenants').update({ role: finalRole })
             .eq('user_id', userId).eq('tenant_id', targetTenant);
         
@@ -306,16 +333,16 @@ export default async function handler(request, response) {
         const targetTenant = tenantId || requesterProfile.tenantId;
 
         if (!isSuperAdmin) {
-            // Verifica se quem pede tem acesso ao tenant do alvo
-             if (requesterProfile.tenantId !== targetTenant) return response.status(403).json({ error: 'Não autorizado.' });
+             // Verifica se quem pede é admin do tenant
+             const userLink = await supabaseAdmin.from('user_tenants').select('role').eq('user_id', requesterProfile.id).eq('tenant_id', targetTenant).single();
+             if (!userLink.data || (userLink.data.role !== 'admin' && userLink.data.role !== 'Administrador')) {
+                 return response.status(403).json({ error: 'Não autorizado.' });
+             }
         }
 
         // Remove APENAS o vínculo com este tenant (revoga acesso à empresa)
         const { error } = await supabaseAdmin.from('user_tenants').delete().eq('user_id', userId).eq('tenant_id', targetTenant);
         if (error) throw error;
-
-        // Se quiser deletar o usuário globalmente (do Auth), seria necessária uma ação específica
-        // ou verificar se não restam mais vínculos em 'user_tenants'.
         
         return response.status(200).json({ message: 'Acesso revogado.' });
       }

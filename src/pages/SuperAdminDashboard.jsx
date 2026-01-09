@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase/client';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Building, Users, CreditCard, Edit, Trash2, Plus, Save, X, ArrowLeft, Mail, Crown, Briefcase } from 'lucide-react';
+import { Shield, Building, Users, CreditCard, Edit, Trash2, Plus, Save, X, ArrowLeft, Mail, Crown, Briefcase, Check, Search } from 'lucide-react';
 
 export default function SuperAdminDashboard() {
   const navigate = useNavigate();
@@ -12,7 +12,7 @@ export default function SuperAdminDashboard() {
   const [tenants, setTenants] = useState([]);
   const [plans, setPlans] = useState([]);
 
-  // Estados de Edição de Plano
+  // --- ESTADOS DE GESTÃO DE PLANOS ---
   const [isEditingPlan, setIsEditingPlan] = useState(false);
   const initialPlanState = { 
       id: '', name: '', price: 0, 
@@ -21,7 +21,7 @@ export default function SuperAdminDashboard() {
   };
   const [planForm, setPlanForm] = useState(initialPlanState);
 
-  // --- ESTADOS DE EDIÇÃO DE EMPRESA (TENANT) ---
+  // --- ESTADOS DE GESTÃO DE EMPRESA (TENANT) ---
   const [isEditingTenant, setIsEditingTenant] = useState(false);
   const [tenantModalTab, setTenantModalTab] = useState('info'); // 'info' ou 'team'
   const [tenantForm, setTenantForm] = useState({ id: '', companyName: '', planId: '', cnpj: '' });
@@ -30,9 +30,10 @@ export default function SuperAdminDashboard() {
   const [tenantUsers, setTenantUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   
-  // Novo Usuário para o Tenant
-  const [newTenantUser, setNewTenantUser] = useState({ name: '', email: '', password: '', role: 'admin' });
-  const [isAddingUser, setIsAddingUser] = useState(false);
+  // Estado para Adicionar/Editar Usuário no Tenant
+  const [userForm, setUserForm] = useState({ id: null, name: '', email: '', password: '', role: 'avaliador' });
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [isEditingUser, setIsEditingUser] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -63,13 +64,23 @@ export default function SuperAdminDashboard() {
     }
   };
 
-  // --- GESTÃO DE PLANOS (MANTIDO IGUAL) ---
-  const handleNewPlan = () => { setPlanForm(initialPlanState); setIsEditingPlan(true); };
-  const handleEditPlan = (plan) => { setPlanForm({ ...plan }); setIsEditingPlan(true); };
+  // --- LÓGICA DE PLANOS (COMPLETA) ---
+
+  const handleNewPlan = () => {
+    setPlanForm(initialPlanState);
+    setIsEditingPlan(true);
+  };
+
+  const handleEditPlan = (plan) => {
+    setPlanForm({ ...plan });
+    setIsEditingPlan(true);
+  };
 
   const handleSavePlan = async (e) => {
     e.preventDefault();
     const { data: { session } } = await supabase.auth.getSession();
+    
+    // Verifica se é atualização ou criação
     const isUpdating = plans.some(p => p.id === planForm.id);
     const action = isUpdating ? 'updatePlan' : 'createPlan';
 
@@ -86,6 +97,7 @@ export default function SuperAdminDashboard() {
                 plan_billing_period: planForm.plan_billing_period
             }
         };
+
         if (isUpdating) payload.planId = planForm.id;
 
         const res = await fetch('/api/admin', {
@@ -94,35 +106,48 @@ export default function SuperAdminDashboard() {
             body: JSON.stringify(payload)
         });
 
-        if (!res.ok) throw new Error('Erro ao salvar.');
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Erro ao salvar.');
+        }
+
         alert(`Plano ${isUpdating ? 'atualizado' : 'criado'} com sucesso!`);
         setIsEditingPlan(false);
-        fetchData();
-    } catch (err) { alert("Erro: " + err.message); }
+        fetchData(); // Recarrega a lista
+    } catch (err) {
+        alert("Erro: " + err.message);
+    }
   };
 
   const handleDeletePlan = async (planId) => {
-    if (!confirm("Tem certeza?")) return;
+    if (!confirm("Tem certeza que deseja excluir este plano?")) return;
     const { data: { session } } = await supabase.auth.getSession();
+
     try {
         const res = await fetch('/api/admin', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
             body: JSON.stringify({ action: 'deletePlan', planId })
         });
-        if (!res.ok) { const err = await res.json(); throw new Error(err.error); }
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error);
+        }
+        
         alert("Plano excluído.");
         fetchData();
-    } catch (err) { alert("Erro: " + err.message); }
+    } catch (err) {
+        alert("Erro: " + err.message);
+    }
   };
 
-  // --- GESTÃO DE TENANTS E EQUIPE ---
+  // --- LÓGICA DE TENANTS E EQUIPE ---
   
   const fetchTenantDetails = async (tenantId) => {
       setLoadingUsers(true);
       const { data: { session } } = await supabase.auth.getSession();
       try {
-          // Usa a API existente que traz detalhes + usuários
           const res = await fetch(`/api/admin?action=getTenantDetails&tenantId=${tenantId}`, {
               method: 'GET',
               headers: { Authorization: `Bearer ${session.access_token}` }
@@ -143,13 +168,13 @@ export default function SuperAdminDashboard() {
           planId: tenant.planId,
           cnpj: tenant.cnpj || ''
       });
-      // Reseta estados da modal
+      // Reseta estados do modal
       setTenantModalTab('info');
       setTenantUsers([]); 
-      setIsAddingUser(false);
-      
-      // Abre modal e busca usuários
+      setIsUserModalOpen(false);
       setIsEditingTenant(true);
+      
+      // Busca dados atualizados da equipe
       fetchTenantDetails(tenant.id);
   };
 
@@ -168,36 +193,73 @@ export default function SuperAdminDashboard() {
                   cnpj: tenantForm.cnpj
               })
           });
+
           if (!res.ok) throw new Error('Falha ao atualizar.');
+          
           alert("Empresa atualizada!");
-          fetchData(); // Atualiza lista de fundo
-      } catch (err) { alert("Erro: " + err.message); }
+          fetchData(); // Atualiza lista principal
+      } catch (err) {
+          alert("Erro: " + err.message);
+      }
   };
 
-  const handleAddUserToTenant = async (e) => {
+  // --- CRUD DE USUÁRIOS DO TENANT ---
+
+  const openNewUserModal = () => {
+      setUserForm({ id: null, name: '', email: '', password: '', role: 'avaliador' });
+      setIsEditingUser(false);
+      setIsUserModalOpen(true);
+  };
+
+  const openEditUserModal = (user) => {
+      // Converte o role do banco para o estado do form ('admin' ou 'avaliador')
+      // Se for 'admin' ou 'Administrador', vira 'admin'. Se for 'recruiter', 'member' ou 'Avaliador', vira 'avaliador'.
+      const role = (user.role === 'admin' || user.role === 'Administrador') ? 'admin' : 'avaliador';
+      
+      setUserForm({ 
+          id: user.id, 
+          name: user.name, 
+          email: user.email, 
+          password: '', 
+          role: role 
+      });
+      setIsEditingUser(true);
+      setIsUserModalOpen(true);
+  };
+
+  const handleSaveUser = async (e) => {
       e.preventDefault();
       const { data: { session } } = await supabase.auth.getSession();
+      
+      // Define o label correto para salvar no banco
+      const roleLabel = userForm.role === 'admin' ? 'Administrador' : 'Avaliador';
+      
       try {
+          const action = isEditingUser ? 'updateUser' : 'createUser';
+          const payload = {
+              action,
+              tenantId: tenantForm.id, // ID da empresa sendo editada
+              userId: userForm.id, // Apenas para update
+              name: userForm.name,
+              email: userForm.email,
+              role: roleLabel,
+              isAdmin: userForm.role === 'admin'
+          };
+
+          // Senha só é enviada na criação ou se houver alteração (lógica de updateAuth pode ser necessária para senha, aqui focamos no role/nome)
+          if (!isEditingUser) payload.password = userForm.password;
+
           const res = await fetch('/api/admin', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-              body: JSON.stringify({ 
-                  action: 'createUser',
-                  tenantId: tenantForm.id, // ID da empresa sendo editada
-                  name: newTenantUser.name,
-                  email: newTenantUser.email,
-                  password: newTenantUser.password,
-                  role: newTenantUser.role === 'admin' ? 'Administrador' : 'Recrutador',
-                  isAdmin: newTenantUser.role === 'admin' // Flag auxiliar
-              })
+              body: JSON.stringify(payload)
           });
           
           const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Erro ao criar usuário.');
+          if (!res.ok) throw new Error(data.error || 'Erro ao processar usuário.');
 
-          alert("Usuário adicionado à empresa!");
-          setIsAddingUser(false);
-          setNewTenantUser({ name: '', email: '', password: '', role: 'admin' });
+          alert(isEditingUser ? "Usuário atualizado!" : "Usuário adicionado à empresa!");
+          setIsUserModalOpen(false);
           fetchTenantDetails(tenantForm.id); // Recarrega lista
       } catch (err) {
           alert("Erro: " + err.message);
@@ -205,7 +267,7 @@ export default function SuperAdminDashboard() {
   };
 
   const handleRemoveUserFromTenant = async (userId) => {
-      if(!confirm("Remover este usuário desta empresa?")) return;
+      if(!confirm("Tem certeza que deseja remover este usuário desta empresa?")) return;
       const { data: { session } } = await supabase.auth.getSession();
       try {
           const res = await fetch('/api/admin', {
@@ -218,6 +280,8 @@ export default function SuperAdminDashboard() {
               })
           });
           if (!res.ok) throw new Error('Erro ao remover.');
+          
+          alert("Acesso revogado.");
           fetchTenantDetails(tenantForm.id);
       } catch (err) {
           alert("Erro: " + err.message);
@@ -288,7 +352,7 @@ export default function SuperAdminDashboard() {
             </div>
         )}
 
-        {/* TAB 2: PLANOS (CONTEÚDO MANTIDO SIMPLIFICADO PARA FOCO NO PROBLEMA) */}
+        {/* TAB 2: PLANOS (CONTEÚDO COMPLETO) */}
         {activeTab === 'plans' && (
              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
                 <div className="lg:col-span-2 space-y-4">
@@ -299,34 +363,100 @@ export default function SuperAdminDashboard() {
                     {plans.map(plan => (
                         <div key={plan.id} className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex justify-between items-center group hover:border-blue-300 transition">
                             <div>
-                                <h3 className="font-bold text-lg text-slate-900">{plan.name}</h3>
-                                <div className="text-sm text-slate-500 mt-1">ID: {plan.id} | {Number(plan.price).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</div>
+                                <div className="flex items-center gap-3">
+                                    <h3 className="font-bold text-lg text-slate-900">{plan.name}</h3>
+                                    <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase border ${plan.plan_billing_period === 'yearly' ? 'bg-purple-50 text-purple-700 border-purple-100' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                        {plan.plan_billing_period === 'yearly' ? 'Anual' : 'Mensal'}
+                                    </span>
+                                </div>
+                                <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-500">
+                                    <span className="flex items-center gap-1.5"><Users size={14}/> <strong>{plan.user_limit === -1 ? '∞' : plan.user_limit}</strong> Users</span>
+                                    <span className="flex items-center gap-1.5"><Building size={14}/> <strong>{plan.job_limit === -1 ? '∞' : plan.job_limit}</strong> Vagas</span>
+                                    <span className="flex items-center gap-1.5"><FileText size={14}/> <strong>{plan.candidate_limit === -1 ? '∞' : plan.candidate_limit}</strong> Cands.</span>
+                                </div>
                             </div>
-                            <div className="flex gap-2">
-                                <button onClick={() => handleEditPlan(plan)} className="p-2 text-slate-400 hover:text-blue-600"><Edit size={18}/></button>
-                                <button onClick={() => handleDeletePlan(plan.id)} className="p-2 text-slate-400 hover:text-red-600"><Trash2 size={18}/></button>
+                            <div className="text-right flex items-center gap-4">
+                                <div className="text-xl font-bold text-green-700 bg-green-50 px-3 py-1 rounded-lg border border-green-100">
+                                    {Number(plan.price).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
+                                </div>
+                                <div className="flex gap-1">
+                                    <button onClick={() => handleEditPlan(plan)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"><Edit size={18}/></button>
+                                    <button onClick={() => handleDeletePlan(plan.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"><Trash2 size={18}/></button>
+                                </div>
                             </div>
                         </div>
                     ))}
                 </div>
-                 {/* Formulário de Plano (Simplificado visualmente, lógica mantida no topo) */}
-                 {isEditingPlan && (
-                    <div className="bg-white p-6 rounded-xl shadow-xl border border-blue-100">
-                        <div className="flex justify-between mb-4"><h3 className="font-bold">Editor de Plano</h3><button onClick={()=>setIsEditingPlan(false)}><X size={20}/></button></div>
-                        <form onSubmit={handleSavePlan} className="space-y-4">
-                            <div><label className="text-xs font-bold">ID</label><input className="w-full border p-2 rounded" value={planForm.id} onChange={e=>setPlanForm({...planForm, id: e.target.value})} disabled={plans.some(p=>p.id===planForm.id)} /></div>
-                            <div><label className="text-xs font-bold">Nome</label><input className="w-full border p-2 rounded" value={planForm.name} onChange={e=>setPlanForm({...planForm, name: e.target.value})} /></div>
-                            <button className="w-full bg-blue-600 text-white py-2 rounded font-bold">Salvar</button>
-                        </form>
+
+                {/* SIDEBAR DE EDIÇÃO DE PLANO */}
+                {isEditingPlan && (
+                    <div className="lg:col-span-1 animate-in fade-in slide-in-from-right-4 duration-300">
+                        <div className="bg-white p-6 rounded-xl shadow-xl border border-blue-100 sticky top-8 ring-4 ring-blue-50">
+                            <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
+                                <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+                                    {plans.some(p => p.id === planForm.id) ? 'Editar Plano' : 'Novo Plano'}
+                                </h3>
+                                <button onClick={() => setIsEditingPlan(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                            </div>
+
+                            <form onSubmit={handleSavePlan} className="space-y-5">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">ID (Slug Único)</label>
+                                    <input 
+                                        className="w-full border p-2.5 rounded-lg bg-slate-50 font-mono text-sm disabled:opacity-60" 
+                                        value={planForm.id} 
+                                        onChange={e => setPlanForm({...planForm, id: e.target.value})}
+                                        disabled={plans.some(p => p.id === planForm.id)} // Trava ID na edição
+                                        placeholder="ex: pro-mensal"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Nome do Plano</label>
+                                    <input className="w-full border p-2.5 rounded-lg text-sm" value={planForm.name} onChange={e => setPlanForm({...planForm, name: e.target.value})} required />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Preço (R$)</label>
+                                        <input type="number" step="0.01" className="w-full border p-2.5 rounded-lg text-sm" value={planForm.price} onChange={e => setPlanForm({...planForm, price: e.target.value})} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Ciclo</label>
+                                        <select className="w-full border p-2.5 rounded-lg text-sm bg-white" value={planForm.plan_billing_period} onChange={e => setPlanForm({...planForm, plan_billing_period: e.target.value})}>
+                                            <option value="monthly">Mensal</option>
+                                            <option value="yearly">Anual</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="space-y-3 pt-2 border-t border-dashed border-slate-200">
+                                    <div className="flex items-center gap-4">
+                                        <label className="w-20 text-xs font-bold text-slate-500">Usuários</label>
+                                        <input type="number" className="flex-1 border p-2 rounded text-sm" value={planForm.user_limit} onChange={e => setPlanForm({...planForm, user_limit: e.target.value})} />
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <label className="w-20 text-xs font-bold text-slate-500">Vagas</label>
+                                        <input type="number" className="flex-1 border p-2 rounded text-sm" value={planForm.job_limit} onChange={e => setPlanForm({...planForm, job_limit: e.target.value})} />
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <label className="w-20 text-xs font-bold text-slate-500">Candidatos</label>
+                                        <input type="number" className="flex-1 border p-2 rounded text-sm" value={planForm.candidate_limit} onChange={e => setPlanForm({...planForm, candidate_limit: e.target.value})} />
+                                    </div>
+                                    <p className="text-[10px] text-center text-slate-400">-1 para Ilimitado</p>
+                                </div>
+                                <button type="submit" className="w-full py-2.5 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-lg flex justify-center items-center gap-2">
+                                    <Save size={18}/> Salvar Plano
+                                </button>
+                            </form>
+                        </div>
                     </div>
-                 )}
+                )}
              </div>
         )}
 
         {/* --- MODAL DE GERENCIAMENTO DE EMPRESA (TENANT) --- */}
         {isEditingTenant && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
                     
                     {/* Header do Modal */}
                     <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
@@ -353,7 +483,7 @@ export default function SuperAdminDashboard() {
                         </button>
                     </div>
 
-                    <div className="p-6 overflow-y-auto">
+                    <div className="p-6 overflow-y-auto bg-slate-50/50">
                         
                         {/* ABA: DADOS DA EMPRESA */}
                         {tenantModalTab === 'info' && (
@@ -380,42 +510,28 @@ export default function SuperAdminDashboard() {
                             </form>
                         )}
 
-                        {/* ABA: EQUIPE (NOVIDADE) */}
+                        {/* ABA: EQUIPE (IMPLEMENTADA AGORA) */}
                         {tenantModalTab === 'team' && (
-                            <div className="space-y-6">
-                                {/* Formulário de Adição */}
-                                {!isAddingUser ? (
-                                    <button onClick={() => setIsAddingUser(true)} className="w-full py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 font-bold hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition flex items-center justify-center gap-2">
-                                        <Plus size={20}/> Adicionar Administrador/Membro
-                                    </button>
-                                ) : (
-                                    <form onSubmit={handleAddUserToTenant} className="bg-blue-50 p-4 rounded-lg border border-blue-100 animate-in fade-in">
-                                        <h4 className="font-bold text-blue-900 mb-3 text-sm">Novo Usuário para {tenantForm.companyName}</h4>
-                                        <div className="grid grid-cols-2 gap-3 mb-3">
-                                            <input required placeholder="Nome" className="border p-2 rounded text-sm" value={newTenantUser.name} onChange={e => setNewTenantUser({...newTenantUser, name: e.target.value})} />
-                                            <input required type="email" placeholder="Email" className="border p-2 rounded text-sm" value={newTenantUser.email} onChange={e => setNewTenantUser({...newTenantUser, email: e.target.value})} />
-                                            <input required type="password" placeholder="Senha Provisória" className="border p-2 rounded text-sm" value={newTenantUser.password} onChange={e => setNewTenantUser({...newTenantUser, password: e.target.value})} />
-                                            <select className="border p-2 rounded text-sm bg-white" value={newTenantUser.role} onChange={e => setNewTenantUser({...newTenantUser, role: e.target.value})}>
-                                                <option value="admin">Administrador</option>
-                                                <option value="recruiter">Recrutador</option>
-                                            </select>
-                                        </div>
-                                        <div className="flex justify-end gap-2">
-                                            <button type="button" onClick={() => setIsAddingUser(false)} className="text-gray-500 text-sm hover:underline">Cancelar</button>
-                                            <button type="submit" className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-bold shadow-sm">Adicionar</button>
-                                        </div>
-                                    </form>
+                            <div className="space-y-4">
+                                {/* Botão de Adicionar (Se não estiver editando) */}
+                                {!isUserModalOpen && (
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h4 className="font-bold text-gray-700">Membros ({tenantUsers.length})</h4>
+                                        <button onClick={openNewUserModal} className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded flex items-center gap-1 hover:bg-blue-700 font-bold shadow-sm">
+                                            <Plus size={14}/> Adicionar Usuário
+                                        </button>
+                                    </div>
                                 )}
 
                                 {/* Lista de Usuários */}
                                 {loadingUsers ? <div className="text-center py-4 text-gray-500">Carregando equipe...</div> : (
-                                    <div className="border rounded-lg overflow-hidden">
+                                    <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
                                         <table className="w-full text-sm text-left">
-                                            <thead className="bg-gray-50 text-gray-500">
+                                            <thead className="bg-gray-100 text-gray-500">
                                                 <tr>
                                                     <th className="p-3">Usuário</th>
-                                                    <th className="p-3">Função</th>
-                                                    <th className="p-3 text-right">Ação</th>
+                                                    <th className="p-3">Nível de Acesso</th>
+                                                    <th className="p-3 text-right">Ações</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100">
@@ -425,16 +541,24 @@ export default function SuperAdminDashboard() {
                                                     tenantUsers.map(u => (
                                                         <tr key={u.id} className="hover:bg-gray-50">
                                                             <td className="p-3">
-                                                                <div className="font-medium text-gray-900">{u.name}</div>
+                                                                <div className="font-medium text-gray-900">{u.name || 'Sem nome'}</div>
                                                                 <div className="text-xs text-gray-500">{u.email}</div>
                                                             </td>
                                                             <td className="p-3">
-                                                                <span className={`px-2 py-0.5 rounded text-xs border ${u.role === 'admin' || u.role === 'Administrador' ? 'bg-purple-50 text-purple-700 border-purple-100' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                                                                    {u.role}
+                                                                {/* EXIBIÇÃO CORRIGIDA DE ROLE */}
+                                                                <span className={`px-2 py-0.5 rounded text-xs font-bold border ${
+                                                                    u.role === 'Administrador' || u.role === 'admin' 
+                                                                    ? 'bg-purple-50 text-purple-700 border-purple-200' 
+                                                                    : 'bg-green-50 text-green-700 border-green-200'
+                                                                }`}>
+                                                                    {u.role === 'admin' ? 'Administrador' : u.role}
                                                                 </span>
                                                             </td>
-                                                            <td className="p-3 text-right">
-                                                                <button onClick={() => handleRemoveUserFromTenant(u.id)} className="text-gray-400 hover:text-red-600 p-1">
+                                                            <td className="p-3 text-right flex justify-end gap-2">
+                                                                <button onClick={() => openEditUserModal(u)} className="text-gray-400 hover:text-blue-600 p-1.5 rounded transition" title="Editar Usuário">
+                                                                    <Edit size={16}/>
+                                                                </button>
+                                                                <button onClick={() => handleRemoveUserFromTenant(u.id)} className="text-gray-400 hover:text-red-600 p-1.5 rounded transition" title="Remover Acesso">
                                                                     <Trash2 size={16}/>
                                                                 </button>
                                                             </td>
@@ -443,6 +567,44 @@ export default function SuperAdminDashboard() {
                                                 )}
                                             </tbody>
                                         </table>
+                                    </div>
+                                )}
+                                
+                                {/* FORMULÁRIO DE USUÁRIO (NOVO/EDITAR) */}
+                                {isUserModalOpen && (
+                                    <div className="bg-white p-5 rounded-lg border border-blue-200 shadow-md mt-4 animate-in slide-in-from-top-2 relative">
+                                        <button onClick={() => setIsUserModalOpen(false)} className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"><X size={18}/></button>
+                                        <h4 className="font-bold text-blue-900 mb-4 text-sm flex items-center gap-2">
+                                            {isEditingUser ? <Edit size={16}/> : <Plus size={16}/>} 
+                                            {isEditingUser ? 'Editar Membro' : 'Novo Membro'}
+                                        </h4>
+                                        <form onSubmit={handleSaveUser} className="grid grid-cols-2 gap-4">
+                                            <div className="col-span-2 md:col-span-1">
+                                                <label className="block text-xs font-bold text-gray-500 mb-1">Nome Completo</label>
+                                                <input required className="w-full border p-2 rounded text-sm outline-none focus:border-blue-500" value={userForm.name} onChange={e => setUserForm({...userForm, name: e.target.value})} />
+                                            </div>
+                                            <div className="col-span-2 md:col-span-1">
+                                                <label className="block text-xs font-bold text-gray-500 mb-1">E-mail Corporativo</label>
+                                                <input required type="email" disabled={isEditingUser} className="w-full border p-2 rounded text-sm outline-none focus:border-blue-500 disabled:bg-gray-100" value={userForm.email} onChange={e => setUserForm({...userForm, email: e.target.value})} />
+                                            </div>
+                                            {!isEditingUser && (
+                                                <div className="col-span-2 md:col-span-1">
+                                                    <label className="block text-xs font-bold text-gray-500 mb-1">Senha Inicial</label>
+                                                    <input required type="password" className="w-full border p-2 rounded text-sm outline-none focus:border-blue-500" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
+                                                </div>
+                                            )}
+                                            <div className="col-span-2 md:col-span-1">
+                                                <label className="block text-xs font-bold text-gray-500 mb-1">Nível de Acesso</label>
+                                                <select className="w-full border p-2 rounded text-sm bg-white outline-none focus:border-blue-500" value={userForm.role} onChange={e => setUserForm({...userForm, role: e.target.value})}>
+                                                    <option value="avaliador">Avaliador</option>
+                                                    <option value="admin">Administrador</option>
+                                                </select>
+                                            </div>
+                                            <div className="col-span-2 flex justify-end gap-2 mt-2 pt-2 border-t border-dashed border-gray-200">
+                                                <button type="button" onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded font-medium">Cancelar</button>
+                                                <button type="submit" className="px-6 py-2 bg-blue-600 text-white text-sm font-bold rounded hover:bg-blue-700 shadow-sm">Salvar Usuário</button>
+                                            </div>
+                                        </form>
                                     </div>
                                 )}
                             </div>

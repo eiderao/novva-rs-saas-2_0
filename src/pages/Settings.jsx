@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-import { Building, Users, ArrowLeft, Shield, Plus, Trash2, Mail, Lock, AlertCircle, Briefcase, Crown, User, Save, Key } from 'lucide-react';
+import { Building, Users, ArrowLeft, Shield, Plus, Trash2, Mail, Lock, AlertCircle, Briefcase, Crown, User, Save, Key, Edit } from 'lucide-react';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -11,16 +11,17 @@ export default function Settings() {
   const [team, setTeam] = useState([]);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
   
-  // Controle de Permissão do Usuário Logado
+  // Controle de Permissão (Se sou Admin DO TENANT ATUAL)
   const [amIAdmin, setAmIAdmin] = useState(false);
 
   // Estados para Edição do Próprio Perfil
   const [myProfileForm, setMyProfileForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
-  // Estados para Novo Usuário da Equipe
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: '', isAdmin: false });
-  const [isAddingUser, setIsAddingUser] = useState(false);
+  // Estados para Novo/Editar Usuário da Equipe
+  const [userForm, setUserForm] = useState({ id: null, name: '', email: '', password: '', role: 'avaliador', isAdmin: false });
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [isEditingUser, setIsEditingUser] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -48,7 +49,7 @@ export default function Settings() {
             .single();
         setTenant(tenantData);
 
-        // 3. Busca EQUIPE
+        // 3. Busca EQUIPE na tabela user_tenants (onde estão as permissões reais)
         const { data: teamRelations, error: teamError } = await supabase
             .from('user_tenants')
             .select(`
@@ -62,19 +63,18 @@ export default function Settings() {
 
         if (teamError) throw teamError;
 
-        // Formata os dados e verifica permissões
-        let userIsAdmin = false;
+        // Formata os dados para a estrutura que a tela espera
         const formattedTeam = [];
-        
+        let userIsAdmin = false;
+
         if (teamRelations) {
             teamRelations.forEach(item => {
                 if (item.user) {
-                    // Verifica se este item da lista é o usuário logado
-                    const isMe = item.user.id === session.user.id;
-                    const isRoleAdmin = item.role === 'Administrador' || item.role === 'admin';
+                    const role = item.role; // Papel nesta empresa
+                    const isRoleAdmin = role === 'Administrador' || role === 'admin';
                     
-                    // Se sou eu, define minha permissão (Super Admin OU Admin do Tenant)
-                    if (isMe) {
+                    // Verifica se sou eu e se tenho permissão
+                    if (item.user.id === session.user.id) {
                         userIsAdmin = item.user.is_admin_system || isRoleAdmin;
                     }
 
@@ -83,8 +83,8 @@ export default function Settings() {
                         name: item.user.name,
                         email: item.user.email,
                         is_admin_system: item.user.is_admin_system,
-                        role: item.role, 
-                        isAdmin: isRoleAdmin // Flag visual para a tabela
+                        role: role, 
+                        isAdmin: isRoleAdmin // Flag visual
                     });
                 }
             });
@@ -154,38 +154,72 @@ export default function Settings() {
   };
 
   // --- FUNÇÕES DE EQUIPE ---
-  const handleAddUser = async (e) => {
+  
+  const openNewUserModal = () => {
+      setUserForm({ id: null, name: '', email: '', password: '', role: 'avaliador', isAdmin: false });
+      setIsEditingUser(false);
+      setIsUserModalOpen(true);
+  };
+
+  const openEditUserModal = (user) => {
+      const role = (user.isAdmin) ? 'admin' : 'avaliador';
+      setUserForm({ 
+          id: user.id, 
+          name: user.name, 
+          email: user.email, 
+          password: '', 
+          role: role, 
+          isAdmin: user.isAdmin 
+      });
+      setIsEditingUser(true);
+      setIsUserModalOpen(true);
+  };
+
+  const handleSaveUser = async (e) => {
     e.preventDefault();
-    if (!newUser.name || !newUser.email || !newUser.password) return alert("Preencha os campos obrigatórios.");
+    
+    // Mapeamento visual para backend
+    const roleValue = userForm.isAdmin ? 'Administrador' : 'Avaliador';
+    
+    // Validação básica
+    if (!userForm.name || !userForm.email) return alert("Preencha nome e email.");
+    if (!isEditingUser && !userForm.password) return alert("Senha é obrigatória para novos usuários.");
 
     const { data: { session } } = await supabase.auth.getSession();
     
     try {
+      const action = isEditingUser ? 'updateUser' : 'createUser';
+      const payload = {
+          action,
+          tenantId: tenant.id,
+          userId: userForm.id,
+          name: userForm.name,
+          email: userForm.email,
+          role: roleValue,
+          isAdmin: userForm.isAdmin
+      };
+      // Senha só vai na criação ou se alterada (mas no update simplificado do admin.js não mudamos senha, só role/nome)
+      if (!isEditingUser) payload.password = userForm.password;
+
       const res = await fetch('/api/admin', {
         method: 'POST',
         headers: { 
             'Content-Type': 'application/json',
             Authorization: `Bearer ${session.access_token}`
         },
-        body: JSON.stringify({
-            action: 'createUser',
-            tenantId: tenant.id,
-            ...newUser,
-            role: newUser.role || (newUser.isAdmin ? 'Administrador' : 'Recrutador') 
-        })
+        body: JSON.stringify(payload)
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erro ao conectar na API.");
 
-      alert(data.message || "Usuário adicionado com sucesso!");
-      setIsAddingUser(false);
-      setNewUser({ name: '', email: '', password: '', role: '', isAdmin: false });
+      alert(data.message || (isEditingUser ? "Usuário atualizado!" : "Usuário adicionado!"));
+      setIsUserModalOpen(false);
       fetchData();
       
     } catch (err) {
       console.error(err);
-      alert("Erro ao criar usuário: " + err.message);
+      alert("Erro: " + err.message);
     }
   };
 
@@ -299,7 +333,7 @@ export default function Settings() {
         </div>
       )}
 
-      {/* ABA 2: EQUIPE (CRUD - Protegido por amIAdmin) */}
+      {/* ABA 2: EQUIPE (CRUD) */}
       {activeTab === 'team' && (
         <div className="animate-in fade-in slide-in-from-right-2 duration-300">
             <div className="flex justify-between items-end mb-6">
@@ -307,60 +341,52 @@ export default function Settings() {
                     <h2 className="text-xl font-bold text-gray-900">Membros da Equipe</h2>
                     <p className="text-sm text-gray-500">Gerencie quem tem acesso aos dados da {tenant?.companyName}.</p>
                 </div>
-                {/* BOTÃO VISÍVEL APENAS PARA ADMINS */}
-                {!isAddingUser && amIAdmin && (
-                    <button onClick={() => setIsAddingUser(true)} className="bg-blue-600 text-white px-4 py-2.5 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-sm transition font-medium">
+                {/* Apenas Admins veem botão de adicionar */}
+                {!isUserModalOpen && amIAdmin && (
+                    <button onClick={openNewUserModal} className="bg-blue-600 text-white px-4 py-2.5 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-sm transition font-medium">
                         <Plus size={18}/> Adicionar Usuário
                     </button>
                 )}
             </div>
 
-            {isAddingUser && (
+            {isUserModalOpen && (
                 <div className="bg-white p-6 rounded-xl border border-blue-100 mb-8 shadow-sm ring-4 ring-blue-50">
-                    <h3 className="font-bold mb-6 text-gray-900 flex items-center gap-2 pb-4 border-b"><Plus size={18} className="text-blue-600"/> Cadastrar Novo Membro</h3>
+                    <h3 className="font-bold mb-6 text-gray-900 flex items-center gap-2 pb-4 border-b">
+                        <Plus size={18} className="text-blue-600"/> {isEditingUser ? 'Editar Membro' : 'Cadastrar Novo Membro'}
+                    </h3>
                     
-                    <form onSubmit={handleAddUser} autoComplete="off">
+                    <form onSubmit={handleSaveUser} autoComplete="off">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 mb-1.5">Nome Completo *</label>
                                 <input required className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" 
-                                    value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} 
-                                    autoComplete="off" 
+                                    value={userForm.name} onChange={e => setUserForm({...userForm, name: e.target.value})} 
                                 />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 mb-1.5">E-mail Corporativo *</label>
                                 <input required type="email" className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" 
-                                    value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} 
-                                    autoComplete="off" 
+                                    value={userForm.email} onChange={e => setUserForm({...userForm, email: e.target.value})} 
+                                    disabled={isEditingUser} 
                                 />
                             </div>
                             
-                            <div>
-                                <label className="block text-xs font-bold text-gray-700 mb-1.5">Cargo / Função</label>
-                                <div className="relative">
-                                    <Briefcase className="absolute left-3 top-3 text-gray-400 w-4 h-4" />
-                                    <input 
-                                        className="w-full border border-gray-300 p-2.5 pl-9 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" 
-                                        value={newUser.role} 
-                                        onChange={e => setNewUser({...newUser, role: e.target.value})} 
-                                        placeholder="Ex: Gerente de RH"
+                            {!isEditingUser && (
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-700 mb-1.5">Senha Inicial *</label>
+                                    <input required type="password" className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" 
+                                        value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} 
+                                        autoComplete="new-password"
                                     />
                                 </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-700 mb-1.5">Senha Inicial *</label>
-                                <input required type="password" className="w-full border border-gray-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" 
-                                    value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} 
-                                    autoComplete="new-password" 
-                                />
-                            </div>
-                            <div className="flex items-center h-full pt-1 md:col-span-2">
-                                <label className={`flex items-center gap-3 cursor-pointer p-4 rounded-lg border w-full transition ${newUser.isAdmin ? 'bg-purple-50 border-purple-200 ring-1 ring-purple-200' : 'bg-gray-50 border-gray-200 hover:border-gray-300'}`}>
-                                    <input type="checkbox" className="w-5 h-5 text-purple-600 rounded focus:ring-purple-500" checked={newUser.isAdmin} onChange={e => setNewUser({...newUser, isAdmin: e.target.checked})} />
+                            )}
+                            
+                            <div className={`flex items-center h-full pt-1 ${isEditingUser ? 'col-span-2' : ''}`}>
+                                <label className={`flex items-center gap-3 cursor-pointer p-4 rounded-lg border w-full transition ${userForm.isAdmin ? 'bg-purple-50 border-purple-200 ring-1 ring-purple-200' : 'bg-gray-50 border-gray-200 hover:border-gray-300'}`}>
+                                    <input type="checkbox" className="w-5 h-5 text-purple-600 rounded focus:ring-purple-500" checked={userForm.isAdmin} onChange={e => setUserForm({...userForm, isAdmin: e.target.checked})} />
                                     <div>
                                         <span className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                                            {newUser.isAdmin ? <Crown size={16} className="text-purple-600"/> : null} 
+                                            {userForm.isAdmin ? <Crown size={16} className="text-purple-600"/> : null} 
                                             Conceder acesso de Administrador?
                                         </span>
                                         <span className="text-xs text-gray-500 block mt-1">Administradores podem gerenciar configurações e remover usuários.</span>
@@ -369,7 +395,7 @@ export default function Settings() {
                             </div>
                         </div>
                         <div className="flex gap-3 pt-2 justify-end">
-                            <button type="button" onClick={() => setIsAddingUser(false)} className="px-6 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50 font-medium text-gray-700 transition">Cancelar</button>
+                            <button type="button" onClick={() => setIsUserModalOpen(false)} className="px-6 py-2.5 rounded-lg border border-gray-300 hover:bg-gray-50 font-medium text-gray-700 transition">Cancelar</button>
                             <button type="submit" className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-blue-700 shadow-md transition">Salvar Usuário</button>
                         </div>
                     </form>
@@ -382,7 +408,6 @@ export default function Settings() {
                         <tr>
                             <th className="p-5 font-semibold text-gray-600 text-xs uppercase tracking-wider">Nome</th>
                             <th className="p-5 font-semibold text-gray-600 text-xs uppercase tracking-wider">Email</th>
-                            <th className="p-5 font-semibold text-gray-600 text-xs uppercase tracking-wider">Cargo</th>
                             <th className="p-5 font-semibold text-gray-600 text-xs uppercase tracking-wider">Permissão</th>
                             <th className="p-5 font-semibold text-gray-600 text-xs uppercase tracking-wider text-right">Ações</th>
                         </tr>
@@ -392,23 +417,22 @@ export default function Settings() {
                             <tr key={user.id} className="hover:bg-blue-50/50 transition-colors">
                                 <td className="p-5 font-medium text-gray-900">{user.name || 'Sem nome'}</td>
                                 <td className="p-5 text-gray-600 text-sm flex items-center gap-2"><Mail size={14} className="text-gray-400"/> {user.email}</td>
-                                <td className="p-5 text-slate-700 font-medium text-sm">{user.role}</td>
                                 <td className="p-5">
-                                    {/* Exibição da Permissão Baseada na Flag isAdmin calculada no backend */}
-                                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ${user.isAdmin || user.is_admin_system ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                                        {user.isAdmin || user.is_admin_system ? 'Admin' : 'Membro'}
+                                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ${user.isAdmin ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                                        {user.isAdmin ? 'Administrador' : 'Avaliador'}
                                     </span>
                                 </td>
-                                <td className="p-5 text-right">
-                                    {user.id !== currentUserProfile?.id ? (
-                                        /* AÇÃO DE EXCLUIR VISÍVEL APENAS SE EU FOR ADMIN */
-                                        amIAdmin && (
+                                <td className="p-5 text-right flex justify-end gap-2">
+                                    {/* Ações visíveis apenas se eu for admin e não for eu mesmo */}
+                                    {user.id !== currentUserProfile?.id && amIAdmin ? (
+                                        <>
+                                            <button onClick={() => openEditUserModal(user)} className="text-gray-400 hover:text-blue-600 p-2 rounded" title="Editar"><Edit size={18} /></button>
                                             <button onClick={() => handleDeleteUser(user.id)} className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-all" title="Remover Usuário">
                                                 <Trash2 size={18} />
                                             </button>
-                                        )
+                                        </>
                                     ) : (
-                                        <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">VOCÊ</span>
+                                        user.id === currentUserProfile?.id && <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">VOCÊ</span>
                                     )}
                                 </td>
                             </tr>
@@ -428,7 +452,7 @@ export default function Settings() {
         </div>
       )}
 
-      {/* ABA 3: MEU PERFIL */}
+      {/* ABA 3: MEU PERFIL (LEITURA E EDIÇÃO) */}
       {activeTab === 'profile' && (
         <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 max-w-2xl animate-in fade-in slide-in-from-right-2 duration-300">
             <div className="flex items-center gap-4 mb-8 pb-6 border-b">
