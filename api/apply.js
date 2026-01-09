@@ -28,7 +28,6 @@ export default async function handler(request, response) {
     if (!jobId) return response.status(400).json({ error: 'ID da vaga obrigatório.' });
 
     // --- 1. Validações de Vaga e Limites ---
-    // SELECT robusto para tenantId (com aspas para case sensitivity)
     const { data: job } = await supabaseAdmin
         .from('jobs')
         .select('"tenantId", status')
@@ -37,7 +36,7 @@ export default async function handler(request, response) {
 
     if (!job || job.status !== 'active') return response.status(400).json({ error: 'Vaga não disponível.' });
     
-    // Fallback seguro para o ID do tenant
+    // Fallback robusto para o ID do tenant
     const tenantId = job.tenantId || job.tenantid || job['"tenantId"'];
 
     // --- 2. Coleta de Dados do GRUPO A (Perfil - Candidates) ---
@@ -72,7 +71,7 @@ export default async function handler(request, response) {
     if (candidateError) throw candidateError;
 
     // --- 4. Coleta de Dados do GRUPO B (Aplicação Completa) ---
-    // Incluindo campos que estavam faltando antes
+    // Incluindo os novos campos
     const applicationFields = {
         motivation: getField(fields.motivation),
         education_level: getField(fields.education_level),
@@ -81,23 +80,23 @@ export default async function handler(request, response) {
         institution: getField(fields.institution),
         conclusion_date: getField(fields.conclusion_date),
         current_period: getField(fields.current_period),
-        birthDate: getField(fields.birthDate),       // Novo
-        englishLevel: getField(fields.englishLevel), // Novo
-        spanishLevel: getField(fields.spanishLevel), // Novo
-        source: getField(fields.source),             // Novo
+        birthDate: getField(fields.birthDate),       // NOVO
+        englishLevel: getField(fields.englishLevel), // NOVO
+        spanishLevel: getField(fields.spanishLevel), // NOVO
         applied_at_date: new Date().toISOString()
     };
 
     // --- 5. Criação da Aplicação (CORREÇÃO DE SCHEMA DUPLICADO) ---
+    // Inserção redundante para garantir que o banco aceite independente da versão da coluna
     const insertPayload = {
-        // Versão CamelCase (se existir no banco)
+        // Versão CamelCase
         "jobId": jobId, 
         "candidateId": candidate.id, 
         "tenantId": tenantId, 
         "resumeUrl": resumeUrl,
         "formData": applicationFields,
         
-        // Versão SnakeCase (se existir no banco)
+        // Versão SnakeCase
         jobId: jobId,
         candidateId: candidate.id,
         tenantId: tenantId,

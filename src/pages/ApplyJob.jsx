@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../supabase/client';
-import { Building, MapPin, Briefcase, CheckCircle, Send, GraduationCap, User, Link as LinkIcon, FileText, Upload, Paperclip, AlertCircle } from 'lucide-react';
+import { Building, MapPin, Briefcase, CheckCircle, Send, GraduationCap, User, Link as LinkIcon, FileText, Upload, Paperclip, AlertCircle, Languages } from 'lucide-react';
 
 export default function ApplyJob() {
   const { jobId } = useParams();
@@ -14,9 +14,7 @@ export default function ApplyJob() {
   const [resumeType, setResumeType] = useState('file'); 
   const [resumeFile, setResumeFile] = useState(null);
 
-  // Estado do Formulário
-  // PADRONIZADO: Usamos snake_case onde o dado vai para o banco (candidates)
-  // E mantemos os campos de educação que vão para o JSON (applications)
+  // Estado do Formulário (Campos padronizados com o banco e JSON)
   const [formData, setFormData] = useState({
     // Grupo A: Candidates (Perfil)
     name: '',
@@ -24,11 +22,14 @@ export default function ApplyJob() {
     phone: '',
     city: '',
     state: '',
-    linkedin_profile: '', // Corrigido para snake_case
-    github_profile: '',   // Corrigido para snake_case
-    resume_link_input: '', // Campo visual para quando o usuário cola link
+    linkedin_profile: '', 
+    github_profile: '',   
+    resume_link_input: '', 
 
     // Grupo B: Applications (JSON form_data)
+    birthDate: '',       // NOVO: Data de Nascimento
+    englishLevel: '',    // NOVO: Nível de Inglês
+    spanishLevel: '',    // NOVO: Nível de Espanhol
     motivation: '',
     education_level: '',
     education_status: '',
@@ -67,26 +68,20 @@ export default function ApplyJob() {
     }
   };
 
-  // Função que faz o upload para o Supabase Storage e retorna a URL pública
   const uploadResumeToStorage = async () => {
     if (!resumeFile) return null;
 
-    // Sanitiza nome do arquivo para evitar erros no Storage
     const fileExt = resumeFile.name.split('.').pop();
     const sanitizedEmail = formData.email.replace(/[^a-zA-Z0-9]/g, '');
     const fileName = `${sanitizedEmail}_${Date.now()}.${fileExt}`;
-    
-    // Caminho dentro do bucket 'resumes'
     const filePath = `${fileName}`;
 
-    // Upload
     const { error: uploadError } = await supabase.storage
       .from('resumes')
       .upload(filePath, resumeFile);
 
     if (uploadError) throw new Error("Erro no upload do arquivo: " + uploadError.message);
 
-    // Gera URL pública
     const { data } = supabase.storage.from('resumes').getPublicUrl(filePath);
     return data.publicUrl;
   };
@@ -100,22 +95,18 @@ export default function ApplyJob() {
       
       let finalResumeUrl = '';
 
-      // --- 1. RESOLVER URL DO CURRÍCULO ---
       if (resumeType === 'file') {
         if (!resumeFile) throw new Error("Por favor, selecione um arquivo de currículo (PDF/DOC).");
-        // Faz o upload agora e pega a URL
         finalResumeUrl = await uploadResumeToStorage();
       } else {
-        // Usa o link colado pelo usuário
-        if (!formData.resume_link_input) throw new Error("Por favor, cole o link do seu currículo (Google Drive/Dropbox).");
+        if (!formData.resume_link_input) throw new Error("Por favor, cole o link do seu currículo.");
         finalResumeUrl = formData.resume_link_input;
       }
 
-      // --- 2. PREPARAR ENVIO PARA API ---
       const payload = new FormData();
       payload.append('jobId', jobId);
       
-      // Campos do Perfil (Candidates)
+      // Campos do Perfil
       payload.append('name', formData.name);
       payload.append('email', formData.email);
       payload.append('phone', formData.phone);
@@ -123,9 +114,13 @@ export default function ApplyJob() {
       payload.append('state', formData.state);
       payload.append('linkedin_profile', formData.linkedin_profile);
       payload.append('github_profile', formData.github_profile);
-      payload.append('resume_url', finalResumeUrl); // Mandamos a URL final processada
+      payload.append('resume_url', finalResumeUrl);
 
       // Campos da Aplicação (JSON)
+      payload.append('birthDate', formData.birthDate);       // NOVO
+      payload.append('englishLevel', formData.englishLevel); // NOVO
+      payload.append('spanishLevel', formData.spanishLevel); // NOVO
+      
       payload.append('motivation', formData.motivation);
       payload.append('education_level', formData.education_level);
       payload.append('education_status', formData.education_status);
@@ -151,7 +146,6 @@ export default function ApplyJob() {
     }
   };
 
-  // Lógica visual para mostrar campos de educação
   const isSuperiorOrTech = ['tecnico', 'superior', 'pos', 'mestrado'].includes(formData.education_level);
   const isStudying = formData.education_status === 'cursando';
   const isCompleted = formData.education_status === 'completo';
@@ -243,7 +237,13 @@ export default function ApplyJob() {
                                 <input required className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
                                     value={formData.phone} onChange={e => handleInputChange('phone', e.target.value)} />
                             </div>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div>
+                                {/* CAMPO NOVO: DATA DE NASCIMENTO */}
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Data de Nascimento *</label>
+                                <input required type="date" className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                    value={formData.birthDate} onChange={e => handleInputChange('birthDate', e.target.value)} />
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 md:col-span-2">
                                 <div className="col-span-2">
                                     <label className="block text-xs font-bold text-gray-500 mb-1">Cidade</label>
                                     <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
@@ -263,72 +263,38 @@ export default function ApplyJob() {
                         </div>
                     </section>
 
-                    {/* CURRÍCULO E LINKS */}
+                    {/* IDIOMAS (NOVA SEÇÃO) */}
                     <section>
                         <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6">
-                            <Paperclip size={16}/> Currículo e Links
+                            <Languages size={16}/> Idiomas
                         </h4>
-                        
-                        <div className="bg-gray-50 p-4 rounded-lg border mb-4">
-                            <label className="block text-xs font-bold text-gray-500 mb-2">Como deseja enviar seu currículo?</label>
-                            <div className="flex gap-4 mb-4">
-                                <label className="flex items-center gap-2 text-sm cursor-pointer p-2 hover:bg-gray-100 rounded">
-                                    <input type="radio" name="resumeType" checked={resumeType === 'file'} onChange={() => setResumeType('file')} className="text-blue-600"/>
-                                    <Upload size={16} className="text-gray-600 ml-1"/> Arquivo (PDF/DOC)
-                                </label>
-                                <label className="flex items-center gap-2 text-sm cursor-pointer p-2 hover:bg-gray-100 rounded">
-                                    <input type="radio" name="resumeType" checked={resumeType === 'link'} onChange={() => setResumeType('link')} className="text-blue-600"/>
-                                    <LinkIcon size={16} className="text-gray-600 ml-1"/> Link (Drive/LinkedIn)
-                                </label>
-                            </div>
-
-                            {resumeType === 'file' ? (
-                                <div>
-                                    <input 
-                                      type="file" 
-                                      accept=".pdf,.doc,.docx"
-                                      onChange={handleFileChange}
-                                      className="block w-full text-sm text-slate-500
-                                        file:mr-4 file:py-2 file:px-4
-                                        file:rounded-full file:border-0
-                                        file:text-sm file:font-semibold
-                                        file:bg-blue-50 file:text-blue-700
-                                        hover:file:bg-blue-100"
-                                    />
-                                    <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                                        <AlertCircle size={10}/> Formatos: PDF, DOC. Máx 5MB.
-                                    </p>
-                                </div>
-                            ) : (
-                                <div>
-                                    <input 
-                                        className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
-                                        placeholder="Ex: https://docs.google.com/..."
-                                        value={formData.resume_link_input} 
-                                        onChange={e => handleInputChange('resume_link_input', e.target.value)} 
-                                    />
-                                    <p className="text-xs text-gray-400 mt-1">Certifique-se de que o link esteja acessível publicamente.</p>
-                                </div>
-                            )}
-                        </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Linkedin (Opcional)</label>
-                                <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
-                                    placeholder="linkedin.com/in/..."
-                                    value={formData.linkedin_profile} onChange={e => handleInputChange('linkedin_profile', e.target.value)} />
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Inglês</label>
+                                <select className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
+                                    value={formData.englishLevel} onChange={e => handleInputChange('englishLevel', e.target.value)}>
+                                    <option value="">Selecione...</option>
+                                    <option value="basico">Básico</option>
+                                    <option value="intermediario">Intermediário</option>
+                                    <option value="avancado">Avançado</option>
+                                    <option value="fluente">Fluente/Nativo</option>
+                                </select>
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">GitHub / Portfólio (Opcional)</label>
-                                <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
-                                    placeholder="github.com/..."
-                                    value={formData.github_profile} onChange={e => handleInputChange('github_profile', e.target.value)} />
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Espanhol</label>
+                                <select className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
+                                    value={formData.spanishLevel} onChange={e => handleInputChange('spanishLevel', e.target.value)}>
+                                    <option value="">Selecione...</option>
+                                    <option value="basico">Básico</option>
+                                    <option value="intermediario">Intermediário</option>
+                                    <option value="avancado">Avançado</option>
+                                    <option value="fluente">Fluente/Nativo</option>
+                                </select>
                             </div>
                         </div>
                     </section>
 
-                    {/* ESCOLARIDADE (CONDICIONAL) */}
+                    {/* FORMAÇÃO */}
                     <section>
                         <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6">
                             <GraduationCap size={16}/> Formação
@@ -403,6 +369,71 @@ export default function ApplyJob() {
                                         value={formData.conclusion_date} onChange={e => handleInputChange('conclusion_date', e.target.value)} />
                                 </div>
                             )}
+                        </div>
+                    </section>
+
+                    {/* CURRÍCULO E LINKS */}
+                    <section>
+                        <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6">
+                            <Paperclip size={16}/> Currículo e Links
+                        </h4>
+                        
+                        <div className="bg-gray-50 p-4 rounded-lg border mb-4">
+                            <label className="block text-xs font-bold text-gray-500 mb-2">Como deseja enviar seu currículo?</label>
+                            <div className="flex gap-4 mb-4">
+                                <label className="flex items-center gap-2 text-sm cursor-pointer p-2 hover:bg-gray-100 rounded">
+                                    <input type="radio" name="resumeType" checked={resumeType === 'file'} onChange={() => setResumeType('file')} className="text-blue-600"/>
+                                    <Upload size={16} className="text-gray-600 ml-1"/> Arquivo (PDF/DOC)
+                                </label>
+                                <label className="flex items-center gap-2 text-sm cursor-pointer p-2 hover:bg-gray-100 rounded">
+                                    <input type="radio" name="resumeType" checked={resumeType === 'link'} onChange={() => setResumeType('link')} className="text-blue-600"/>
+                                    <LinkIcon size={16} className="text-gray-600 ml-1"/> Link (Drive/LinkedIn)
+                                </label>
+                            </div>
+
+                            {resumeType === 'file' ? (
+                                <div>
+                                    <input 
+                                      type="file" 
+                                      accept=".pdf,.doc,.docx"
+                                      onChange={handleFileChange}
+                                      className="block w-full text-sm text-slate-500
+                                        file:mr-4 file:py-2 file:px-4
+                                        file:rounded-full file:border-0
+                                        file:text-sm file:font-semibold
+                                        file:bg-blue-50 file:text-blue-700
+                                        hover:file:bg-blue-100"
+                                    />
+                                    <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                                        <AlertCircle size={10}/> Formatos: PDF, DOC. Máx 5MB.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div>
+                                    <input 
+                                        className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                        placeholder="Ex: https://docs.google.com/..."
+                                        value={formData.resume_link_input} 
+                                        onChange={e => handleInputChange('resume_link_input', e.target.value)} 
+                                      />
+                                    <p className="text-xs text-gray-400 mt-1">Certifique-se de que o link esteja acessível publicamente.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Linkedin (Opcional)</label>
+                                <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                    placeholder="linkedin.com/in/..."
+                                    value={formData.linkedin_profile} onChange={e => handleInputChange('linkedin_profile', e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">GitHub / Portfólio (Opcional)</label>
+                                <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
+                                    placeholder="github.com/..."
+                                    value={formData.github_profile} onChange={e => handleInputChange('github_profile', e.target.value)} />
+                            </div>
                         </div>
                     </section>
 
