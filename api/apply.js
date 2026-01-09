@@ -1,14 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
-import { formidable } from 'formidable';
-import fs from 'fs';
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+// Removemos a config de bodyParser: false para que o Vercel processe o JSON nativamente
+// Isso corrige o erro 500 de "FUNCTION_INVOCATION_FAILED"
 
 export default async function handler(request, response) {
+  // 1. Validação do Método
   if (request.method !== 'POST') {
     return response.status(405).json({ error: `Método ${request.method} não permitido.` });
   }
@@ -19,39 +15,38 @@ export default async function handler(request, response) {
       process.env.SUPABASE_SERVICE_KEY
     );
 
-    const form = formidable({});
-    const [fields, files] = await form.parse(request);
-    
-    const getField = (f) => (Array.isArray(f) ? f[0] : f);
+    // 2. Recebimento dos Dados (JSON Puro)
+    // O frontend agora envia JSON, não FormData. Isso é mais robusto.
+    const { 
+        jobId, name, email, phone, city, state, linkedin_profile, github_profile, resume_url,
+        // Novos Campos Solicitados
+        birthDate, englishLevel, spanishLevel, source,
+        // Campos de Educação
+        motivation, education_level, education_status, course_name, institution, conclusion_date, current_period
+    } = request.body;
 
-    const jobId = getField(fields.jobId);
+    // 3. Validações Básicas
     if (!jobId) return response.status(400).json({ error: 'ID da vaga obrigatório.' });
+    if (!name || !email) return response.status(400).json({ error: 'Nome e Email são obrigatórios.' });
 
-    // --- 1. Validações de Vaga e Limites ---
+    // --- Validação da Vaga e Tenant ---
+    // Usamos aspas em "tenantId" para garantir match com o banco
     const { data: job } = await supabaseAdmin
         .from('jobs')
-        .select('"tenantId", status')
+        .select('"tenantId", status') 
         .eq('id', jobId)
         .single();
 
-    if (!job || job.status !== 'active') return response.status(400).json({ error: 'Vaga não disponível.' });
+    if (!job || job.status !== 'active') {
+        return response.status(400).json({ error: 'Vaga não disponível ou encerrada.' });
+    }
     
-    // Fallback robusto para o ID do tenant
+    // Fallback para garantir o ID do tenant (tenta com e sem aspas)
     const tenantId = job.tenantId || job.tenantid || job['"tenantId"'];
 
-    // --- 2. Coleta de Dados do GRUPO A (Perfil - Candidates) ---
-    const name = getField(fields.name);
-    const email = getField(fields.email);
-    const phone = getField(fields.phone);
-    const city = getField(fields.city);
-    const state = getField(fields.state);
-    const linkedin = getField(fields.linkedin_profile);
-    const github = getField(fields.github_profile);
-    let resumeUrl = getField(fields.resume_url);
-
-    if (!name || !email) return response.status(400).json({ error: 'Dados obrigatórios faltando.' });
-
-    // --- 3. UPSERT no Candidato ---
+    // --- 4. UPSERT no Candidato (Perfil Único) ---
+    // A tabela candidates não tem birth_date nativo (conforme auditoria), 
+    // então salvaremos isso no JSON da aplicação, mas mantemos o perfil atualizado.
     const { data: candidate, error: candidateError } = await supabaseAdmin
         .from('candidates')
         .upsert({ 
@@ -60,9 +55,9 @@ export default async function handler(request, response) {
             phone,
             city,
             state,
-            linkedin_profile: linkedin,
-            github_profile: github,
-            resume_url: resumeUrl,
+            linkedin_profile,
+            github_profile,
+            resume_url, // Atualiza o currículo mais recente no perfil
             updated_at: new Date()
         }, { onConflict: 'email' })
         .select('id')
@@ -70,38 +65,40 @@ export default async function handler(request, response) {
 
     if (candidateError) throw candidateError;
 
-    // --- 4. Coleta de Dados do GRUPO B (Aplicação Completa) ---
-    // Incluindo os novos campos
+    // --- 5. Montagem do JSON da Aplicação (Dados Específicos desta Vaga) ---
     const applicationFields = {
-        motivation: getField(fields.motivation),
-        education_level: getField(fields.education_level),
-        education_status: getField(fields.education_status),
-        course_name: getField(fields.course_name),
-        institution: getField(fields.institution),
-        conclusion_date: getField(fields.conclusion_date),
-        current_period: getField(fields.current_period),
-        birthDate: getField(fields.birthDate),       // NOVO
-        englishLevel: getField(fields.englishLevel), // NOVO
-        spanishLevel: getField(fields.spanishLevel), // NOVO
+        birthDate,       // Adicionado
+        englishLevel,    // Adicionado
+        spanishLevel,    // Adicionado
+        source,          // Adicionado
+        motivation,
+        education_level,
+        education_status,
+        course_name,
+        institution,
+        conclusion_date,
+        current_period,
         applied_at_date: new Date().toISOString()
     };
 
-    // --- 5. Criação da Aplicação (CORREÇÃO DE SCHEMA DUPLICADO) ---
-    // Inserção redundante para garantir que o banco aceite independente da versão da coluna
+    // --- 6. Criação da Aplicação (Compatibilidade com Schema Duplicado) ---
+    // Inserimos os dados em AMBAS as versões das colunas para não quebrar nada
     const insertPayload = {
-        // Versão CamelCase
+        // Versão CamelCase (presente no backup)
         "jobId": jobId, 
         "candidateId": candidate.id, 
         "tenantId": tenantId, 
-        "resumeUrl": resumeUrl,
+        "resumeUrl": resume_url,
         "formData": applicationFields,
+        "isHired": false,
         
-        // Versão SnakeCase
+        // Versão SnakeCase (redundância de segurança)
         jobId: jobId,
         candidateId: candidate.id,
         tenantId: tenantId,
-        resume_url: resumeUrl,
-        form_data: applicationFields
+        resume_url: resume_url,
+        form_data: applicationFields,
+        is_hired: false
     };
 
     const { error: appError } = await supabaseAdmin
@@ -109,15 +106,18 @@ export default async function handler(request, response) {
         .insert(insertPayload);
 
     if (appError) {
-        if (appError.code === '23505') return response.status(409).json({ error: "Você já se candidatou." });
+        // Tratamento específico para evitar erro 500 genérico se for duplicidade
+        if (appError.code === '23505') {
+            return response.status(409).json({ error: "Você já se candidatou para esta vaga." });
+        }
         console.error("Erro ao inserir aplicação:", appError);
         throw appError;
     }
     
-    return response.status(201).json({ message: 'Sucesso!' });
+    return response.status(201).json({ message: 'Candidatura enviada com sucesso!' });
 
   } catch (error) {
-    console.error("Erro Apply:", error);
-    return response.status(500).json({ error: error.message });
+    console.error("Erro Crítico no Apply:", error);
+    return response.status(500).json({ error: error.message || 'Erro interno no servidor.' });
   }
 }
