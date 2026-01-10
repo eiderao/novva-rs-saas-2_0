@@ -13,10 +13,10 @@ export default function ApplicationDetails() {
   
   const [appData, setAppData] = useState(null);
   const [job, setJob] = useState(null);
-  const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null);
+  const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null); // Minha avaliação
+  const [othersEvaluations, setOthersEvaluations] = useState([]); // Avaliação dos outros (Histórico)
   const [globalScore, setGlobalScore] = useState(0);
   const [evaluatorsCount, setEvaluatorsCount] = useState(0);
-  const [allEvaluations, setAllEvaluations] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,7 +30,6 @@ export default function ApplicationDetails() {
       const { data: application } = await supabase.from('applications').select('*, candidates(*)').eq('id', appId).single();
       const candidateObj = Array.isArray(application.candidates) ? application.candidates[0] : application.candidates;
       
-      // Parse Seguro do formData
       let safeFormData = application.formData;
       if (typeof safeFormData === 'string') {
           try { safeFormData = JSON.parse(safeFormData); } catch(e) { console.log('Erro parse formData', e); }
@@ -46,12 +45,12 @@ export default function ApplicationDetails() {
       }
 
       const { data: allEvals } = await supabase.from('evaluations').select('*').eq('application_id', appId);
+      
       if (allEvals) {
           const userIds = [...new Set(allEvals.map(e => e.evaluator_id))];
           let usersMap = {};
           
           if (userIds.length > 0) {
-              // CORREÇÃO: Busca na tabela correta (user_profiles)
               const { data: users } = await supabase.from('user_profiles').select('id, name, email').in('id', userIds);
               users?.forEach(u => usersMap[u.id] = u.name || u.email);
           }
@@ -61,23 +60,28 @@ export default function ApplicationDetails() {
               evaluator_name: usersMap[e.evaluator_id] || 'Avaliador Desconhecido' 
           }));
           
-          setAllEvaluations(evalsWithNames);
+          // Separação de dados: Minha avaliação vs Histórico dos outros
+          let myEval = null;
+          let others = [];
+
+          if (user) {
+              myEval = evalsWithNames.find(e => e.evaluator_id === user.id);
+              others = evalsWithNames.filter(e => e.evaluator_id !== user.id);
+          } else {
+              others = evalsWithNames;
+          }
+
+          setOthersEvaluations(others);
+          setCurrentUserEvaluation(myEval || null); // Passa o objeto completo ou null
           setEvaluatorsCount(evalsWithNames.length);
           
+          // Cálculo Global
           let sumTotal = 0, validCount = 0;
           evalsWithNames.forEach(ev => {
               const scores = processEvaluation(ev, jobParams);
               if (scores.total > 0) { sumTotal += scores.total; validCount++; }
           });
           setGlobalScore(validCount > 0 ? (sumTotal / validCount) : 0);
-
-          if (user) {
-              const myEval = allEvals.find(e => e.evaluator_id === user.id);
-              if (myEval) {
-                  const myScores = processEvaluation(myEval, jobParams);
-                  setCurrentUserEvaluation({ ...myEval.scores, anotacoes_gerais: myEval.notes || myEval.scores?.anotacoes_gerais, final_score: myScores.total });
-              } else { setCurrentUserEvaluation(null); }
-          }
       }
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
@@ -85,18 +89,10 @@ export default function ApplicationDetails() {
   const renderInfo = (data) => {
     if (!data) return null;
     
-    // Mapeamento Inteligente (Suporte a V1 e V2 do formulário)
-    // V1 usava 'course', V2 usa 'course_name'
     const course = data.course_name || data.course || data.education?.course;
     const institution = data.institution || data.education?.institution;
-    // V1 usava 'completionYear', V2 usa 'conclusion_date'
     const year = data.conclusion_date || data.completionYear || data.education?.date;
     
-    // CORREÇÃO: Lógica de Status Robustecida
-    // 1. Tenta pegar do campo plano (V2)
-    // 2. Tenta pegar do campo aninhado (V1)
-    // 3. Tenta inferir pelo hasGraduated
-    // 4. Se não tiver nada, retorna null (não exibe nada, em vez de chutar 'Cursando')
     let status = data.education_status || data.education?.status;
     if (!status && data.hasGraduated) {
         status = data.hasGraduated === 'sim' ? 'Completo' : 'Cursando';
@@ -108,7 +104,6 @@ export default function ApplicationDetails() {
 
     return (
         <>
-            {/* Bloco Formação */}
             <Box sx={{ mt: 3 }}>
                 <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}>
                     <BookOpen size={14}/> Formação
@@ -123,7 +118,6 @@ export default function ApplicationDetails() {
                 </Box>
             </Box>
 
-            {/* Bloco Extras (Idiomas, Nasc) */}
             {(birth || eng || spa) && (
                 <Box sx={{ mt: 2 }}>
                     <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}>
@@ -143,6 +137,14 @@ export default function ApplicationDetails() {
   const renderScoreBadges = (gScore, myScore, count) => {
     const getBgColor = (s) => s >= 8 ? '#e8f5e9' : s >= 5 ? '#fff3e0' : '#ffebee';
     const getTextColor = (s) => s >= 8 ? '#2e7d32' : s >= 5 ? '#ef6c00' : '#c62828';
+    
+    // Calcula minha nota atual para exibição
+    let myFinalScore = 0;
+    if(currentUserEvaluation) {
+       const calc = processEvaluation(currentUserEvaluation, job?.parameters);
+       myFinalScore = calc.total;
+    }
+
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 3, width: '100%' }}>
             <Paper elevation={0} sx={{ bgcolor: getBgColor(gScore), p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
@@ -152,7 +154,7 @@ export default function ApplicationDetails() {
             </Paper>
             <Paper elevation={0} sx={{ bgcolor: '#f3f4f6', p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
                 <Typography variant="subtitle2" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.75rem', mb: 1 }}>Minha Nota</Typography>
-                <Typography variant="h3" sx={{ fontWeight: 800, color: '#374151', lineHeight: 1 }}>{Number(myScore || 0).toFixed(1)}</Typography>
+                <Typography variant="h3" sx={{ fontWeight: 800, color: '#374151', lineHeight: 1 }}>{Number(myFinalScore).toFixed(1)}</Typography>
             </Paper>
         </Box>
     );
@@ -165,7 +167,6 @@ export default function ApplicationDetails() {
   const formData = appData.formData || {};
   const candidate = appData.candidate || {};
   
-  // Mescla dados do formData com a tabela candidate
   const displayPhone = candidate.phone || formData.phone;
   const displayCity = candidate.city || formData.city;
   const displayState = candidate.state || formData.state;
@@ -182,7 +183,7 @@ export default function ApplicationDetails() {
               <Avatar sx={{ width: 80, height: 80, bgcolor: '#1976d2', fontSize: '2rem', mb: 2, fontWeight: 'bold' }}>{candidate.name?.[0]}</Avatar>
               <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 'bold', lineHeight: 1.2 }}>{candidate.name}</Typography>
               <Typography variant="caption" color="text.secondary" sx={{ mb: 2 }}>{job?.title}</Typography>
-              {renderScoreBadges(globalScore, currentUserEvaluation?.final_score, evaluatorsCount)}
+              {renderScoreBadges(globalScore, 0, evaluatorsCount)}
             </Box>
             <Divider sx={{ my: 3 }} />
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -208,7 +209,14 @@ export default function ApplicationDetails() {
         </Grid>
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
-             <EvaluationForm applicationId={appData.id} jobParameters={params} initialData={currentUserEvaluation} allEvaluations={allEvaluations} onSaved={fetchData} />
+             {/* Passa "othersEvaluations" para o histórico e "currentUserEvaluation" para o formulário */}
+             <EvaluationForm 
+                applicationId={appData.id} 
+                jobParameters={params} 
+                initialData={currentUserEvaluation} 
+                allEvaluations={othersEvaluations} 
+                onSaved={fetchData} 
+             />
           </Paper>
         </Grid>
       </Grid>

@@ -10,14 +10,24 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    // Carrega dados iniciais da MINHA avaliação se existirem
     if (initialData) {
-        const scores = initialData.scores || initialData;
+        // A estrutura no banco pode variar um pouco, garantimos a leitura correta
+        const loadedScores = initialData.scores || {}; 
+        
         setAnswers({
-            triagem: scores.triagem || {},
-            cultura: scores.cultura || {},
-            tecnico: scores.tecnico || {}
+            triagem: loadedScores.triagem || {},
+            cultura: loadedScores.cultura || {},
+            tecnico: loadedScores.tecnico || {}
         });
-        setNotes(initialData.anotacoes_gerais || initialData.notes || '');
+
+        // Tenta ler notas do campo raiz 'notes' ou do legado dentro de 'scores'
+        const loadedNotes = initialData.notes || loadedScores.anotacoes_gerais || '';
+        setNotes(loadedNotes);
+    } else {
+        // Reseta se não houver dados (novo avaliador)
+        setAnswers({ triagem: {}, cultura: {}, tecnico: {} });
+        setNotes('');
     }
   }, [initialData]);
 
@@ -40,21 +50,23 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       const finalCalc = processEvaluation({ scores: answers }, jobParameters);
 
-      const payload = {
+      // Prepara objeto para salvar
+      // Nota: Salvamos 'anotacoes_gerais' dentro de scores para compatibilidade legado,
+      // mas também salvamos no campo 'notes' nativo da tabela.
+      const scoresPayload = {
         triagem: answers.triagem,
         cultura: answers.cultura,
         tecnico: answers.tecnico,
-        anotacoes_gerais: notes,
+        anotacoes_gerais: notes, // Legado
         pillar_scores: finalCalc,
-        evaluator_name: user.email,
         updated_at: new Date()
       };
 
       const { error: evalError } = await supabase.from('evaluations').upsert({
             application_id: applicationId,
             evaluator_id: user.id,
-            scores: payload, 
-            notes: notes,
+            scores: scoresPayload, 
+            notes: notes, // Campo nativo
             final_score: finalCalc.total
         }, { onConflict: 'application_id, evaluator_id' });
 
@@ -118,10 +130,21 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
           
           <Paper variant="outlined" sx={{ p: 2, mt: 1 }}>
             <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'block' }}>Minhas Anotações</Typography>
-            <TextField multiline rows={2} fullWidth variant="outlined" size="small" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Comentários..." sx={{ bgcolor: '#fff' }} InputProps={{ style: { fontSize: '0.8rem' } }} />
+            <TextField 
+                multiline 
+                rows={3} 
+                fullWidth 
+                variant="outlined" 
+                size="small" 
+                value={notes} 
+                onChange={e => setNotes(e.target.value)} 
+                placeholder="Insira seus comentários sobre o candidato aqui..." 
+                sx={{ bgcolor: '#fff' }} 
+                InputProps={{ style: { fontSize: '0.8rem' } }} 
+            />
           </Paper>
 
-          {/* HISTÓRICO COM NOME DO AVALIADOR */}
+          {/* HISTÓRICO DE OUTROS AVALIADORES */}
           <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
               <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <MessageSquare size={14} /> Histórico de Observações ({allEvaluations?.length || 0})
@@ -129,15 +152,16 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
               {allEvaluations && allEvaluations.length > 0 ? allEvaluations.map((ev, i) => (
                   <Box key={i} sx={{ mb: 1, p: 1.5, bgcolor: '#f9fafb', borderRadius: 1, border: '1px solid #eee' }}>
                       <Box display="flex" justifyContent="space-between" mb={0.5}>
-                          {/* Exibe o nome do avaliador vindo da tabela user_profiles */}
                           <Typography variant="caption" fontWeight="bold" color="primary">
-                            {ev.evaluator_name || 'Usuário Desconhecido'}
+                            {ev.evaluator_name || 'Usuário'}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">Nota: {Number(ev.final_score).toFixed(1)}</Typography>
                       </Box>
-                      <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#444' }}>{ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentários.'}</Typography>
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#444' }}>
+                        {ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentários.'}
+                      </Typography>
                   </Box>
-              )) : <Typography variant="caption" color="text.secondary">Nenhuma avaliação registrada ainda.</Typography>}
+              )) : <Typography variant="caption" color="text.secondary">Nenhuma outra avaliação registrada.</Typography>}
           </Box>
       </Box>
 
