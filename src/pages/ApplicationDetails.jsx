@@ -13,11 +13,8 @@ export default function ApplicationDetails() {
   
   const [appData, setAppData] = useState(null);
   const [job, setJob] = useState(null);
-  
-  // Estados separados para evitar conflitos
-  const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null); // Objeto para edição
-  const [othersEvaluations, setOthersEvaluations] = useState([]); // Lista para histórico
-  
+  const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null);
+  const [othersEvaluations, setOthersEvaluations] = useState([]);
   const [globalScore, setGlobalScore] = useState(0);
   const [evaluatorsCount, setEvaluatorsCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -31,7 +28,6 @@ export default function ApplicationDetails() {
     try {
       const { data: { user } } = await supabase.auth.getSession();
       
-      // 1. Busca Aplicação e Candidato
       const { data: application } = await supabase.from('applications').select('*, candidates(*)').eq('id', appId).single();
       const candidateObj = Array.isArray(application.candidates) ? application.candidates[0] : application.candidates;
       
@@ -39,7 +35,6 @@ export default function ApplicationDetails() {
       if (typeof safeFormData === 'string') { try { safeFormData = JSON.parse(safeFormData); } catch(e) {} }
       setAppData({ ...application, formData: safeFormData, candidate: candidateObj });
 
-      // 2. Busca Vaga (Parâmetros)
       let jobParams = {};
       if (application.jobId) {
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', application.jobId).single();
@@ -47,39 +42,31 @@ export default function ApplicationDetails() {
         jobParams = jobData.parameters || {};
       }
 
-      // 3. Busca Avaliações
       const { data: allEvals } = await supabase.from('evaluations').select('*').eq('application_id', appId);
-      
       if (allEvals) {
-          // Mapeia nomes dos avaliadores
           const userIds = [...new Set(allEvals.map(e => e.evaluator_id))];
           let usersMap = {};
           if (userIds.length > 0) {
               const { data: users } = await supabase.from('user_profiles').select('id, name, email').in('id', userIds);
               users?.forEach(u => usersMap[u.id] = u.name || u.email);
           }
-
-          const evalsWithNames = allEvals.map(e => ({ 
-              ...e, 
-              evaluator_name: usersMap[e.evaluator_id] || 'Avaliador' 
-          }));
+          const evalsWithNames = allEvals.map(e => ({ ...e, evaluator_name: usersMap[e.evaluator_id] || 'Avaliador' }));
           
-          // Lógica de Separação: Eu vs Outros
           let myEval = null;
           let others = [];
 
           if (user) {
+              // Separa a avaliação do usuário atual das demais para não duplicar no histórico
               myEval = evalsWithNames.find(e => e.evaluator_id === user.id);
               others = evalsWithNames.filter(e => e.evaluator_id !== user.id);
           } else {
               others = evalsWithNames;
           }
 
-          setCurrentUserEvaluation(myEval); // Passa o objeto completo encontrado (ou undefined)
-          setOthersEvaluations(others);
+          setCurrentUserEvaluation(myEval || null); 
+          setOthersEvaluations(others); 
           setEvaluatorsCount(evalsWithNames.length);
           
-          // Cálculo da Média Global
           let sumTotal = 0, validCount = 0;
           evalsWithNames.forEach(ev => {
               const scores = processEvaluation(ev, jobParams);
@@ -96,7 +83,7 @@ export default function ApplicationDetails() {
     const institution = data.institution || data.education?.institution;
     const year = data.conclusion_date || data.completionYear || data.education?.date;
     
-    // Lógica corrigida de Status: Prioriza o campo explícito
+    // Prioriza o campo education_status que vem do form novo
     let status = data.education_status || data.education?.status;
     if (!status && data.hasGraduated) {
         status = data.hasGraduated === 'sim' ? 'Completo' : 'Cursando';
@@ -131,13 +118,12 @@ export default function ApplicationDetails() {
   };
 
   const renderScoreBadges = (gScore, myEval, count) => {
-    // Calcula minha nota isoladamente para exibição
     let myFinalScore = 0;
     if(myEval) {
+       // Calcula nota usando os dados crus (scores com UUIDs)
        const calc = processEvaluation(myEval, job?.parameters);
        myFinalScore = calc.total;
     }
-
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 3, width: '100%' }}>
             <Paper elevation={0} sx={{ bgcolor: gScore >= 5 ? '#e8f5e9' : '#fff3e0', p: 2, borderRadius: 2, textAlign: 'center' }}>
@@ -158,6 +144,7 @@ export default function ApplicationDetails() {
   const params = job?.parameters || {};
   const formData = appData.formData || {};
   const candidate = appData.candidate || {};
+  
   const displayPhone = candidate.phone || formData.phone;
   const displayCity = candidate.city || formData.city;
   const displayState = candidate.state || formData.state;
@@ -172,8 +159,6 @@ export default function ApplicationDetails() {
               <Avatar sx={{ width: 80, height: 80, bgcolor: '#1976d2', fontSize: '2rem', mb: 2, fontWeight: 'bold' }}>{candidate.name?.[0]}</Avatar>
               <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 'bold' }}>{candidate.name}</Typography>
               <Typography variant="caption" color="text.secondary" sx={{ mb: 2 }}>{job?.title}</Typography>
-              
-              {/* Renderiza as notas calculadas */}
               {renderScoreBadges(globalScore, currentUserEvaluation, evaluatorsCount)}
             </Box>
             <Divider sx={{ my: 3 }} />
@@ -196,7 +181,7 @@ export default function ApplicationDetails() {
         </Grid>
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
-             {/* Passa "currentUserEvaluation" para preencher o formulário e "othersEvaluations" para o histórico */}
+             {/* Envia somente o histórico dos OUTROS e a minha avaliação para edição */}
              <EvaluationForm 
                 applicationId={appData.id} 
                 jobParameters={params} 

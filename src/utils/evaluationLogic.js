@@ -6,15 +6,14 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
     let totalWeightAnswered = 0;
     let hasAnswers = false;
 
-    // Garante leitura das respostas, seja aninhada (v2) ou plana
+    // Tenta ler do objeto aninhado (v2) ou plano
     const sectionAnswers = answers[sectionName] || answers; 
 
     criteriaList.forEach(criterion => {
         const noteId = sectionAnswers[criterion.name];
         
-        // Ignora N/A ou não respondido
         if (noteId && noteId !== 'NA') {
-            // CORREÇÃO: Converte para String para garantir que "2" (banco) seja igual a 2 (régua)
+            // CORREÇÃO: String(n.id) === String(noteId) para garantir match de UUIDs
             const noteObj = ratingScale.find(n => String(n.id) === String(noteId));
             
             if (noteObj) {
@@ -28,7 +27,6 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
 
     if (!hasAnswers || totalWeightAnswered === 0) return null;
     
-    // Retorna pontuação ponderada (0 a 10 ou 0 a 100 dependendo da régua)
     return (totalScore / totalWeightAnswered); 
 };
 
@@ -37,7 +35,7 @@ export const processEvaluation = (evaluationObj, parameters) => {
         return { triagem: 0, cultura: 0, tecnico: 0, total: 0 };
     }
 
-    // Pega o objeto de respostas (pode estar na raiz ou dentro de 'scores')
+    // Suporte para ler scores de dentro do objeto ou dele mesmo
     const answers = evaluationObj.scores || evaluationObj; 
     const ratingScale = parameters.notas || [];
     
