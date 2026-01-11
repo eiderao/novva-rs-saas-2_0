@@ -13,8 +13,8 @@ export default function ApplicationDetails() {
   
   const [appData, setAppData] = useState(null);
   const [job, setJob] = useState(null);
-  const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null); // Minha avaliação
-  const [othersEvaluations, setOthersEvaluations] = useState([]); // Avaliação dos outros (Histórico)
+  const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null); // Minha avaliação (Objeto Bruto)
+  const [othersEvaluations, setOthersEvaluations] = useState([]); 
   const [globalScore, setGlobalScore] = useState(0);
   const [evaluatorsCount, setEvaluatorsCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -60,7 +60,6 @@ export default function ApplicationDetails() {
               evaluator_name: usersMap[e.evaluator_id] || 'Avaliador Desconhecido' 
           }));
           
-          // Separação de dados: Minha avaliação vs Histórico dos outros
           let myEval = null;
           let others = [];
 
@@ -72,10 +71,10 @@ export default function ApplicationDetails() {
           }
 
           setOthersEvaluations(others);
-          setCurrentUserEvaluation(myEval || null); // Passa o objeto completo ou null
+          // CORREÇÃO: Passa o objeto original, não o espalhado/formatado
+          setCurrentUserEvaluation(myEval || null); 
           setEvaluatorsCount(evalsWithNames.length);
           
-          // Cálculo Global
           let sumTotal = 0, validCount = 0;
           evalsWithNames.forEach(ev => {
               const scores = processEvaluation(ev, jobParams);
@@ -138,7 +137,7 @@ export default function ApplicationDetails() {
     const getBgColor = (s) => s >= 8 ? '#e8f5e9' : s >= 5 ? '#fff3e0' : '#ffebee';
     const getTextColor = (s) => s >= 8 ? '#2e7d32' : s >= 5 ? '#ef6c00' : '#c62828';
     
-    // Calcula minha nota atual para exibição
+    // Calcula minha nota atual para exibição usando o objeto bruto
     let myFinalScore = 0;
     if(currentUserEvaluation) {
        const calc = processEvaluation(currentUserEvaluation, job?.parameters);
@@ -209,12 +208,11 @@ export default function ApplicationDetails() {
         </Grid>
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
-             {/* Passa "othersEvaluations" para o histórico e "currentUserEvaluation" para o formulário */}
              <EvaluationForm 
                 applicationId={appData.id} 
                 jobParameters={params} 
                 initialData={currentUserEvaluation} 
-                allEvaluations={othersEvaluations} 
+                allEvaluations={othersEvaluations} // Agora só passa o histórico dos OUTROS
                 onSaved={fetchData} 
              />
           </Paper>
