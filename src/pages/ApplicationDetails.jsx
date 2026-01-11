@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import EvaluationForm from '../components/EvaluationForm';
-import { ArrowLeft, Mail, MapPin, BookOpen, FileText, Download, Linkedin, Github, Phone, Calendar, Languages } from 'lucide-react';
+import { ArrowLeft, Mail, MapPin, BookOpen, FileText, Download, Linkedin, Github, Phone, Languages } from 'lucide-react';
 import { Box, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar } from '@mui/material';
 import { processEvaluation } from '../utils/evaluationLogic';
 import { formatPhone, formatUrl } from '../utils/formatters';
@@ -53,6 +53,7 @@ export default function ApplicationDetails() {
           const evalsWithNames = allEvals.map(e => ({ ...e, evaluator_name: usersMap[e.evaluator_id] || 'Avaliador' }));
           
           if (user) {
+              // Separa a avaliação do usuário atual das demais
               setCurrentUserEvaluation(evalsWithNames.find(e => e.evaluator_id === user.id) || null);
               setOthersEvaluations(evalsWithNames.filter(e => e.evaluator_id !== user.id));
           } else {
@@ -75,8 +76,17 @@ export default function ApplicationDetails() {
     const course = data.course_name || data.course || data.education?.course;
     const institution = data.institution || data.education?.institution;
     const year = data.conclusion_date || data.completionYear || data.education?.date;
-    const status = data.education_status || (data.hasGraduated === 'sim' ? 'Completo' : 'Cursando');
     
+    // CORREÇÃO: Prioriza o status explícito do banco. 
+    // Só usa a lógica de "hasGraduated" se o status específico não existir.
+    let status = data.education_status || data.education?.status;
+    if (!status && data.hasGraduated) {
+        status = data.hasGraduated === 'sim' ? 'Completo' : 'Cursando';
+    }
+    
+    // Capitaliza a primeira letra do status para ficar bonito na tela
+    if (status) status = status.charAt(0).toUpperCase() + status.slice(1);
+
     return (
         <>
             <Box sx={{ mt: 3 }}>
@@ -106,6 +116,7 @@ export default function ApplicationDetails() {
   const renderScoreBadges = (gScore, myEval, count) => {
     let myFinalScore = 0;
     if(myEval) {
+       // Calcula nota usando os dados crus do banco
        const calc = processEvaluation(myEval, job?.parameters);
        myFinalScore = calc.total;
     }
@@ -130,6 +141,10 @@ export default function ApplicationDetails() {
   const formData = appData.formData || {};
   const candidate = appData.candidate || {};
   
+  const displayPhone = candidate.phone || formData.phone;
+  const displayCity = candidate.city || formData.city;
+  const displayState = candidate.state || formData.state;
+  
   return (
     <Box sx={{ bgcolor: '#f8f9fa', minHeight: '100vh', p: 2 }}>
       <Button onClick={() => navigate(-1)} startIcon={<ArrowLeft size={16}/>} sx={{ mb: 2, color: 'text.secondary' }}>Voltar</Button>
@@ -144,6 +159,11 @@ export default function ApplicationDetails() {
             </Box>
             <Divider sx={{ my: 3 }} />
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Box display="flex" alignItems="center" gap={1.5}><Mail size={16} className="text-gray-400"/><Typography variant="body2" sx={{wordBreak: 'break-all'}}>{candidate.email || formData.email}</Typography></Box>
+                <Box display="flex" alignItems="center" gap={1.5}><Phone size={16} className="text-gray-400"/><Typography variant="body2">{formatPhone(displayPhone)}</Typography></Box>
+                <Box display="flex" alignItems="center" gap={1.5}><MapPin size={16} className="text-gray-400"/><Typography variant="body2">{displayCity} - {displayState}</Typography></Box>
+            </Box>
+            <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {candidate.resume_url && (<Button variant="contained" fullWidth href={candidate.resume_url} target="_blank" startIcon={<Download size={18}/>}>Ver Currículo</Button>)}
                 {formData.linkedin_profile && (<Button variant="outlined" fullWidth href={formatUrl(formData.linkedin_profile)} target="_blank" startIcon={<Linkedin size={16}/>}>LinkedIn</Button>)}
             </Box>

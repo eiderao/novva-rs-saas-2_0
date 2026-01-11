@@ -11,14 +11,16 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
   useEffect(() => {
     if (initialData) {
-        // Correção: Lê do campo 'scores' que vem do banco
-        const loadedScores = initialData.scores || initialData || {}; 
+        // CORREÇÃO: O objeto 'scores' dentro de 'initialData' contém as respostas dos critérios
+        const loadedScores = initialData.scores || {}; 
+        
         setAnswers({
             triagem: loadedScores.triagem || {},
             cultura: loadedScores.cultura || {},
             tecnico: loadedScores.tecnico || {}
         });
-        // Correção: Lê do campo 'notes' (prioridade) ou 'anotacoes_gerais'
+
+        // CORREÇÃO: Lê notas da coluna 'notes' (padrão do banco) ou do legado dentro de scores
         const loadedNotes = initialData.notes || loadedScores.anotacoes_gerais || '';
         setNotes(loadedNotes);
     } else {
@@ -32,8 +34,12 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
   const handleSelection = (section, criteriaName, noteId) => {
       setAnswers(prev => {
           const newSection = { ...prev[section] };
-          if (newSection[criteriaName] === noteId) delete newSection[criteriaName];
-          else newSection[criteriaName] = noteId;
+          // Toggle: se clicar no mesmo, desmarca
+          if (String(newSection[criteriaName]) === String(noteId)) {
+             delete newSection[criteriaName];
+          } else {
+             newSection[criteriaName] = noteId;
+          }
           return { ...prev, [section]: newSection };
       });
   };
@@ -46,12 +52,12 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       const finalCalc = processEvaluation({ scores: answers }, jobParameters);
 
-      // Salva estrutura compatível
+      // Estrutura para a coluna JSONB 'scores'
       const scoresPayload = {
         triagem: answers.triagem,
         cultura: answers.cultura,
         tecnico: answers.tecnico,
-        anotacoes_gerais: notes,
+        anotacoes_gerais: notes, // Mantém compatibilidade legado
         pillar_scores: finalCalc,
         updated_at: new Date()
       };
@@ -60,7 +66,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             application_id: applicationId,
             evaluator_id: user.id,
             scores: scoresPayload, 
-            notes: notes,
+            notes: notes, // Grava na coluna nativa de texto
             final_score: finalCalc.total
         }, { onConflict: 'application_id, evaluator_id' });
 
@@ -89,10 +95,26 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                 </Box>
                 <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     {ratingScale.map(option => {
+                        // CORREÇÃO: Comparação forçada de String para garantir match
                         const isSelected = String(answers[key]?.[crit.name]) === String(option.id);
                         return (
-                            <Button key={option.id} size="small" onClick={() => handleSelection(key, crit.name, option.id)}
-                                sx={{ minWidth: '30px', height: '24px', fontSize: '0.65rem', p: '0 8px', textTransform: 'none', bgcolor: isSelected ? '#1976d2' : '#f5f5f5', color: isSelected ? '#fff' : '#666', '&:hover': { bgcolor: isSelected ? '#1565c0' : '#eeeeee' } }}>
+                            <Button 
+                                key={option.id} 
+                                size="small" 
+                                onClick={() => handleSelection(key, crit.name, option.id)}
+                                sx={{ 
+                                    minWidth: '30px', 
+                                    height: '24px', 
+                                    fontSize: '0.65rem', 
+                                    p: '0 8px', 
+                                    textTransform: 'none', 
+                                    // Feedback visual explícito
+                                    bgcolor: isSelected ? '#1976d2' : '#f5f5f5', 
+                                    color: isSelected ? '#fff' : '#666', 
+                                    border: isSelected ? '1px solid #1565c0' : '1px solid transparent',
+                                    '&:hover': { bgcolor: isSelected ? '#1565c0' : '#eeeeee' } 
+                                }}
+                            >
                                 {option.nome}
                             </Button>
                         )
@@ -135,12 +157,13 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                 size="small" 
                 value={notes} 
                 onChange={e => setNotes(e.target.value)} 
-                placeholder="Insira seus comentários aqui..." 
+                placeholder="Insira seus comentários sobre o candidato aqui..." 
                 sx={{ bgcolor: '#fff' }} 
                 InputProps={{ style: { fontSize: '0.8rem' } }} 
             />
           </Paper>
 
+          {/* Histórico - Exibe apenas avaliações de outros usuários */}
           <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
               <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <MessageSquare size={14} /> Histórico de Observações ({allEvaluations?.length || 0})
@@ -151,7 +174,9 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                           <Typography variant="caption" fontWeight="bold" color="primary">{ev.evaluator_name}</Typography>
                           <Typography variant="caption" color="text.secondary">Nota: {Number(ev.final_score).toFixed(1)}</Typography>
                       </Box>
-                      <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#444' }}>{ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentários.'}</Typography>
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#444' }}>
+                        {ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentários.'}
+                      </Typography>
                   </Box>
               )) : <Typography variant="caption" color="text.secondary">Nenhuma outra avaliação registrada.</Typography>}
           </Box>
