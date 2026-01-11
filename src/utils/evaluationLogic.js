@@ -1,5 +1,3 @@
-// src/utils/evaluationLogic.js
-
 export const calculatePillarScore = (sectionName, criteriaList, answers, ratingScale) => {
     if (!criteriaList || !Array.isArray(criteriaList) || criteriaList.length === 0) return null;
     if (!answers) return null;
@@ -8,14 +6,14 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
     let totalWeightAnswered = 0;
     let hasAnswers = false;
 
-    // Respostas podem estar aninhadas (v2) ou planas (legado/erro)
+    // Respostas podem estar aninhadas ou planas
     const sectionAnswers = answers[sectionName] || answers; 
 
     criteriaList.forEach(criterion => {
         const noteId = sectionAnswers[criterion.name];
         
         if (noteId && noteId !== 'NA') {
-            // CORREÇÃO CRÍTICA: Força conversão para String para comparar UUIDs ou IDs numéricos
+            // CORREÇÃO CRÍTICA: Comparação de String para garantir match de UUIDs
             const noteObj = ratingScale.find(n => String(n.id) === String(noteId));
             
             if (noteObj) {
@@ -29,7 +27,7 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
 
     if (!hasAnswers || totalWeightAnswered === 0) return null;
     
-    // Normaliza para base 100 se necessário, mas o cálculo ponderado direto é mais seguro
+    // Retorna a média ponderada
     return (totalScore / totalWeightAnswered); 
 };
 
@@ -38,7 +36,6 @@ export const processEvaluation = (evaluationObj, parameters) => {
         return { triagem: 0, cultura: 0, tecnico: 0, total: 0 };
     }
 
-    // Garante que estamos lendo o objeto de respostas, seja ele o 'scores' ou o próprio objeto
     const answers = evaluationObj.scores || evaluationObj; 
     const ratingScale = parameters.notas || [];
     
