@@ -56,14 +56,15 @@ export default function ApplicationDetails() {
           let others = [];
 
           if (user) {
+              // Separa a avaliação do usuário atual das demais
               myEval = evalsWithNames.find(e => e.evaluator_id === user.id);
               others = evalsWithNames.filter(e => e.evaluator_id !== user.id);
           } else {
               others = evalsWithNames;
           }
 
-          setCurrentUserEvaluation(myEval || null); // Passa o objeto bruto
-          setOthersEvaluations(others); 
+          setCurrentUserEvaluation(myEval || null); // Passa o objeto completo para o form
+          setOthersEvaluations(others);             // Histórico sem a minha avaliação
           setEvaluatorsCount(evalsWithNames.length);
           
           let sumTotal = 0, validCount = 0;
@@ -82,9 +83,8 @@ export default function ApplicationDetails() {
     const institution = data.institution || data.education?.institution;
     const year = data.conclusion_date || data.completionYear || data.education?.date;
     
-    // CORREÇÃO: Prioriza education_status do form novo
+    // Lógica corrigida: Prioriza o campo explícito
     let status = data.education_status || data.education?.status;
-    // Se não tiver status explícito, tenta inferir (legado)
     if (!status && data.hasGraduated) {
         status = data.hasGraduated === 'sim' ? 'Completo' : 'Cursando';
     }
@@ -120,7 +120,7 @@ export default function ApplicationDetails() {
   const renderScoreBadges = (gScore, myEval, count) => {
     let myFinalScore = 0;
     if(myEval) {
-       // Calcula "Minha Nota" usando o objeto bruto recuperado do banco
+       // Calcula "Minha Nota" usando o objeto bruto (agora o processEvaluation lida bem com tipos)
        const calc = processEvaluation(myEval, job?.parameters);
        myFinalScore = calc.total;
     }
@@ -144,10 +144,7 @@ export default function ApplicationDetails() {
   const params = job?.parameters || {};
   const formData = appData.formData || {};
   const candidate = appData.candidate || {};
-  const displayPhone = candidate.phone || formData.phone;
-  const displayCity = candidate.city || formData.city;
-  const displayState = candidate.state || formData.state;
-
+  
   return (
     <Box sx={{ bgcolor: '#f8f9fa', minHeight: '100vh', p: 2 }}>
       <Button onClick={() => navigate(-1)} startIcon={<ArrowLeft size={16}/>} sx={{ mb: 2, color: 'text.secondary' }}>Voltar</Button>
@@ -163,8 +160,8 @@ export default function ApplicationDetails() {
             <Divider sx={{ my: 3 }} />
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 <Box display="flex" alignItems="center" gap={1.5}><Mail size={16} className="text-gray-400"/><Typography variant="body2" sx={{wordBreak: 'break-all'}}>{candidate.email || formData.email}</Typography></Box>
-                <Box display="flex" alignItems="center" gap={1.5}><Phone size={16} className="text-gray-400"/><Typography variant="body2">{formatPhone(displayPhone)}</Typography></Box>
-                <Box display="flex" alignItems="center" gap={1.5}><MapPin size={16} className="text-gray-400"/><Typography variant="body2">{displayCity} - {displayState}</Typography></Box>
+                <Box display="flex" alignItems="center" gap={1.5}><Phone size={16} className="text-gray-400"/><Typography variant="body2">{formatPhone(candidate.phone || formData.phone)}</Typography></Box>
+                <Box display="flex" alignItems="center" gap={1.5}><MapPin size={16} className="text-gray-400"/><Typography variant="body2">{candidate.city || formData.city} - {candidate.state || formData.state}</Typography></Box>
             </Box>
             <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {candidate.resume_url && (<Button variant="contained" fullWidth href={candidate.resume_url} target="_blank" startIcon={<Download size={18}/>}>Ver Currículo</Button>)}
@@ -180,6 +177,7 @@ export default function ApplicationDetails() {
         </Grid>
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
+             {/* Passa "currentUserEvaluation" para o form (edição) e "othersEvaluations" para o histórico */}
              <EvaluationForm 
                 applicationId={appData.id} 
                 jobParameters={params} 
