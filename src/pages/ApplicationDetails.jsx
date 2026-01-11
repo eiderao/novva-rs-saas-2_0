@@ -56,14 +56,13 @@ export default function ApplicationDetails() {
           let others = [];
 
           if (user) {
-              // Separa a avaliação do usuário atual das demais para não duplicar no histórico
               myEval = evalsWithNames.find(e => e.evaluator_id === user.id);
               others = evalsWithNames.filter(e => e.evaluator_id !== user.id);
           } else {
               others = evalsWithNames;
           }
 
-          setCurrentUserEvaluation(myEval || null); 
+          setCurrentUserEvaluation(myEval || null); // Passa o objeto bruto
           setOthersEvaluations(others); 
           setEvaluatorsCount(evalsWithNames.length);
           
@@ -83,8 +82,9 @@ export default function ApplicationDetails() {
     const institution = data.institution || data.education?.institution;
     const year = data.conclusion_date || data.completionYear || data.education?.date;
     
-    // Prioriza o campo education_status que vem do form novo
+    // CORREÇÃO: Prioriza education_status do form novo
     let status = data.education_status || data.education?.status;
+    // Se não tiver status explícito, tenta inferir (legado)
     if (!status && data.hasGraduated) {
         status = data.hasGraduated === 'sim' ? 'Completo' : 'Cursando';
     }
@@ -120,7 +120,7 @@ export default function ApplicationDetails() {
   const renderScoreBadges = (gScore, myEval, count) => {
     let myFinalScore = 0;
     if(myEval) {
-       // Calcula nota usando os dados crus (scores com UUIDs)
+       // Calcula "Minha Nota" usando o objeto bruto recuperado do banco
        const calc = processEvaluation(myEval, job?.parameters);
        myFinalScore = calc.total;
     }
@@ -144,7 +144,6 @@ export default function ApplicationDetails() {
   const params = job?.parameters || {};
   const formData = appData.formData || {};
   const candidate = appData.candidate || {};
-  
   const displayPhone = candidate.phone || formData.phone;
   const displayCity = candidate.city || formData.city;
   const displayState = candidate.state || formData.state;
@@ -181,7 +180,6 @@ export default function ApplicationDetails() {
         </Grid>
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
-             {/* Envia somente o histórico dos OUTROS e a minha avaliação para edição */}
              <EvaluationForm 
                 applicationId={appData.id} 
                 jobParameters={params} 

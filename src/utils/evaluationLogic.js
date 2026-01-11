@@ -1,3 +1,5 @@
+// src/utils/evaluationLogic.js
+
 export const calculatePillarScore = (sectionName, criteriaList, answers, ratingScale) => {
     if (!criteriaList || !Array.isArray(criteriaList) || criteriaList.length === 0) return null;
     if (!answers) return null;
@@ -12,8 +14,9 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
     criteriaList.forEach(criterion => {
         const noteId = sectionAnswers[criterion.name];
         
-        if (noteId && noteId !== 'NA') {
-            // CORREÇÃO: String(n.id) === String(noteId) para garantir match de UUIDs
+        // Verifica se existe resposta e não é 'NA'
+        if (noteId !== undefined && noteId !== null && noteId !== 'NA') {
+            // CORREÇÃO CRÍTICA: Converte ambos para String para garantir que "2" (banco) seja igual a 2 (régua) ou UUIDs batam
             const noteObj = ratingScale.find(n => String(n.id) === String(noteId));
             
             if (noteObj) {
@@ -27,6 +30,7 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
 
     if (!hasAnswers || totalWeightAnswered === 0) return null;
     
+    // Retorna pontuação ponderada
     return (totalScore / totalWeightAnswered); 
 };
 
@@ -35,7 +39,7 @@ export const processEvaluation = (evaluationObj, parameters) => {
         return { triagem: 0, cultura: 0, tecnico: 0, total: 0 };
     }
 
-    // Suporte para ler scores de dentro do objeto ou dele mesmo
+    // Pega o objeto de respostas (pode estar na raiz ou dentro de 'scores')
     const answers = evaluationObj.scores || evaluationObj; 
     const ratingScale = parameters.notas || [];
     
