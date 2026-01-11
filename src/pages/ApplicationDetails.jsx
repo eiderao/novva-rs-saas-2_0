@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import EvaluationForm from '../components/EvaluationForm';
-import { ArrowLeft, Mail, MapPin, BookOpen, FileText, Download, Linkedin, Github, Phone, Languages } from 'lucide-react';
+import { ArrowLeft, Mail, MapPin, BookOpen, FileText, Download, Linkedin, Github, Phone, Calendar, Languages } from 'lucide-react';
 import { Box, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar } from '@mui/material';
 import { processEvaluation } from '../utils/evaluationLogic';
 import { formatPhone, formatUrl } from '../utils/formatters';
@@ -14,7 +14,7 @@ export default function ApplicationDetails() {
   const [appData, setAppData] = useState(null);
   const [job, setJob] = useState(null);
   const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null);
-  const [othersEvaluations, setOthersEvaluations] = useState([]);
+  const [othersEvaluations, setOthersEvaluations] = useState([]); // Histórico dos outros
   const [globalScore, setGlobalScore] = useState(0);
   const [evaluatorsCount, setEvaluatorsCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -52,13 +52,19 @@ export default function ApplicationDetails() {
           }
           const evalsWithNames = allEvals.map(e => ({ ...e, evaluator_name: usersMap[e.evaluator_id] || 'Avaliador' }));
           
+          let myEval = null;
+          let others = [];
+
           if (user) {
-              // Separa a avaliação do usuário atual das demais
-              setCurrentUserEvaluation(evalsWithNames.find(e => e.evaluator_id === user.id) || null);
-              setOthersEvaluations(evalsWithNames.filter(e => e.evaluator_id !== user.id));
+              // Separa explicitamente
+              myEval = evalsWithNames.find(e => e.evaluator_id === user.id);
+              others = evalsWithNames.filter(e => e.evaluator_id !== user.id);
           } else {
-              setOthersEvaluations(evalsWithNames);
+              others = evalsWithNames;
           }
+
+          setCurrentUserEvaluation(myEval || null); // Dados crus para o form de edição
+          setOthersEvaluations(others);             // Dados para a lista de histórico
           setEvaluatorsCount(evalsWithNames.length);
           
           let sumTotal = 0, validCount = 0;
@@ -76,17 +82,8 @@ export default function ApplicationDetails() {
     const course = data.course_name || data.course || data.education?.course;
     const institution = data.institution || data.education?.institution;
     const year = data.conclusion_date || data.completionYear || data.education?.date;
+    const status = data.education_status || (data.hasGraduated === 'sim' ? 'Completo' : 'Cursando');
     
-    // CORREÇÃO: Prioriza o status explícito do banco. 
-    // Só usa a lógica de "hasGraduated" se o status específico não existir.
-    let status = data.education_status || data.education?.status;
-    if (!status && data.hasGraduated) {
-        status = data.hasGraduated === 'sim' ? 'Completo' : 'Cursando';
-    }
-    
-    // Capitaliza a primeira letra do status para ficar bonito na tela
-    if (status) status = status.charAt(0).toUpperCase() + status.slice(1);
-
     return (
         <>
             <Box sx={{ mt: 3 }}>
@@ -116,7 +113,6 @@ export default function ApplicationDetails() {
   const renderScoreBadges = (gScore, myEval, count) => {
     let myFinalScore = 0;
     if(myEval) {
-       // Calcula nota usando os dados crus do banco
        const calc = processEvaluation(myEval, job?.parameters);
        myFinalScore = calc.total;
     }
@@ -144,7 +140,9 @@ export default function ApplicationDetails() {
   const displayPhone = candidate.phone || formData.phone;
   const displayCity = candidate.city || formData.city;
   const displayState = candidate.state || formData.state;
-  
+  const linkedIn = candidate.linkedin_profile || formData.linkedinProfile || formData.linkedin_profile;
+  const gitHub = candidate.github_profile || formData.githubProfile || formData.github_profile;
+
   return (
     <Box sx={{ bgcolor: '#f8f9fa', minHeight: '100vh', p: 2 }}>
       <Button onClick={() => navigate(-1)} startIcon={<ArrowLeft size={16}/>} sx={{ mb: 2, color: 'text.secondary' }}>Voltar</Button>
@@ -165,10 +163,13 @@ export default function ApplicationDetails() {
             </Box>
             <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {candidate.resume_url && (<Button variant="contained" fullWidth href={candidate.resume_url} target="_blank" startIcon={<Download size={18}/>}>Ver Currículo</Button>)}
-                {formData.linkedin_profile && (<Button variant="outlined" fullWidth href={formatUrl(formData.linkedin_profile)} target="_blank" startIcon={<Linkedin size={16}/>}>LinkedIn</Button>)}
+                {linkedIn && (<Button variant="outlined" fullWidth href={formatUrl(linkedIn)} target="_blank" startIcon={<Linkedin size={16}/>}>LinkedIn</Button>)}
+                {gitHub && (<Button variant="outlined" fullWidth href={formatUrl(gitHub)} target="_blank" startIcon={<Github size={16}/>}>GitHub</Button>)}
             </Box>
             <Divider sx={{ my: 3 }} />
+            
             {renderInfo(formData)}
+
             <Box sx={{ mt: 3 }}>
                <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}><FileText size={14}/> Motivação</Typography>
                <Typography variant="body2" paragraph sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 1, whiteSpace: 'pre-line', fontSize: '0.85rem' }}>{formData.motivation || 'Não informada'}</Typography>
@@ -177,6 +178,7 @@ export default function ApplicationDetails() {
         </Grid>
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
+             {/* Componente EvaluationForm com o objeto currentUserEvaluation completo */}
              <EvaluationForm 
                 applicationId={appData.id} 
                 jobParameters={params} 

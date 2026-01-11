@@ -8,10 +8,14 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
     let totalWeightAnswered = 0;
     let hasAnswers = false;
 
+    // Respostas podem estar aninhadas (v2) ou planas (legado/erro)
+    const sectionAnswers = answers[sectionName] || answers; 
+
     criteriaList.forEach(criterion => {
-        const noteId = answers?.[sectionName]?.[criterion.name] || answers?.[criterion.name];
+        const noteId = sectionAnswers[criterion.name];
         
         if (noteId && noteId !== 'NA') {
+            // CORREÇÃO CRÍTICA: Força conversão para String para comparar UUIDs ou IDs numéricos
             const noteObj = ratingScale.find(n => String(n.id) === String(noteId));
             
             if (noteObj) {
@@ -24,7 +28,9 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
     });
 
     if (!hasAnswers || totalWeightAnswered === 0) return null;
-    return (totalScore / totalWeightAnswered);
+    
+    // Normaliza para base 100 se necessário, mas o cálculo ponderado direto é mais seguro
+    return (totalScore / totalWeightAnswered); 
 };
 
 export const processEvaluation = (evaluationObj, parameters) => {
@@ -32,12 +38,13 @@ export const processEvaluation = (evaluationObj, parameters) => {
         return { triagem: 0, cultura: 0, tecnico: 0, total: 0 };
     }
 
+    // Garante que estamos lendo o objeto de respostas, seja ele o 'scores' ou o próprio objeto
     const answers = evaluationObj.scores || evaluationObj; 
     const ratingScale = parameters.notas || [];
     
     const pTriagem = parameters.triagem || [];
     const pCultura = parameters.cultura || [];
-    const pTecnico = parameters.tecnico || parameters['técnico'] || parameters['tƒ©cnico'] || [];
+    const pTecnico = parameters.tecnico || parameters['técnico'] || [];
 
     const triagem = calculatePillarScore('triagem', pTriagem, answers, ratingScale);
     const cultura = calculatePillarScore('cultura', pCultura, answers, ratingScale);
@@ -60,17 +67,11 @@ export const processEvaluation = (evaluationObj, parameters) => {
     };
 };
 
-// GERA O GABARITO PADRÃO (CENTRO DA RÉGUA)
 export const generateDefaultBenchmarkScores = (parameters) => {
     const notes = parameters.notas || [];
     if (notes.length === 0) return { triagem: {}, cultura: {}, tecnico: {} };
 
-    // Ordena por valor
     const sortedNotes = [...notes].sort((a, b) => Number(a.valor) - Number(b.valor));
-    
-    // Regra: Centro ou primeiro acima do centro se par
-    // Ex: [0, 5, 10] (len 3) -> index 1 (5)
-    // Ex: [0, 5, 8, 10] (len 4) -> index 2 (8)
     const centerIndex = Math.floor(sortedNotes.length / 2);
     const defaultNoteId = sortedNotes[centerIndex]?.id;
 

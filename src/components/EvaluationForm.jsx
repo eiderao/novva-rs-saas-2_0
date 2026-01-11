@@ -11,7 +11,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
   useEffect(() => {
     if (initialData) {
-        // CORREÇÃO: O objeto 'scores' dentro de 'initialData' contém as respostas dos critérios
+        // CORREÇÃO: O objeto 'scores' dentro de 'initialData' é onde estão os UUIDs das respostas
         const loadedScores = initialData.scores || {}; 
         
         setAnswers({
@@ -20,7 +20,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             tecnico: loadedScores.tecnico || {}
         });
 
-        // CORREÇÃO: Lê notas da coluna 'notes' (padrão do banco) ou do legado dentro de scores
+        // CORREÇÃO: Prioridade para a coluna 'notes' (texto puro), fallback para JSON antigo
         const loadedNotes = initialData.notes || loadedScores.anotacoes_gerais || '';
         setNotes(loadedNotes);
     } else {
@@ -29,12 +29,13 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     }
   }, [initialData]);
 
+  // Calcula a nota em tempo real para feedback visual
   const currentScores = processEvaluation({ scores: answers }, jobParameters);
 
   const handleSelection = (section, criteriaName, noteId) => {
       setAnswers(prev => {
           const newSection = { ...prev[section] };
-          // Toggle: se clicar no mesmo, desmarca
+          // Toggle: se clicar no mesmo ID (String), desmarca
           if (String(newSection[criteriaName]) === String(noteId)) {
              delete newSection[criteriaName];
           } else {
@@ -52,28 +53,29 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       const finalCalc = processEvaluation({ scores: answers }, jobParameters);
 
-      // Estrutura para a coluna JSONB 'scores'
+      // Prepara o JSON para salvar na coluna 'scores'
       const scoresPayload = {
         triagem: answers.triagem,
         cultura: answers.cultura,
         tecnico: answers.tecnico,
-        anotacoes_gerais: notes, // Mantém compatibilidade legado
+        anotacoes_gerais: notes, // Mantém compatibilidade com legado
         pillar_scores: finalCalc,
         updated_at: new Date()
       };
 
+      // Grava no banco
       const { error: evalError } = await supabase.from('evaluations').upsert({
             application_id: applicationId,
             evaluator_id: user.id,
             scores: scoresPayload, 
-            notes: notes, // Grava na coluna nativa de texto
+            notes: notes, // Grava na coluna de texto dedicada
             final_score: finalCalc.total
         }, { onConflict: 'application_id, evaluator_id' });
 
       if (evalError) throw evalError;
-      alert("Salvo!");
+      alert("Avaliação salva com sucesso!");
       if (onSaved) onSaved();
-    } catch (error) { alert("Erro: " + error.message); } finally { setSaving(false); }
+    } catch (error) { alert("Erro ao salvar: " + error.message); } finally { setSaving(false); }
   };
 
   const renderSectionCompact = (key, title, criteria) => {
@@ -95,8 +97,12 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                 </Box>
                 <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     {ratingScale.map(option => {
-                        // CORREÇÃO: Comparação forçada de String para garantir match
+                        // CORREÇÃO CRÍTICA: Comparação de String para garantir que o botão "acenda"
+                        // answers[key] contém o objeto da seção (ex: cultura)
+                        // [crit.name] contém o UUID salvo para aquele critério
+                        // option.id contém o UUID da régua
                         const isSelected = String(answers[key]?.[crit.name]) === String(option.id);
+                        
                         return (
                             <Button 
                                 key={option.id} 
@@ -126,7 +132,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     );
   };
 
-  if (!jobParameters) return <Typography variant="caption">Carregando...</Typography>;
+  if (!jobParameters) return <Typography variant="caption">Carregando parâmetros...</Typography>;
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -163,7 +169,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             />
           </Paper>
 
-          {/* Histórico - Exibe apenas avaliações de outros usuários */}
+          {/* Histórico: Exibe apenas observações dos OUTROS avaliadores */}
           <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
               <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <MessageSquare size={14} /> Histórico de Observações ({allEvaluations?.length || 0})
@@ -171,7 +177,9 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
               {allEvaluations && allEvaluations.length > 0 ? allEvaluations.map((ev, i) => (
                   <Box key={i} sx={{ mb: 1, p: 1.5, bgcolor: '#f9fafb', borderRadius: 1, border: '1px solid #eee' }}>
                       <Box display="flex" justifyContent="space-between" mb={0.5}>
-                          <Typography variant="caption" fontWeight="bold" color="primary">{ev.evaluator_name}</Typography>
+                          <Typography variant="caption" fontWeight="bold" color="primary">
+                            {ev.evaluator_name || 'Usuário'}
+                          </Typography>
                           <Typography variant="caption" color="text.secondary">Nota: {Number(ev.final_score).toFixed(1)}</Typography>
                       </Box>
                       <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#444' }}>
