@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase/client';
 import EvaluationForm from '../components/EvaluationForm';
-import { ArrowLeft, Mail, MapPin, BookOpen, FileText, Download, Linkedin, Github, Phone, Calendar, Languages } from 'lucide-react';
+import { ArrowLeft, Mail, MapPin, BookOpen, FileText, Download, Linkedin, Github, Phone, Languages } from 'lucide-react';
 import { Box, Grid, Paper, Typography, Button, CircularProgress, Divider, Avatar } from '@mui/material';
 import { processEvaluation } from '../utils/evaluationLogic';
 import { formatPhone, formatUrl } from '../utils/formatters';
@@ -14,7 +14,7 @@ export default function ApplicationDetails() {
   const [appData, setAppData] = useState(null);
   const [job, setJob] = useState(null);
   const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null);
-  const [othersEvaluations, setOthersEvaluations] = useState([]);
+  const [othersEvaluations, setOthersEvaluations] = useState([]); // Lista separada para o histórico
   const [globalScore, setGlobalScore] = useState(0);
   const [evaluatorsCount, setEvaluatorsCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -28,7 +28,7 @@ export default function ApplicationDetails() {
     try {
       const { data: { user } } = await supabase.auth.getSession();
       
-      // 1. Busca Dados da Aplicação
+      // 1. Dados da Aplicação
       const { data: application } = await supabase.from('applications').select('*, candidates(*)').eq('id', appId).single();
       const candidateObj = Array.isArray(application.candidates) ? application.candidates[0] : application.candidates;
       
@@ -39,7 +39,7 @@ export default function ApplicationDetails() {
       
       setAppData({ ...application, formData: safeFormData, candidate: candidateObj });
 
-      // 2. Busca Dados da Vaga (Parâmetros)
+      // 2. Dados da Vaga
       let jobParams = {};
       if (application.jobId) {
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', application.jobId).single();
@@ -47,7 +47,7 @@ export default function ApplicationDetails() {
         jobParams = jobData.parameters || {};
       }
 
-      // 3. Busca Avaliações
+      // 3. Avaliações
       const { data: allEvals } = await supabase.from('evaluations').select('*').eq('application_id', appId);
       
       if (allEvals) {
@@ -64,6 +64,7 @@ export default function ApplicationDetails() {
               evaluator_name: usersMap[e.evaluator_id] || 'Avaliador' 
           }));
           
+          // SEPARAÇÃO CRÍTICA: Eu vs Outros
           let myEval = null;
           let others = [];
 
@@ -75,9 +76,10 @@ export default function ApplicationDetails() {
           }
 
           setOthersEvaluations(others);
-          setCurrentUserEvaluation(myEval); // Passa o objeto exato do banco
+          setCurrentUserEvaluation(myEval); // Envia o objeto bruto para o form
           setEvaluatorsCount(evalsWithNames.length);
           
+          // Calcula Média Global
           let sumTotal = 0, validCount = 0;
           evalsWithNames.forEach(ev => {
               const scores = processEvaluation(ev, jobParams);
@@ -90,45 +92,32 @@ export default function ApplicationDetails() {
 
   const renderInfo = (data) => {
     if (!data) return null;
-    
     const course = data.course_name || data.course || data.education?.course;
     const institution = data.institution || data.education?.institution;
     const year = data.conclusion_date || data.completionYear || data.education?.date;
-    
     let status = data.education_status || data.education?.status;
-    if (!status && data.hasGraduated) {
-        status = data.hasGraduated === 'sim' ? 'Completo' : 'Cursando';
-    }
+    if (!status && data.hasGraduated) status = data.hasGraduated === 'sim' ? 'Completo' : 'Cursando';
     
-    const birth = data.birthDate;
-    const eng = data.englishLevel;
-    const spa = data.spanishLevel;
-
     return (
         <>
             <Box sx={{ mt: 3 }}>
-                <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}>
-                    <BookOpen size={14}/> Formação
-                </Typography>
+                <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}><BookOpen size={14}/> Formação</Typography>
                 <Box sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 0.5 }}>
-                    <Typography variant="caption" display="block" fontWeight="bold">{course || 'Curso não informado'}</Typography>
-                    <Typography variant="caption" display="block" color="text.secondary">{institution || 'Instituição não informada'}</Typography>
+                    <Typography variant="caption" display="block" fontWeight="bold">{course || 'Não informado'}</Typography>
+                    <Typography variant="caption" display="block" color="text.secondary">{institution}</Typography>
                     <Box display="flex" gap={2} mt={0.5}>
-                        {year && <Typography variant="caption" display="block" color="text.secondary">Conclusão: {year}</Typography>}
-                        {status && <Typography variant="caption" display="block" color="primary" fontWeight="bold" sx={{textTransform:'capitalize'}}>{status}</Typography>}
+                        {year && <Typography variant="caption" color="text.secondary">Conclusão: {year}</Typography>}
+                        {status && <Typography variant="caption" color="primary" fontWeight="bold">{status}</Typography>}
                     </Box>
                 </Box>
             </Box>
-
-            {(birth || eng || spa) && (
+            {(data.englishLevel || data.spanishLevel || data.birthDate) && (
                 <Box sx={{ mt: 2 }}>
-                    <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}>
-                        <Languages size={14}/> Detalhes & Idiomas
-                    </Typography>
+                    <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}><Languages size={14}/> Detalhes</Typography>
                     <Box sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 0.5 }}>
-                        {birth && <Typography variant="caption" display="block" sx={{mb:0.5}}>🎂 Nascimento: {new Date(birth).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</Typography>}
-                        {eng && <Typography variant="caption" display="block">🇺🇸 Inglês: <strong>{eng}</strong></Typography>}
-                        {spa && <Typography variant="caption" display="block">🇪🇸 Espanhol: <strong>{spa}</strong></Typography>}
+                        {data.birthDate && <Typography variant="caption" display="block">🎂 Nasc: {new Date(data.birthDate).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}</Typography>}
+                        {data.englishLevel && <Typography variant="caption" display="block">🇺🇸 Inglês: <strong>{data.englishLevel}</strong></Typography>}
+                        {data.spanishLevel && <Typography variant="caption" display="block">🇪🇸 Espanhol: <strong>{data.spanishLevel}</strong></Typography>}
                     </Box>
                 </Box>
             )}
@@ -137,27 +126,22 @@ export default function ApplicationDetails() {
   };
 
   const renderScoreBadges = (gScore, myEval, count) => {
-    const getBgColor = (s) => s >= 8 ? '#e8f5e9' : s >= 5 ? '#fff3e0' : '#ffebee';
-    const getTextColor = (s) => s >= 8 ? '#2e7d32' : s >= 5 ? '#ef6c00' : '#c62828';
-    
-    // Calcula minha nota atual para exibição
     let myFinalScore = 0;
     if(myEval) {
-       // Passa o objeto completo, o utilitário sabe buscar .scores ou usar o objeto
+       // Calcula a nota baseada no objeto bruto recuperado do banco
        const calc = processEvaluation(myEval, job?.parameters);
        myFinalScore = calc.total;
     }
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 3, width: '100%' }}>
-            <Paper elevation={0} sx={{ bgcolor: getBgColor(gScore), p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
-                <Typography variant="subtitle2" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.75rem' }}>Nota Global</Typography>
-                <Typography variant="caption" sx={{ display:'block', fontSize: '0.7rem', color: 'text.secondary', mb: 0.5 }}>({count} {count === 1 ? 'avaliação' : 'avaliações'})</Typography>
-                <Typography variant="h3" sx={{ fontWeight: 800, color: getTextColor(gScore), lineHeight: 1 }}>{Number(gScore || 0).toFixed(1)}</Typography>
+            <Paper elevation={0} sx={{ bgcolor: gScore >= 5 ? '#e8f5e9' : '#fff3e0', p: 2, borderRadius: 2, textAlign: 'center' }}>
+                <Typography variant="subtitle2" sx={{ fontSize: '0.75rem' }}>Nota Global ({count})</Typography>
+                <Typography variant="h3" sx={{ fontWeight: 800 }}>{Number(gScore).toFixed(1)}</Typography>
             </Paper>
-            <Paper elevation={0} sx={{ bgcolor: '#f3f4f6', p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'center' }}>
-                <Typography variant="subtitle2" sx={{ textTransform: 'uppercase', fontWeight: 'bold', color: 'text.secondary', fontSize: '0.75rem', mb: 1 }}>Minha Nota</Typography>
-                <Typography variant="h3" sx={{ fontWeight: 800, color: '#374151', lineHeight: 1 }}>{Number(myFinalScore).toFixed(1)}</Typography>
+            <Paper elevation={0} sx={{ bgcolor: '#f3f4f6', p: 2, borderRadius: 2, textAlign: 'center' }}>
+                <Typography variant="subtitle2" sx={{ fontSize: '0.75rem', mb: 1 }}>Minha Nota</Typography>
+                <Typography variant="h3" sx={{ fontWeight: 800, color: '#374151' }}>{Number(myFinalScore).toFixed(1)}</Typography>
             </Paper>
         </Box>
     );
@@ -184,36 +168,32 @@ export default function ApplicationDetails() {
           <Paper sx={{ p: 3, height: '100%' }} elevation={0} variant="outlined">
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
               <Avatar sx={{ width: 80, height: 80, bgcolor: '#1976d2', fontSize: '2rem', mb: 2, fontWeight: 'bold' }}>{candidate.name?.[0]}</Avatar>
-              <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 'bold', lineHeight: 1.2 }}>{candidate.name}</Typography>
+              <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 'bold' }}>{candidate.name}</Typography>
               <Typography variant="caption" color="text.secondary" sx={{ mb: 2 }}>{job?.title}</Typography>
-              {/* Passa currentUserEvaluation para calcular a nota no render */}
               {renderScoreBadges(globalScore, currentUserEvaluation, evaluatorsCount)}
             </Box>
             <Divider sx={{ my: 3 }} />
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 <Box display="flex" alignItems="center" gap={1.5}><Mail size={16} className="text-gray-400"/><Typography variant="body2" sx={{wordBreak: 'break-all'}}>{candidate.email || formData.email}</Typography></Box>
                 <Box display="flex" alignItems="center" gap={1.5}><Phone size={16} className="text-gray-400"/><Typography variant="body2">{formatPhone(displayPhone)}</Typography></Box>
                 <Box display="flex" alignItems="center" gap={1.5}><MapPin size={16} className="text-gray-400"/><Typography variant="body2">{displayCity} - {displayState}</Typography></Box>
             </Box>
             <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {candidate.resume_url && (<Button variant="contained" color="primary" fullWidth href={candidate.resume_url} target="_blank" startIcon={<Download size={18}/>} sx={{ mb: 1, textTransform: 'none', fontWeight: 'bold' }}>Ver Currículo</Button>)}
-                {linkedIn && (<Button variant="outlined" fullWidth href={formatUrl(linkedIn)} target="_blank" startIcon={<Linkedin size={16}/>} sx={{ textTransform: 'none', color: '#0077b5', borderColor: '#0077b5' }}>LinkedIn</Button>)}
-                {gitHub && (<Button variant="outlined" fullWidth href={formatUrl(gitHub)} target="_blank" startIcon={<Github size={16}/>} sx={{ textTransform: 'none', color: '#333', borderColor: '#333' }}>GitHub</Button>)}
+                {candidate.resume_url && (<Button variant="contained" fullWidth href={candidate.resume_url} target="_blank" startIcon={<Download size={18}/>}>Ver Currículo</Button>)}
+                {linkedIn && (<Button variant="outlined" fullWidth href={formatUrl(linkedIn)} target="_blank" startIcon={<Linkedin size={16}/>}>LinkedIn</Button>)}
+                {gitHub && (<Button variant="outlined" fullWidth href={formatUrl(gitHub)} target="_blank" startIcon={<Github size={16}/>}>GitHub</Button>)}
             </Box>
             <Divider sx={{ my: 3 }} />
-            
             {renderInfo(formData)}
-
             <Box sx={{ mt: 3 }}>
                <Typography variant="caption" fontWeight="bold" sx={{textTransform: 'uppercase', color: 'text.secondary', display:'flex', alignItems:'center', gap:1}}><FileText size={14}/> Motivação</Typography>
                <Typography variant="body2" paragraph sx={{ bgcolor: '#f9fafb', p: 1.5, borderRadius: 1, border: '1px solid #eee', mt: 1, whiteSpace: 'pre-line', fontSize: '0.85rem' }}>{formData.motivation || 'Não informada'}</Typography>
             </Box>
-            <Box sx={{ mt: 2 }}><Typography variant="caption" color="text.secondary">Candidatou-se em: {new Date(appData.created_at).toLocaleDateString('pt-BR')}</Typography></Box>
           </Paper>
         </Grid>
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
-             {/* Componente EvaluationForm com o objeto currentUserEvaluation completo */}
+             {/* Envia "othersEvaluations" para o histórico (sem eu) e "currentUserEvaluation" para o form */}
              <EvaluationForm 
                 applicationId={appData.id} 
                 jobParameters={params} 

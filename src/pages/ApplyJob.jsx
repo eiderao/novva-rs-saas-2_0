@@ -9,144 +9,65 @@ export default function ApplyJob() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-
-  // Controle de Tipo de Currículo (Arquivo ou Link)
   const [resumeType, setResumeType] = useState('file'); 
   const [resumeFile, setResumeFile] = useState(null);
 
-  // Estado do Formulário Completo (Adicionados campos que faltavam)
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    city: '',
-    state: '',
-    linkedin_profile: '', 
-    github_profile: '',   
-    resume_link_input: '', 
-    
-    // Novos Campos Solicitados
-    birthDate: '',       
-    englishLevel: '',    
-    spanishLevel: '',    
-    source: '', // Onde conheceu a vaga
-
-    motivation: '',
-    education_level: '',
-    education_status: '',
-    course_name: '',
-    institution: '',
-    conclusion_date: '',
-    current_period: ''
+    name: '', email: '', phone: '', city: '', state: '',
+    linkedin_profile: '', github_profile: '', resume_link_input: '', 
+    birthDate: '', englishLevel: '', spanishLevel: '', source: '',
+    motivation: '', education_level: '', education_status: '', course_name: '', institution: '', conclusion_date: '', current_period: ''
   });
 
   useEffect(() => {
-    fetchJobDetails();
+    const fetchJob = async () => {
+        const { data } = await supabase.from('jobs').select('title, description, requirements, location_type, type, status').eq('id', jobId).single();
+        if (data) setJob(data);
+        else alert("Vaga não encontrada.");
+        setLoading(false);
+    };
+    fetchJob();
   }, [jobId]);
 
-  const fetchJobDetails = async () => {
-    const { data, error } = await supabase
-      .from('jobs')
-      .select('title, description, requirements, location_type, type, status')
-      .eq('id', jobId)
-      .single();
-
-    if (error || !data) {
-      alert("Vaga não encontrada ou encerrada.");
-    } else {
-      setJob(data);
-    }
-    setLoading(false);
-  };
-
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
-
+  const handleInputChange = (field, value) => setFormData(prev => ({ ...prev, [field]: value }));
+  
   const handleFileChange = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setResumeFile(e.target.files[0]);
-    }
-  };
-
-  // Upload direto para o Bucket 'resumes' antes de chamar a API
-  const uploadResumeToStorage = async () => {
-    if (!resumeFile) return null;
-
-    const fileExt = resumeFile.name.split('.').pop();
-    // Sanitiza email para usar no nome do arquivo
-    const sanitizedEmail = formData.email.replace(/[^a-zA-Z0-9]/g, '');
-    const fileName = `${sanitizedEmail}_${Date.now()}.${fileExt}`;
-    
-    // Upload via SDK do Supabase (Frontend)
-    const { error: uploadError } = await supabase.storage
-      .from('resumes')
-      .upload(fileName, resumeFile);
-
-    if (uploadError) throw new Error("Erro no upload do arquivo: " + uploadError.message);
-
-    const { data } = supabase.storage.from('resumes').getPublicUrl(fileName);
-    return data.publicUrl;
+    if (e.target.files?.length > 0) setResumeFile(e.target.files[0]);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
-
     try {
-      if (job.status !== 'active') throw new Error("Esta vaga não está mais aceitando candidaturas.");
+      if (job.status !== 'active') throw new Error("Vaga encerrada.");
       
-      let finalResumeUrl = '';
-
-      // Passo 1: Resolver URL do Currículo
+      let finalResumeUrl = formData.resume_link_input;
       if (resumeType === 'file') {
-        if (!resumeFile) throw new Error("Por favor, selecione um arquivo de currículo (PDF/DOC).");
-        finalResumeUrl = await uploadResumeToStorage();
-      } else {
-        if (!formData.resume_link_input) throw new Error("Por favor, cole o link do seu currículo.");
-        finalResumeUrl = formData.resume_link_input;
+        if (!resumeFile) throw new Error("Anexe seu currículo.");
+        const fileName = `${formData.email.replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}.${resumeFile.name.split('.').pop()}`;
+        const { error } = await supabase.storage.from('resumes').upload(fileName, resumeFile);
+        if (error) throw error;
+        const { data } = supabase.storage.from('resumes').getPublicUrl(fileName);
+        finalResumeUrl = data.publicUrl;
+      } else if (!finalResumeUrl) {
+          throw new Error("Informe o link do currículo.");
       }
 
-      // Passo 2: Enviar dados para API (JSON - Mais robusto que FormData)
-      const payload = {
-        jobId,
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        city: formData.city,
-        state: formData.state,
-        linkedin_profile: formData.linkedin_profile,
-        github_profile: formData.github_profile,
-        resume_url: finalResumeUrl,
-        
-        // Dados Extras
-        birthDate: formData.birthDate,
-        englishLevel: formData.englishLevel,
-        spanishLevel: formData.spanishLevel,
-        source: formData.source,
-        
-        motivation: formData.motivation,
-        education_level: formData.education_level,
-        education_status: formData.education_status,
-        course_name: formData.course_name,
-        institution: formData.institution,
-        conclusion_date: formData.conclusion_date,
-        current_period: formData.current_period
-      };
-
-      const response = await fetch('/api/apply', {
+      const res = await fetch('/api/apply', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({
+            jobId,
+            resume_url: finalResumeUrl,
+            ...formData
+          })
       });
 
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Erro ao enviar.");
-
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
       setSuccess(true);
-
     } catch (err) {
-      alert("Erro ao enviar: " + err.message);
+      alert(err.message);
     } finally {
       setSubmitting(false);
     }
@@ -163,19 +84,10 @@ export default function ApplyJob() {
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
             <div className="bg-white p-8 rounded-lg shadow-md text-center max-w-md w-full border-t-4 border-green-500">
-                <div className="flex justify-center mb-4">
-                    <div className="bg-green-100 p-3 rounded-full">
-                        <CheckCircle className="text-green-600 w-12 h-12" />
-                    </div>
-                </div>
+                <CheckCircle className="text-green-600 w-12 h-12 mx-auto mb-4" />
                 <h2 className="text-2xl font-bold text-gray-800 mb-2">Candidatura Recebida!</h2>
-                <p className="text-gray-600 mb-6">
-                    Seus dados foram enviados com sucesso para a vaga de <strong>{job.title}</strong>.
-                    Boa sorte!
-                </p>
-                <button onClick={() => window.location.reload()} className="text-blue-600 font-medium hover:underline text-sm">
-                    Voltar para a vaga
-                </button>
+                <p className="text-gray-600 mb-6">Boa sorte! Seus dados foram enviados.</p>
+                <button onClick={() => window.location.reload()} className="text-blue-600 hover:underline text-sm">Voltar</button>
             </div>
         </div>
     );
@@ -184,256 +96,77 @@ export default function ApplyJob() {
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4 font-sans">
       <div className="max-w-5xl mx-auto bg-white rounded-xl shadow-xl overflow-hidden border border-gray-100">
-        
-        {/* Header da Vaga */}
-        <div className="bg-slate-800 p-8 text-white relative">
+        <div className="bg-slate-800 p-8 text-white">
             <h1 className="text-3xl font-bold mb-3">{job.title}</h1>
-            <div className="flex flex-wrap gap-4 text-slate-300 text-sm font-medium">
-                <span className="flex items-center gap-1 bg-slate-700 px-3 py-1 rounded-full"><Briefcase size={14}/> {job.type}</span>
-                <span className="flex items-center gap-1 bg-slate-700 px-3 py-1 rounded-full"><MapPin size={14}/> {job.location_type}</span>
-                <span className="flex items-center gap-1 bg-slate-700 px-3 py-1 rounded-full"><Building size={14}/> Novva R&S</span>
+            <div className="flex gap-4 text-sm font-medium text-slate-300">
+                <span className="flex gap-1 items-center"><Briefcase size={14}/> {job.type}</span>
+                <span className="flex gap-1 items-center"><MapPin size={14}/> {job.location_type}</span>
             </div>
         </div>
-
         <div className="grid lg:grid-cols-12">
-            {/* Coluna Esquerda: Descrição */}
-            <div className="lg:col-span-5 p-8 bg-gray-50 border-r border-gray-100 sticky top-0 h-fit">
-                <div className="space-y-8">
-                    <div>
-                        <h3 className="font-bold text-slate-800 text-lg mb-3 flex items-center gap-2">
-                            <FileText size={20} className="text-blue-600"/> Descrição
-                        </h3>
-                        <p className="text-slate-600 whitespace-pre-line text-sm leading-relaxed">{job.description || "Sem descrição."}</p>
-                    </div>
-                    {job.requirements && (
-                        <div>
-                            <h3 className="font-bold text-slate-800 text-lg mb-3 flex items-center gap-2">
-                                <CheckCircle size={20} className="text-green-600"/> Requisitos
-                            </h3>
-                            <p className="text-slate-600 whitespace-pre-line text-sm leading-relaxed">{job.requirements}</p>
-                        </div>
-                    )}
-                </div>
+            <div className="lg:col-span-5 p-8 bg-gray-50 border-r border-gray-100 h-fit sticky top-0">
+                <h3 className="font-bold text-slate-800 mb-2 flex gap-2"><FileText size={20} className="text-blue-600"/> Descrição</h3>
+                <p className="text-slate-600 text-sm whitespace-pre-line mb-6">{job.description}</p>
+                <h3 className="font-bold text-slate-800 mb-2 flex gap-2"><CheckCircle size={20} className="text-green-600"/> Requisitos</h3>
+                <p className="text-slate-600 text-sm whitespace-pre-line">{job.requirements}</p>
             </div>
-
-            {/* Coluna Direita: Formulário */}
             <div className="lg:col-span-7 p-8 bg-white">
-                <h2 className="text-2xl font-bold text-slate-800 mb-6 pb-2 border-b border-gray-100">Ficha de Inscrição</h2>
-                
-                <form onSubmit={handleSubmit} className="space-y-8">
-                    
-                    {/* DADOS PESSOAIS */}
+                <h2 className="text-2xl font-bold text-slate-800 mb-6 border-b pb-2">Ficha de Inscrição</h2>
+                <form onSubmit={handleSubmit} className="space-y-6">
                     <section>
-                        <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide">
-                            <User size={16}/> Dados Básicos
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                            <div className="md:col-span-2">
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Nome Completo *</label>
-                                <input required className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
-                                    value={formData.name} onChange={e => handleInputChange('name', e.target.value)} />
+                        <h4 className="flex gap-2 text-sm font-bold text-blue-600 uppercase mb-4"><User size={16}/> Dados Básicos</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="md:col-span-2"><label className="text-xs font-bold text-gray-500">Nome Completo *</label><input required className="w-full border p-2 rounded" value={formData.name} onChange={e=>handleInputChange('name',e.target.value)}/></div>
+                            <div className="md:col-span-2"><label className="text-xs font-bold text-gray-500">Email *</label><input required type="email" className="w-full border p-2 rounded" value={formData.email} onChange={e=>handleInputChange('email',e.target.value)}/></div>
+                            <div><label className="text-xs font-bold text-gray-500">Celular *</label><input required className="w-full border p-2 rounded" value={formData.phone} onChange={e=>handleInputChange('phone',e.target.value)}/></div>
+                            <div><label className="text-xs font-bold text-gray-500">Data de Nascimento *</label><input required type="date" className="w-full border p-2 rounded" value={formData.birthDate} onChange={e=>handleInputChange('birthDate',e.target.value)}/></div>
+                            <div className="md:col-span-2 grid grid-cols-3 gap-2">
+                                <div className="col-span-2"><label className="text-xs font-bold text-gray-500">Cidade</label><input className="w-full border p-2 rounded" value={formData.city} onChange={e=>handleInputChange('city',e.target.value)}/></div>
+                                <div><label className="text-xs font-bold text-gray-500">UF</label><select className="w-full border p-2 rounded bg-white" value={formData.state} onChange={e=>handleInputChange('state',e.target.value)}><option value="">--</option>{['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(u=><option key={u}>{u}</option>)}</select></div>
                             </div>
-                            <div className="md:col-span-2">
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Email *</label>
-                                <input required type="email" className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
-                                    value={formData.email} onChange={e => handleInputChange('email', e.target.value)} />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Telefone / Celular *</label>
-                                <input required className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
-                                    value={formData.phone} onChange={e => handleInputChange('phone', e.target.value)} />
-                            </div>
-                            <div>
-                                {/* CAMPO DATA DE NASCIMENTO */}
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Data de Nascimento *</label>
-                                <input required type="date" className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
-                                    value={formData.birthDate} onChange={e => handleInputChange('birthDate', e.target.value)} />
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 md:col-span-2">
-                                <div className="col-span-2">
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">Cidade</label>
-                                    <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
-                                        value={formData.city} onChange={e => handleInputChange('city', e.target.value)} />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">UF</label>
-                                    <select className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
-                                        value={formData.state} onChange={e => handleInputChange('state', e.target.value)}>
-                                        <option value="">--</option>
-                                        {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => (
-                                            <option key={uf} value={uf}>{uf}</option>
-                                        ))}
+                        </div>
+                    </section>
+                    <section>
+                        <h4 className="flex gap-2 text-sm font-bold text-blue-600 uppercase mb-4 border-t pt-6"><Languages size={16}/> Idiomas</h4>
+                        <div className="grid grid-cols-2 gap-4">
+                            {['Inglês', 'Espanhol'].map((lang, i) => (
+                                <div key={lang}>
+                                    <label className="text-xs font-bold text-gray-500">{lang}</label>
+                                    <select className="w-full border p-2 rounded bg-white" value={i===0?formData.englishLevel:formData.spanishLevel} onChange={e=>handleInputChange(i===0?'englishLevel':'spanishLevel',e.target.value)}>
+                                        <option value="">Selecione...</option><option value="basico">Básico</option><option value="intermediario">Intermediário</option><option value="avancado">Avançado</option><option value="fluente">Fluente</option>
                                     </select>
                                 </div>
-                            </div>
+                            ))}
                         </div>
                     </section>
-
-                    {/* IDIOMAS - NOVO BLOCO */}
                     <section>
-                        <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6">
-                            <Languages size={16}/> Idiomas
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Inglês</label>
-                                <select className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
-                                    value={formData.englishLevel} onChange={e => handleInputChange('englishLevel', e.target.value)}>
-                                    <option value="">Selecione...</option>
-                                    <option value="basico">Básico</option>
-                                    <option value="intermediario">Intermediário</option>
-                                    <option value="avancado">Avançado</option>
-                                    <option value="fluente">Fluente/Nativo</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Espanhol</label>
-                                <select className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
-                                    value={formData.spanishLevel} onChange={e => handleInputChange('spanishLevel', e.target.value)}>
-                                    <option value="">Selecione...</option>
-                                    <option value="basico">Básico</option>
-                                    <option value="intermediario">Intermediário</option>
-                                    <option value="avancado">Avançado</option>
-                                    <option value="fluente">Fluente/Nativo</option>
-                                </select>
-                            </div>
+                        <h4 className="flex gap-2 text-sm font-bold text-blue-600 uppercase mb-4 border-t pt-6"><GraduationCap size={16}/> Formação</h4>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div><label className="text-xs font-bold text-gray-500">Nível *</label><select required className="w-full border p-2 rounded bg-white" value={formData.education_level} onChange={e=>handleInputChange('education_level',e.target.value)}><option value="">Selecione...</option><option value="medio">Médio</option><option value="tecnico">Técnico</option><option value="superior">Superior</option><option value="pos">Pós/MBA</option></select></div>
+                            {formData.education_level && <div><label className="text-xs font-bold text-gray-500">Status *</label><select required className="w-full border p-2 rounded bg-white" value={formData.education_status} onChange={e=>handleInputChange('education_status',e.target.value)}><option value="">Selecione...</option><option value="completo">Completo</option><option value="cursando">Cursando</option></select></div>}
+                            {isSuperiorOrTech && formData.education_status && <><div className="col-span-2"><label className="text-xs font-bold text-gray-500">Curso</label><input className="w-full border p-2 rounded" value={formData.course_name} onChange={e=>handleInputChange('course_name',e.target.value)}/></div><div className="col-span-2"><label className="text-xs font-bold text-gray-500">Instituição</label><input className="w-full border p-2 rounded" value={formData.institution} onChange={e=>handleInputChange('institution',e.target.value)}/></div></>}
+                            {isSuperiorOrTech && (isStudying ? <div><label className="text-xs font-bold text-gray-500">Previsão</label><input type="month" className="w-full border p-2 rounded" value={formData.conclusion_date} onChange={e=>handleInputChange('conclusion_date',e.target.value)}/></div> : isCompleted ? <div><label className="text-xs font-bold text-gray-500">Ano Conclusão</label><input type="number" className="w-full border p-2 rounded" value={formData.conclusion_date} onChange={e=>handleInputChange('conclusion_date',e.target.value)}/></div> : null)}
                         </div>
                     </section>
-
-                    {/* FORMAÇÃO */}
                     <section>
-                        <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6">
-                            <GraduationCap size={16}/> Formação
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Nível de Escolaridade *</label>
-                                <select required className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
-                                    value={formData.education_level} onChange={e => handleInputChange('education_level', e.target.value)}
-                                >
-                                    <option value="">Selecione...</option>
-                                    <option value="medio">Ensino Médio</option>
-                                    <option value="tecnico">Ensino Técnico</option>
-                                    <option value="superior">Superior (Graduação)</option>
-                                    <option value="pos">Pós-Graduação / MBA</option>
-                                    <option value="mestrado">Mestrado / Doutorado</option>
-                                </select>
-                            </div>
-
-                            {formData.education_level && (
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">Status *</label>
-                                    <select required className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
-                                        value={formData.education_status} onChange={e => handleInputChange('education_status', e.target.value)}
-                                    >
-                                        <option value="">Selecione...</option>
-                                        <option value="completo">Completo</option>
-                                        <option value="cursando">Cursando</option>
-                                        <option value="incompleto">Incompleto / Trancado</option>
-                                    </select>
-                                </div>
-                            )}
-
-                            {isSuperiorOrTech && formData.education_status && (
-                                <>
-                                    <div className="md:col-span-2">
-                                        <label className="block text-xs font-bold text-gray-500 mb-1">Nome do Curso *</label>
-                                        <input required className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
-                                            value={formData.course_name} onChange={e => handleInputChange('course_name', e.target.value)} />
-                                    </div>
-                                    <div className="md:col-span-2">
-                                        <label className="block text-xs font-bold text-gray-500 mb-1">Instituição de Ensino *</label>
-                                        <input required className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" 
-                                            value={formData.institution} onChange={e => handleInputChange('institution', e.target.value)} />
-                                    </div>
-                                </>
-                            )}
-
-                            {isSuperiorOrTech && isStudying && (
-                                <>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 mb-1">Previsão de Formatura *</label>
-                                        <input required type="month" className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100" 
-                                            value={formData.conclusion_date} onChange={e => handleInputChange('conclusion_date', e.target.value)} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 mb-1">Período Atual *</label>
-                                        <select required className="w-full border p-2.5 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-100"
-                                            value={formData.current_period} onChange={e => handleInputChange('current_period', e.target.value)}
-                                        >
-                                            <option value="">Selecione...</option>
-                                            {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={`${n}º Semestre`}>{n}º Semestre</option>)}
-                                        </select>
-                                    </div>
-                                </>
-                            )}
-
-                            {isSuperiorOrTech && isCompleted && (
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">Ano de Conclusão *</label>
-                                    <input required type="number" min="1970" max="2030" className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100" 
-                                        value={formData.conclusion_date} onChange={e => handleInputChange('conclusion_date', e.target.value)} />
-                                </div>
-                            )}
-                        </div>
-                    </section>
-
-                    <section>
-                        <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6"><Paperclip size={16}/> Currículo e Links</h4>
-                        
-                        <div className="bg-gray-50 p-4 rounded-lg border mb-4">
-                            <label className="block text-xs font-bold text-gray-500 mb-2">Como deseja enviar seu currículo?</label>
+                        <h4 className="flex gap-2 text-sm font-bold text-blue-600 uppercase mb-4 border-t pt-6"><Paperclip size={16}/> Currículo</h4>
+                        <div className="bg-gray-50 p-4 rounded border">
                             <div className="flex gap-4 mb-4">
-                                <label className="flex items-center gap-2 text-sm cursor-pointer p-2 hover:bg-gray-100 rounded">
-                                    <input type="radio" name="resumeType" checked={resumeType === 'file'} onChange={() => setResumeType('file')} className="text-blue-600"/>
-                                    <Upload size={16} className="text-gray-600 ml-1"/> Arquivo (PDF/DOC)
-                                </label>
-                                <label className="flex items-center gap-2 text-sm cursor-pointer p-2 hover:bg-gray-100 rounded">
-                                    <input type="radio" name="resumeType" checked={resumeType === 'link'} onChange={() => setResumeType('link')} className="text-blue-600"/>
-                                    <LinkIcon size={16} className="text-gray-600 ml-1"/> Link (Drive/LinkedIn)
-                                </label>
+                                <label className="flex gap-2 cursor-pointer"><input type="radio" checked={resumeType==='file'} onChange={()=>setResumeType('file')}/> Upload Arquivo</label>
+                                <label className="flex gap-2 cursor-pointer"><input type="radio" checked={resumeType==='link'} onChange={()=>setResumeType('link')}/> Link Externo</label>
                             </div>
-
-                            {resumeType === 'file' ? (
-                                <div>
-                                    <input type="file" accept=".pdf,.doc,.docx" onChange={handleFileChange} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
-                                    <p className="text-xs text-gray-400 mt-1 flex items-center gap-1"><AlertCircle size={10}/> Formatos: PDF, DOC. Máx 5MB.</p>
-                                </div>
-                            ) : (
-                                <div>
-                                    <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" placeholder="Ex: https://docs.google.com/..." value={formData.resume_link_input} onChange={e => handleInputChange('resume_link_input', e.target.value)} />
-                                    <p className="text-xs text-gray-400 mt-1">Certifique-se de que o link esteja acessível publicamente.</p>
-                                </div>
-                            )}
+                            {resumeType==='file' ? <input type="file" accept=".pdf,.doc,.docx" onChange={handleFileChange} className="w-full text-sm"/> : <input className="w-full border p-2 rounded" placeholder="https://..." value={formData.resume_link_input} onChange={e=>handleInputChange('resume_link_input',e.target.value)}/>}
                         </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Linkedin (Opcional)</label>
-                                <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" placeholder="linkedin.com/in/..." value={formData.linkedin_profile} onChange={e => handleInputChange('linkedin_profile', e.target.value)} />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">GitHub / Portfólio (Opcional)</label>
-                                <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" placeholder="github.com/..." value={formData.github_profile} onChange={e => handleInputChange('github_profile', e.target.value)} />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">Como conheceu a vaga? (Opcional)</label>
-                                <input className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" placeholder="Ex: LinkedIn, Indicação..." value={formData.source} onChange={e => handleInputChange('source', e.target.value)} />
-                            </div>
+                        <div className="grid grid-cols-2 gap-4 mt-4">
+                            <div><label className="text-xs font-bold text-gray-500">LinkedIn</label><input className="w-full border p-2 rounded" value={formData.linkedin_profile} onChange={e=>handleInputChange('linkedin_profile',e.target.value)}/></div>
+                            <div><label className="text-xs font-bold text-gray-500">Origem (Onde viu a vaga?)</label><input className="w-full border p-2 rounded" value={formData.source} onChange={e=>handleInputChange('source',e.target.value)}/></div>
                         </div>
                     </section>
-
                     <section>
-                        <h4 className="flex items-center gap-2 text-sm font-bold text-blue-600 uppercase mb-4 tracking-wide border-t border-gray-100 pt-6"><FileText size={16}/> Motivação</h4>
-                        <label className="block text-xs font-bold text-gray-500 mb-1">Por que você quer esta vaga?</label>
-                        <textarea className="w-full border p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition" rows="4" value={formData.motivation} onChange={e => handleInputChange('motivation', e.target.value)} />
+                        <h4 className="flex gap-2 text-sm font-bold text-blue-600 uppercase mb-4 border-t pt-6"><FileText size={16}/> Motivação</h4>
+                        <textarea className="w-full border p-2 rounded" rows="4" value={formData.motivation} onChange={e=>handleInputChange('motivation',e.target.value)}/>
                     </section>
-
-                    <div className="pt-4">
-                        <button disabled={submitting} className="w-full bg-blue-600 text-white font-bold py-4 rounded-lg hover:bg-blue-700 transition flex justify-center items-center gap-2 shadow-lg disabled:opacity-70">
-                           {submitting ? 'Enviando...' : <><Send size={18}/> Confirmar Candidatura</>}
-                        </button>
-                    </div>
+                    <button disabled={submitting} className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 disabled:opacity-50">{submitting ? 'Enviando...' : 'Confirmar Candidatura'}</button>
                 </form>
             </div>
         </div>
