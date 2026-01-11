@@ -11,16 +11,14 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
   useEffect(() => {
     if (initialData) {
-        // Tenta ler do formato padrão do banco (scores dentro de scores) ou legado
-        const loadedScores = initialData.scores || initialData || {};
-        
+        // Correção: Lê do campo 'scores' que vem do banco
+        const loadedScores = initialData.scores || initialData || {}; 
         setAnswers({
             triagem: loadedScores.triagem || {},
             cultura: loadedScores.cultura || {},
             tecnico: loadedScores.tecnico || {}
         });
-
-        // O campo de notas pode estar na raiz (novo) ou dentro de scores (antigo)
+        // Correção: Lê do campo 'notes' (prioridade) ou 'anotacoes_gerais'
         const loadedNotes = initialData.notes || loadedScores.anotacoes_gerais || '';
         setNotes(loadedNotes);
     } else {
@@ -48,12 +46,12 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       const finalCalc = processEvaluation({ scores: answers }, jobParameters);
 
-      // Objeto JSON para a coluna 'scores'
+      // Salva estrutura compatível
       const scoresPayload = {
         triagem: answers.triagem,
         cultura: answers.cultura,
         tecnico: answers.tecnico,
-        anotacoes_gerais: notes, // Mantém compatibilidade
+        anotacoes_gerais: notes,
         pillar_scores: finalCalc,
         updated_at: new Date()
       };
@@ -62,7 +60,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             application_id: applicationId,
             evaluator_id: user.id,
             scores: scoresPayload, 
-            notes: notes, // Grava também na coluna nativa
+            notes: notes,
             final_score: finalCalc.total
         }, { onConflict: 'application_id, evaluator_id' });
 
@@ -91,20 +89,10 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                 </Box>
                 <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     {ratingScale.map(option => {
-                        // Comparação segura de String para garantir que o botão acenda
                         const isSelected = String(answers[key]?.[crit.name]) === String(option.id);
                         return (
                             <Button key={option.id} size="small" onClick={() => handleSelection(key, crit.name, option.id)}
-                                sx={{ 
-                                    minWidth: '30px', 
-                                    height: '24px', 
-                                    fontSize: '0.65rem', 
-                                    p: '0 8px', 
-                                    textTransform: 'none', 
-                                    bgcolor: isSelected ? '#1976d2' : '#f5f5f5', 
-                                    color: isSelected ? '#fff' : '#666', 
-                                    '&:hover': { bgcolor: isSelected ? '#1565c0' : '#eeeeee' } 
-                                }}>
+                                sx={{ minWidth: '30px', height: '24px', fontSize: '0.65rem', p: '0 8px', textTransform: 'none', bgcolor: isSelected ? '#1976d2' : '#f5f5f5', color: isSelected ? '#fff' : '#666', '&:hover': { bgcolor: isSelected ? '#1565c0' : '#eeeeee' } }}>
                                 {option.nome}
                             </Button>
                         )
@@ -153,7 +141,6 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             />
           </Paper>
 
-          {/* Histórico: Exibe apenas observações dos OUTROS avaliadores */}
           <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
               <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <MessageSquare size={14} /> Histórico de Observações ({allEvaluations?.length || 0})
@@ -164,9 +151,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                           <Typography variant="caption" fontWeight="bold" color="primary">{ev.evaluator_name}</Typography>
                           <Typography variant="caption" color="text.secondary">Nota: {Number(ev.final_score).toFixed(1)}</Typography>
                       </Box>
-                      <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#444' }}>
-                        {ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentários.'}
-                      </Typography>
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#444' }}>{ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentários.'}</Typography>
                   </Box>
               )) : <Typography variant="caption" color="text.secondary">Nenhuma outra avaliação registrada.</Typography>}
           </Box>

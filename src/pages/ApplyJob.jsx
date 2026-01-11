@@ -32,7 +32,7 @@ export default function ApplyJob() {
   const handleInputChange = (field, value) => setFormData(prev => ({ ...prev, [field]: value }));
   
   const handleFileChange = (e) => {
-    if (e.target.files?.length > 0) setResumeFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length > 0) setResumeFile(e.target.files[0]);
   };
 
   const handleSubmit = async (e) => {
