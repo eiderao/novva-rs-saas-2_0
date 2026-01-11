@@ -5,13 +5,16 @@ import { Box, Typography, Paper, Grid, Button, TextField } from '@mui/material';
 import { processEvaluation } from '../utils/evaluationLogic';
 
 export default function EvaluationForm({ applicationId, jobParameters, initialData, allEvaluations, onSaved }) {
+  // Estado local das respostas e notas
   const [answers, setAnswers] = useState({ triagem: {}, cultura: {}, tecnico: {} });
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Carrega os dados quando o componente monta ou initialData muda
   useEffect(() => {
     if (initialData) {
-        // CORREÇÃO: Tenta ler 'scores' do objeto (padrão) ou assume o objeto como scores (legado)
+        // CORREÇÃO: Extrai corretamente o objeto 'scores' do registro do banco
+        // Se 'initialData.scores' for undefined, usa fallback para 'initialData' (caso seja objeto plano)
         const loadedScores = initialData.scores || initialData || {}; 
         
         setAnswers({
@@ -20,22 +23,23 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             tecnico: loadedScores.tecnico || {}
         });
 
-        // CORREÇÃO: Prioridade para coluna 'notes', fallback para 'anotacoes_gerais' dentro do JSON
+        // CORREÇÃO: Lê observações da coluna 'notes' (prioridade) ou do campo legado no JSON
         const loadedNotes = initialData.notes || loadedScores.anotacoes_gerais || '';
         setNotes(loadedNotes);
     } else {
+        // Reseta se não houver dados
         setAnswers({ triagem: {}, cultura: {}, tecnico: {} });
         setNotes('');
     }
   }, [initialData]);
 
-  // Cálculo em tempo real
+  // Calcula a nota em tempo real para exibir no topo
   const currentScores = processEvaluation({ scores: answers }, jobParameters);
 
   const handleSelection = (section, criteriaName, noteId) => {
       setAnswers(prev => {
           const newSection = { ...prev[section] };
-          // Toggle robusto com String
+          // Toggle: Se clicar no mesmo ID (convertido para string), remove a seleção
           if (String(newSection[criteriaName]) === String(noteId)) {
              delete newSection[criteriaName];
           } else {
@@ -53,7 +57,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       const finalCalc = processEvaluation({ scores: answers }, jobParameters);
 
-      // Estrutura para salvar na coluna 'scores'
+      // Prepara o payload para a coluna JSONB 'scores'
       const scoresPayload = {
         triagem: answers.triagem,
         cultura: answers.cultura,
@@ -63,23 +67,25 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
         updated_at: new Date()
       };
 
+      // Upsert na tabela evaluations
       const { error: evalError } = await supabase.from('evaluations').upsert({
             application_id: applicationId,
             evaluator_id: user.id,
             scores: scoresPayload, 
-            notes: notes, // Salva na coluna dedicada
+            notes: notes, // Salva também na coluna de texto dedicada
             final_score: finalCalc.total
         }, { onConflict: 'application_id, evaluator_id' });
 
       if (evalError) throw evalError;
-      alert("Salvo!");
+      alert("Avaliação salva com sucesso!");
       if (onSaved) onSaved();
-    } catch (error) { alert("Erro: " + error.message); } finally { setSaving(false); }
+    } catch (error) { alert("Erro ao salvar: " + error.message); } finally { setSaving(false); }
   };
 
   const renderSectionCompact = (key, title, criteria) => {
     if (!criteria?.length) return null;
     const ratingScale = jobParameters.notas || [];
+    // Calcula pontuação específica desta seção
     const tempScores = processEvaluation({ scores: answers }, jobParameters);
     
     return (
@@ -96,8 +102,11 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                 </Box>
                 <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     {ratingScale.map(option => {
-                        // CORREÇÃO: Comparação forçada de String
+                        // O SEGREDO DO BUG RESOLVIDO: Comparação estrita de strings.
+                        // answers[...] pode ser UUID ou número. option.id pode ser UUID ou número.
+                        // String() iguala tudo e faz o botão acender.
                         const isSelected = String(answers[key]?.[crit.name]) === String(option.id);
+                        
                         return (
                             <Button 
                                 key={option.id} 
@@ -109,6 +118,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                                     fontSize: '0.65rem', 
                                     p: '0 8px', 
                                     textTransform: 'none', 
+                                    // Estilo visual: Azul se selecionado, Cinza se não
                                     bgcolor: isSelected ? '#1976d2' : '#f5f5f5', 
                                     color: isSelected ? '#fff' : '#666', 
                                     border: isSelected ? '1px solid #1565c0' : '1px solid transparent',
@@ -126,7 +136,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     );
   };
 
-  if (!jobParameters) return <Typography variant="caption">Carregando...</Typography>;
+  if (!jobParameters) return <Typography variant="caption">Carregando parâmetros...</Typography>;
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -163,7 +173,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             />
           </Paper>
 
-          {/* Histórico filtrado */}
+          {/* Histórico: Exibe apenas avaliações de outros avaliadores */}
           <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
               <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <MessageSquare size={14} /> Histórico de Observações ({allEvaluations?.length || 0})
@@ -178,7 +188,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                         {ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentários.'}
                       </Typography>
                   </Box>
-              )) : <Typography variant="caption" color="text.secondary">Nenhuma outra avaliação.</Typography>}
+              )) : <Typography variant="caption" color="text.secondary">Nenhuma outra avaliação registrada.</Typography>}
           </Box>
       </Box>
 

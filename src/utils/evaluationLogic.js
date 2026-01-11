@@ -1,6 +1,7 @@
 // src/utils/evaluationLogic.js
 
 export const calculatePillarScore = (sectionName, criteriaList, answers, ratingScale) => {
+    // Validações de segurança para evitar crash
     if (!criteriaList || !Array.isArray(criteriaList) || criteriaList.length === 0) return null;
     if (!answers) return null;
     
@@ -8,15 +9,16 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
     let totalWeightAnswered = 0;
     let hasAnswers = false;
 
-    // Garante leitura das respostas (suporta estrutura aninhada ou plana)
+    // Tenta ler do objeto aninhado (padrão V2) ou plano (fallback)
     const sectionAnswers = answers[sectionName] || answers; 
 
     criteriaList.forEach(criterion => {
         const noteId = sectionAnswers[criterion.name];
         
-        // Verifica se há uma resposta válida
+        // Se existe uma resposta salva para este critério
         if (noteId !== undefined && noteId !== null && noteId !== 'NA') {
-            // CORREÇÃO: Converte ambos para String para garantir que IDs numéricos ou UUIDs batam
+            // CORREÇÃO CRÍTICA: Converte ambos para String. 
+            // Isso resolve o problema de UUIDs (hexadecimal) não baterem ou IDs numéricos vs texto.
             const noteObj = ratingScale.find(n => String(n.id) === String(noteId));
             
             if (noteObj) {
@@ -30,6 +32,7 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
 
     if (!hasAnswers || totalWeightAnswered === 0) return null;
     
+    // Retorna a média ponderada (Score / Peso Total)
     return (totalScore / totalWeightAnswered); 
 };
 
@@ -38,13 +41,13 @@ export const processEvaluation = (evaluationObj, parameters) => {
         return { triagem: 0, cultura: 0, tecnico: 0, total: 0 };
     }
 
-    // Identifica onde estão as respostas (campo 'scores' ou raiz)
+    // Identifica se as respostas estão na raiz (estado local) ou dentro de 'scores' (banco)
     const answers = evaluationObj.scores || evaluationObj; 
     const ratingScale = parameters.notas || [];
     
     const pTriagem = parameters.triagem || [];
     const pCultura = parameters.cultura || [];
-    const pTecnico = parameters.tecnico || parameters['técnico'] || [];
+    const pTecnico = parameters.tecnico || parameters['técnico'] || []; // Suporte a erro de digitação comum
 
     const triagem = calculatePillarScore('triagem', pTriagem, answers, ratingScale);
     const cultura = calculatePillarScore('cultura', pCultura, answers, ratingScale);
