@@ -13,8 +13,8 @@ export default function ApplicationDetails() {
   
   const [appData, setAppData] = useState(null);
   const [job, setJob] = useState(null);
-  const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null); // Minha avaliação (Objeto Bruto)
-  const [othersEvaluations, setOthersEvaluations] = useState([]); 
+  const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null);
+  const [othersEvaluations, setOthersEvaluations] = useState([]);
   const [globalScore, setGlobalScore] = useState(0);
   const [evaluatorsCount, setEvaluatorsCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -27,6 +27,8 @@ export default function ApplicationDetails() {
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getSession();
+      
+      // 1. Busca Dados da Aplicação
       const { data: application } = await supabase.from('applications').select('*, candidates(*)').eq('id', appId).single();
       const candidateObj = Array.isArray(application.candidates) ? application.candidates[0] : application.candidates;
       
@@ -37,6 +39,7 @@ export default function ApplicationDetails() {
       
       setAppData({ ...application, formData: safeFormData, candidate: candidateObj });
 
+      // 2. Busca Dados da Vaga (Parâmetros)
       let jobParams = {};
       if (application.jobId) {
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', application.jobId).single();
@@ -44,6 +47,7 @@ export default function ApplicationDetails() {
         jobParams = jobData.parameters || {};
       }
 
+      // 3. Busca Avaliações
       const { data: allEvals } = await supabase.from('evaluations').select('*').eq('application_id', appId);
       
       if (allEvals) {
@@ -57,7 +61,7 @@ export default function ApplicationDetails() {
 
           const evalsWithNames = allEvals.map(e => ({ 
               ...e, 
-              evaluator_name: usersMap[e.evaluator_id] || 'Avaliador Desconhecido' 
+              evaluator_name: usersMap[e.evaluator_id] || 'Avaliador' 
           }));
           
           let myEval = null;
@@ -71,8 +75,7 @@ export default function ApplicationDetails() {
           }
 
           setOthersEvaluations(others);
-          // CORREÇÃO: Passa o objeto original, não o espalhado/formatado
-          setCurrentUserEvaluation(myEval || null); 
+          setCurrentUserEvaluation(myEval); // Passa o objeto exato do banco
           setEvaluatorsCount(evalsWithNames.length);
           
           let sumTotal = 0, validCount = 0;
@@ -133,14 +136,15 @@ export default function ApplicationDetails() {
     );
   };
 
-  const renderScoreBadges = (gScore, myScore, count) => {
+  const renderScoreBadges = (gScore, myEval, count) => {
     const getBgColor = (s) => s >= 8 ? '#e8f5e9' : s >= 5 ? '#fff3e0' : '#ffebee';
     const getTextColor = (s) => s >= 8 ? '#2e7d32' : s >= 5 ? '#ef6c00' : '#c62828';
     
-    // Calcula minha nota atual para exibição usando o objeto bruto
+    // Calcula minha nota atual para exibição
     let myFinalScore = 0;
-    if(currentUserEvaluation) {
-       const calc = processEvaluation(currentUserEvaluation, job?.parameters);
+    if(myEval) {
+       // Passa o objeto completo, o utilitário sabe buscar .scores ou usar o objeto
+       const calc = processEvaluation(myEval, job?.parameters);
        myFinalScore = calc.total;
     }
 
@@ -182,7 +186,8 @@ export default function ApplicationDetails() {
               <Avatar sx={{ width: 80, height: 80, bgcolor: '#1976d2', fontSize: '2rem', mb: 2, fontWeight: 'bold' }}>{candidate.name?.[0]}</Avatar>
               <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 'bold', lineHeight: 1.2 }}>{candidate.name}</Typography>
               <Typography variant="caption" color="text.secondary" sx={{ mb: 2 }}>{job?.title}</Typography>
-              {renderScoreBadges(globalScore, 0, evaluatorsCount)}
+              {/* Passa currentUserEvaluation para calcular a nota no render */}
+              {renderScoreBadges(globalScore, currentUserEvaluation, evaluatorsCount)}
             </Box>
             <Divider sx={{ my: 3 }} />
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -208,11 +213,12 @@ export default function ApplicationDetails() {
         </Grid>
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
+             {/* Componente EvaluationForm com o objeto currentUserEvaluation completo */}
              <EvaluationForm 
                 applicationId={appData.id} 
                 jobParameters={params} 
                 initialData={currentUserEvaluation} 
-                allEvaluations={othersEvaluations} // Agora só passa o histórico dos OUTROS
+                allEvaluations={othersEvaluations} 
                 onSaved={fetchData} 
              />
           </Paper>

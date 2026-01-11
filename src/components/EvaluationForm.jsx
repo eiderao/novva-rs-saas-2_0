@@ -10,10 +10,10 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    // Carrega dados iniciais da MINHA avaliação se existirem
     if (initialData) {
-        // A estrutura no banco pode variar um pouco, garantimos a leitura correta
-        const loadedScores = initialData.scores || {}; 
+        // Se vier do banco, as respostas estão dentro de 'scores'
+        // Se vier de um estado local antigo, pode estar na raiz (fallback)
+        const loadedScores = initialData.scores || initialData || {}; 
         
         setAnswers({
             triagem: loadedScores.triagem || {},
@@ -21,11 +21,10 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             tecnico: loadedScores.tecnico || {}
         });
 
-        // Tenta ler notas do campo raiz 'notes' ou do legado dentro de 'scores'
+        // Tenta ler do campo 'notes' (novo padrão) ou 'anotacoes_gerais' (antigo dentro do JSON)
         const loadedNotes = initialData.notes || loadedScores.anotacoes_gerais || '';
         setNotes(loadedNotes);
     } else {
-        // Reseta se não houver dados (novo avaliador)
         setAnswers({ triagem: {}, cultura: {}, tecnico: {} });
         setNotes('');
     }
@@ -50,23 +49,23 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       const finalCalc = processEvaluation({ scores: answers }, jobParameters);
 
-      // Prepara objeto para salvar
-      // Nota: Salvamos 'anotacoes_gerais' dentro de scores para compatibilidade legado,
-      // mas também salvamos no campo 'notes' nativo da tabela.
+      // JSON que será salvo na coluna 'scores'
+      // Mantemos 'anotacoes_gerais' aqui também para compatibilidade reversa
       const scoresPayload = {
         triagem: answers.triagem,
         cultura: answers.cultura,
         tecnico: answers.tecnico,
-        anotacoes_gerais: notes, // Legado
+        anotacoes_gerais: notes, 
         pillar_scores: finalCalc,
         updated_at: new Date()
       };
 
+      // Upsert: Atualiza se já existir (mesmo app_id e user_id)
       const { error: evalError } = await supabase.from('evaluations').upsert({
             application_id: applicationId,
             evaluator_id: user.id,
             scores: scoresPayload, 
-            notes: notes, // Campo nativo
+            notes: notes, // Salva também na coluna de texto dedicada
             final_score: finalCalc.total
         }, { onConflict: 'application_id, evaluator_id' });
 
@@ -79,6 +78,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
   const renderSectionCompact = (key, title, criteria) => {
     if (!criteria?.length) return null;
     const ratingScale = jobParameters.notas || [];
+    // Calcula nota parcial deste pilar baseado nas respostas atuais (state)
     const tempScores = processEvaluation({ scores: answers }, jobParameters);
     
     return (
@@ -94,12 +94,29 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                     <Typography variant="caption" color="text.secondary">{crit.weight}%</Typography>
                 </Box>
                 <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                    {ratingScale.map(option => (
-                        <Button key={option.id} size="small" onClick={() => handleSelection(key, crit.name, option.id)}
-                                sx={{ minWidth: '30px', height: '24px', fontSize: '0.65rem', p: '0 8px', textTransform: 'none', bgcolor: answers[key]?.[crit.name] === option.id ? '#1976d2' : '#f5f5f5', color: answers[key]?.[crit.name] === option.id ? '#fff' : '#666', '&:hover': { bgcolor: answers[key]?.[crit.name] === option.id ? '#1565c0' : '#eeeeee' } }}>
-                            {option.nome}
-                        </Button>
-                    ))}
+                    {ratingScale.map(option => {
+                        // Verifica se está selecionado comparando IDs (garantindo string)
+                        const isSelected = String(answers[key]?.[crit.name]) === String(option.id);
+                        return (
+                            <Button 
+                                key={option.id} 
+                                size="small" 
+                                onClick={() => handleSelection(key, crit.name, option.id)}
+                                sx={{ 
+                                    minWidth: '30px', 
+                                    height: '24px', 
+                                    fontSize: '0.65rem', 
+                                    p: '0 8px', 
+                                    textTransform: 'none', 
+                                    bgcolor: isSelected ? '#1976d2' : '#f5f5f5', 
+                                    color: isSelected ? '#fff' : '#666', 
+                                    '&:hover': { bgcolor: isSelected ? '#1565c0' : '#eeeeee' } 
+                                }}
+                            >
+                                {option.nome}
+                            </Button>
+                        )
+                    })}
                 </Box>
             </Box>
         ))}
@@ -144,7 +161,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             />
           </Paper>
 
-          {/* HISTÓRICO DE OUTROS AVALIADORES */}
+          {/* HISTÓRICO DE OUTROS AVALIADORES (Minha avaliação não aparece aqui) */}
           <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
               <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <MessageSquare size={14} /> Histórico de Observações ({allEvaluations?.length || 0})
