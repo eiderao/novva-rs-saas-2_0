@@ -5,33 +5,41 @@ import { Box, Typography, Paper, Grid, Button, TextField } from '@mui/material';
 import { processEvaluation } from '../utils/evaluationLogic';
 
 export default function EvaluationForm({ applicationId, jobParameters, initialData, allEvaluations, onSaved }) {
+  // Estado inicial garantindo que as chaves existam
   const [answers, setAnswers] = useState({ triagem: {}, cultura: {}, tecnico: {} });
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Função auxiliar para normalizar a chave 'tecnico' que pode vir com acento do banco
+  const getTecnicoData = (data) => {
+    if (!data) return {};
+    return data.tecnico || data['técnico'] || data['tÃ©cnico'] || {};
+  };
+
   useEffect(() => {
     if (initialData) {
-        // Normaliza as respostas para garantir que 'técnico' (com acento) seja lido como 'tecnico'
-        const tecnicoData = initialData.tecnico || initialData['técnico'] || initialData['técnico'] || {};
-        
+        // Carrega os dados salvos garantindo a estrutura correta
         setAnswers({
             triagem: initialData.triagem || {},
             cultura: initialData.cultura || {},
-            tecnico: tecnicoData
+            tecnico: getTecnicoData(initialData)
         });
         setNotes(initialData.anotacoes_gerais || '');
     }
   }, [initialData]);
 
-  // Calcula a nota em tempo real para feedback visual
+  // Calcula pontuação em tempo real
   const currentScores = processEvaluation({ scores: answers }, jobParameters);
 
   const handleSelection = (section, criteriaName, noteId) => {
       setAnswers(prev => {
           const newSection = { ...prev[section] };
-          // Lógica de toggle: se clicar na mesma nota, desmarca
-          if (newSection[criteriaName] === noteId) delete newSection[criteriaName];
-          else newSection[criteriaName] = noteId;
+          // Toggle: se clicar na mesma nota, desmarca (remove a chave)
+          if (newSection[criteriaName] === noteId) {
+              delete newSection[criteriaName];
+          } else {
+              newSection[criteriaName] = noteId;
+          }
           return { ...prev, [section]: newSection };
       });
   };
@@ -63,17 +71,17 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
         }, { onConflict: 'application_id, evaluator_id' });
 
       if (evalError) throw evalError;
-      alert("Salvo!");
+      alert("Salvo com sucesso!");
       if (onSaved) onSaved();
     } catch (error) { 
-        alert("Erro: " + error.message); 
+        alert("Erro ao salvar: " + error.message); 
     } finally { 
         setSaving(false); 
     }
   };
 
   const renderSectionCompact = (key, title, criteria) => {
-    // Se não houver critérios, não renderiza a seção
+    // Se não houver critérios para esta seção, não renderiza nada
     if (!criteria || !criteria.length) return null;
 
     const ratingScale = jobParameters.notas || [];
@@ -83,47 +91,58 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
       <Paper variant="outlined" sx={{ p: 1.5, mb: 2, borderColor: '#e0e0e0', bgcolor: '#fff' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#1976d2' }}>{title}</Typography>
-            <Typography variant="caption" sx={{ fontWeight: 'bold', bgcolor: '#e3f2fd', px: 1, py: 0.5, borderRadius: 1 }}>Nota: {tempScores[key].toFixed(1)}</Typography>
+            <Typography variant="caption" sx={{ fontWeight: 'bold', bgcolor: '#e3f2fd', px: 1, py: 0.5, borderRadius: 1 }}>
+                Nota: {tempScores[key].toFixed(1)}
+            </Typography>
         </Box>
-        {criteria.map((crit, idx) => (
-            <Box key={idx} sx={{ mb: 1.5, borderBottom: '1px dashed #eee', pb: 1 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                    <Typography variant="caption" sx={{ fontWeight: 500, width: '80%', lineHeight: 1.2 }}>{crit.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">{crit.weight}%</Typography>
+        {criteria.map((crit, idx) => {
+            // Valor salvo para este critério específico
+            const savedValue = answers[key]?.[crit.name];
+
+            return (
+                <Box key={idx} sx={{ mb: 1.5, borderBottom: '1px dashed #eee', pb: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 500, width: '80%', lineHeight: 1.2 }}>{crit.name}</Typography>
+                        <Typography variant="caption" color="text.secondary">{crit.weight}%</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                        {ratingScale.map(option => {
+                            // CORREÇÃO CRÍTICA: Converte ambos para String para comparação segura (UUID vs String vs Number)
+                            const isSelected = String(savedValue) === String(option.id);
+
+                            return (
+                                <Button 
+                                    key={option.id} 
+                                    size="small" 
+                                    onClick={() => handleSelection(key, crit.name, option.id)}
+                                    sx={{ 
+                                        minWidth: '30px', 
+                                        height: '24px', 
+                                        fontSize: '0.65rem', 
+                                        p: '0 8px', 
+                                        textTransform: 'none', 
+                                        bgcolor: isSelected ? '#1976d2' : '#f5f5f5', 
+                                        color: isSelected ? '#fff' : '#666', 
+                                        '&:hover': { 
+                                            bgcolor: isSelected ? '#1565c0' : '#eeeeee' 
+                                        } 
+                                    }}
+                                >
+                                    {option.nome}
+                                </Button>
+                            );
+                        })}
+                    </Box>
                 </Box>
-                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                    {ratingScale.map(option => (
-                        <Button 
-                            key={option.id} 
-                            size="small" 
-                            onClick={() => handleSelection(key, crit.name, option.id)}
-                            sx={{ 
-                                minWidth: '30px', 
-                                height: '24px', 
-                                fontSize: '0.65rem', 
-                                p: '0 8px', 
-                                textTransform: 'none', 
-                                // Verifica se a resposta atual bate com o ID da opção
-                                bgcolor: answers[key]?.[crit.name] === option.id ? '#1976d2' : '#f5f5f5', 
-                                color: answers[key]?.[crit.name] === option.id ? '#fff' : '#666', 
-                                '&:hover': { 
-                                    bgcolor: answers[key]?.[crit.name] === option.id ? '#1565c0' : '#eeeeee' 
-                                } 
-                            }}
-                        >
-                            {option.nome}
-                        </Button>
-                    ))}
-                </Box>
-            </Box>
-        ))}
+            );
+        })}
       </Paper>
     );
   };
 
   if (!jobParameters) return <Typography variant="caption">Carregando parâmetros...</Typography>;
 
-  // Definição robusta dos critérios, verificando todas as chaves possíveis para 'tecnico'
+  // Normalização da lista de critérios vindos da vaga
   const criteriosTecnico = jobParameters.tecnico || jobParameters['técnico'] || jobParameters['tÃ©cnico'] || [];
 
   return (
