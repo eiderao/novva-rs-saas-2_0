@@ -56,15 +56,16 @@ export default function ApplicationDetails() {
           let others = [];
 
           if (user) {
-              // Separa a avaliação do usuário atual das demais
+              // Separa "Minha Avaliação" (para edição) do "Histórico" (apenas outros)
               myEval = evalsWithNames.find(e => e.evaluator_id === user.id);
               others = evalsWithNames.filter(e => e.evaluator_id !== user.id);
           } else {
               others = evalsWithNames;
           }
 
-          setCurrentUserEvaluation(myEval || null); // Envia o objeto bruto
-          setOthersEvaluations(others);             // Envia o resto para o histórico
+          // CORREÇÃO: Passa o objeto completo (não apenas .scores) para que as notes sejam carregadas
+          setCurrentUserEvaluation(myEval || null); 
+          setOthersEvaluations(others); 
           setEvaluatorsCount(evalsWithNames.length);
           
           let sumTotal = 0, validCount = 0;
@@ -83,7 +84,7 @@ export default function ApplicationDetails() {
     const institution = data.institution || data.education?.institution;
     const year = data.conclusion_date || data.completionYear || data.education?.date;
     
-    // Corrige status Cursando/Completo
+    // CORREÇÃO: Prioriza o campo novo 'education_status'
     let status = data.education_status || data.education?.status;
     if (!status && data.hasGraduated) {
         status = data.hasGraduated === 'sim' ? 'Completo' : 'Cursando';
@@ -120,7 +121,7 @@ export default function ApplicationDetails() {
   const renderScoreBadges = (gScore, myEval, count) => {
     let myFinalScore = 0;
     if(myEval) {
-       // Calcula "Minha Nota" usando o objeto bruto que agora é processado corretamente
+       // Calcula "Minha Nota" usando o objeto bruto (que agora funciona com a correção no logic)
        const calc = processEvaluation(myEval, job?.parameters);
        myFinalScore = calc.total;
     }
@@ -180,6 +181,7 @@ export default function ApplicationDetails() {
         </Grid>
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
+             {/* Passa "currentUserEvaluation" para edição e "othersEvaluations" para o histórico */}
              <EvaluationForm 
                 applicationId={appData.id} 
                 jobParameters={params} 
