@@ -62,7 +62,8 @@ export default function ApplicationDetails() {
           let usersMap = {};
           
           if (userIds.length > 0) {
-              const { data: users } = await supabase.from('users').select('id, name, email').in('id', userIds);
+              // CORREÇÃO: Busca nomes em 'user_profiles' em vez de 'users'
+              const { data: users } = await supabase.from('user_profiles').select('id, name, email').in('id', userIds);
               users?.forEach(u => usersMap[u.id] = u.name || u.email);
           }
           
