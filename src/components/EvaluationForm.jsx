@@ -11,37 +11,27 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
   useEffect(() => {
     if (initialData) {
-        // Busca scores do objeto ou usa o próprio objeto (legado)
-        const loadedScores = initialData.scores || initialData || {}; 
+        // Normaliza as respostas para garantir que 'técnico' (com acento) seja lido como 'tecnico'
+        const tecnicoData = initialData.tecnico || initialData['técnico'] || initialData['técnico'] || {};
         
         setAnswers({
-            triagem: loadedScores.triagem || {},
-            cultura: loadedScores.cultura || {},
-            // CORREÇÃO CRÍTICA: Lê 'tecnico' (novo) OU 'técnico' (legado/banco com acento)
-            tecnico: loadedScores.tecnico || loadedScores['técnico'] || {} 
+            triagem: initialData.triagem || {},
+            cultura: initialData.cultura || {},
+            tecnico: tecnicoData
         });
-
-        // Lê notas do campo 'notes' ou do legado
-        const loadedNotes = initialData.notes || loadedScores.anotacoes_gerais || '';
-        setNotes(loadedNotes);
-    } else {
-        setAnswers({ triagem: {}, cultura: {}, tecnico: {} });
-        setNotes('');
+        setNotes(initialData.anotacoes_gerais || '');
     }
   }, [initialData]);
 
-  // Calcula nota em tempo real
+  // Calcula a nota em tempo real para feedback visual
   const currentScores = processEvaluation({ scores: answers }, jobParameters);
 
   const handleSelection = (section, criteriaName, noteId) => {
       setAnswers(prev => {
           const newSection = { ...prev[section] };
-          // Toggle com conversão de String para garantir match de UUID
-          if (String(newSection[criteriaName]) === String(noteId)) {
-             delete newSection[criteriaName];
-          } else {
-             newSection[criteriaName] = noteId;
-          }
+          // Lógica de toggle: se clicar na mesma nota, desmarca
+          if (newSection[criteriaName] === noteId) delete newSection[criteriaName];
+          else newSection[criteriaName] = noteId;
           return { ...prev, [section]: newSection };
       });
   };
@@ -54,32 +44,38 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       const finalCalc = processEvaluation({ scores: answers }, jobParameters);
 
-      // Padroniza o salvamento (sem acento no 'tecnico' para o futuro)
-      const scoresPayload = {
+      const payload = {
         triagem: answers.triagem,
         cultura: answers.cultura,
         tecnico: answers.tecnico,
         anotacoes_gerais: notes,
         pillar_scores: finalCalc,
+        evaluator_name: user.email,
         updated_at: new Date()
       };
 
       const { error: evalError } = await supabase.from('evaluations').upsert({
             application_id: applicationId,
             evaluator_id: user.id,
-            scores: scoresPayload, 
+            scores: payload, 
             notes: notes,
             final_score: finalCalc.total
         }, { onConflict: 'application_id, evaluator_id' });
 
       if (evalError) throw evalError;
-      alert("Salvo com sucesso!");
+      alert("Salvo!");
       if (onSaved) onSaved();
-    } catch (error) { alert("Erro ao salvar: " + error.message); } finally { setSaving(false); }
+    } catch (error) { 
+        alert("Erro: " + error.message); 
+    } finally { 
+        setSaving(false); 
+    }
   };
 
   const renderSectionCompact = (key, title, criteria) => {
-    if (!criteria?.length) return null;
+    // Se não houver critérios, não renderiza a seção
+    if (!criteria || !criteria.length) return null;
+
     const ratingScale = jobParameters.notas || [];
     const tempScores = processEvaluation({ scores: answers }, jobParameters);
     
@@ -96,30 +92,28 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                     <Typography variant="caption" color="text.secondary">{crit.weight}%</Typography>
                 </Box>
                 <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                    {ratingScale.map(option => {
-                        // Comparação de String para garantir match
-                        const isSelected = String(answers[key]?.[crit.name]) === String(option.id);
-                        return (
-                            <Button 
-                                key={option.id} 
-                                size="small" 
-                                onClick={() => handleSelection(key, crit.name, option.id)}
-                                sx={{ 
-                                    minWidth: '30px', 
-                                    height: '24px', 
-                                    fontSize: '0.65rem', 
-                                    p: '0 8px', 
-                                    textTransform: 'none', 
-                                    bgcolor: isSelected ? '#1976d2' : '#f5f5f5', 
-                                    color: isSelected ? '#fff' : '#666', 
-                                    border: isSelected ? '1px solid #1565c0' : '1px solid transparent',
-                                    '&:hover': { bgcolor: isSelected ? '#1565c0' : '#eeeeee' } 
-                                }}
-                            >
-                                {option.nome}
-                            </Button>
-                        )
-                    })}
+                    {ratingScale.map(option => (
+                        <Button 
+                            key={option.id} 
+                            size="small" 
+                            onClick={() => handleSelection(key, crit.name, option.id)}
+                            sx={{ 
+                                minWidth: '30px', 
+                                height: '24px', 
+                                fontSize: '0.65rem', 
+                                p: '0 8px', 
+                                textTransform: 'none', 
+                                // Verifica se a resposta atual bate com o ID da opção
+                                bgcolor: answers[key]?.[crit.name] === option.id ? '#1976d2' : '#f5f5f5', 
+                                color: answers[key]?.[crit.name] === option.id ? '#fff' : '#666', 
+                                '&:hover': { 
+                                    bgcolor: answers[key]?.[crit.name] === option.id ? '#1565c0' : '#eeeeee' 
+                                } 
+                            }}
+                        >
+                            {option.nome}
+                        </Button>
+                    ))}
                 </Box>
             </Box>
         ))}
@@ -127,7 +121,10 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     );
   };
 
-  if (!jobParameters) return <Typography variant="caption">Carregando...</Typography>;
+  if (!jobParameters) return <Typography variant="caption">Carregando parâmetros...</Typography>;
+
+  // Definição robusta dos critérios, verificando todas as chaves possíveis para 'tecnico'
+  const criteriosTecnico = jobParameters.tecnico || jobParameters['técnico'] || jobParameters['tÃ©cnico'] || [];
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -145,25 +142,26 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
           <Grid container spacing={1}>
               <Grid item xs={12} md={4}>{renderSectionCompact("triagem", "Triagem", jobParameters.triagem)}</Grid>
               <Grid item xs={12} md={4}>{renderSectionCompact("cultura", "Fit Cultural", jobParameters.cultura)}</Grid>
-              <Grid item xs={12} md={4}>{renderSectionCompact("tecnico", "Técnico", jobParameters.tecnico || jobParameters['técnico'])}</Grid>
+              <Grid item xs={12} md={4}>{renderSectionCompact("tecnico", "Técnico", criteriosTecnico)}</Grid>
           </Grid>
           
           <Paper variant="outlined" sx={{ p: 2, mt: 1 }}>
             <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'block' }}>Minhas Anotações</Typography>
             <TextField 
                 multiline 
-                rows={3} 
+                rows={2} 
                 fullWidth 
                 variant="outlined" 
                 size="small" 
                 value={notes} 
                 onChange={e => setNotes(e.target.value)} 
-                placeholder="Insira seus comentários..." 
+                placeholder="Comentários gerais sobre o candidato..." 
                 sx={{ bgcolor: '#fff' }} 
                 InputProps={{ style: { fontSize: '0.8rem' } }} 
             />
           </Paper>
 
+          {/* HISTÓRICO DE TODAS AS ANOTAÇÕES */}
           <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
               <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <MessageSquare size={14} /> Histórico de Observações ({allEvaluations?.length || 0})
@@ -171,19 +169,27 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
               {allEvaluations && allEvaluations.length > 0 ? allEvaluations.map((ev, i) => (
                   <Box key={i} sx={{ mb: 1, p: 1.5, bgcolor: '#f9fafb', borderRadius: 1, border: '1px solid #eee' }}>
                       <Box display="flex" justifyContent="space-between" mb={0.5}>
-                          <Typography variant="caption" fontWeight="bold" color="primary">{ev.evaluator_name}</Typography>
+                          <Typography variant="caption" fontWeight="bold" color="primary">{ev.evaluator_name || 'Usuário'}</Typography>
                           <Typography variant="caption" color="text.secondary">Nota: {Number(ev.final_score).toFixed(1)}</Typography>
                       </Box>
-                      <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#444' }}>
-                        {ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentários.'}
-                      </Typography>
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem', color: '#444' }}>{ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentários.'}</Typography>
                   </Box>
-              )) : <Typography variant="caption" color="text.secondary">Nenhuma outra avaliação.</Typography>}
+              )) : <Typography variant="caption" color="text.secondary">Nenhuma avaliação registrada ainda.</Typography>}
           </Box>
       </Box>
 
       <Box sx={{ mt: 2, pt: 1, borderTop: '1px solid #eee' }}>
-        <Button onClick={handleSave} disabled={saving} variant="contained" fullWidth color="primary" startIcon={<Save size={16}/>} sx={{ textTransform: 'none', fontWeight: 'bold' }}>{saving ? "Salvando..." : "Salvar Minha Nota"}</Button>
+        <Button 
+            onClick={handleSave} 
+            disabled={saving} 
+            variant="contained" 
+            fullWidth 
+            color="primary" 
+            startIcon={<Save size={16}/>} 
+            sx={{ textTransform: 'none', fontWeight: 'bold' }}
+        >
+            {saving ? "Salvando..." : "Salvar Minha Nota"}
+        </Button>
       </Box>
     </Box>
   );
