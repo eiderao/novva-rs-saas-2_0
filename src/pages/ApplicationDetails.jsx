@@ -62,8 +62,8 @@ export default function ApplicationDetails() {
               others = evalsWithNames;
           }
 
-          setCurrentUserEvaluation(myEval || null); // Passa o objeto completo para o form
-          setOthersEvaluations(others); // Histórico limpo
+          setCurrentUserEvaluation(myEval || null);
+          setOthersEvaluations(others); 
           setEvaluatorsCount(evalsWithNames.length);
           
           let sumTotal = 0, validCount = 0;
@@ -82,6 +82,7 @@ export default function ApplicationDetails() {
     const institution = data.institution || data.education?.institution;
     const year = data.conclusion_date || data.completionYear || data.education?.date;
     
+    // CORREÇÃO: Prioriza education_status
     let status = data.education_status || data.education?.status;
     if (!status && data.hasGraduated) {
         status = data.hasGraduated === 'sim' ? 'Completo' : 'Cursando';
@@ -118,7 +119,6 @@ export default function ApplicationDetails() {
   const renderScoreBadges = (gScore, myEval, count) => {
     let myFinalScore = 0;
     if(myEval) {
-       // Calcula "Minha Nota" usando o objeto bruto (agora o processEvaluation lida bem com tipos)
        const calc = processEvaluation(myEval, job?.parameters);
        myFinalScore = calc.total;
     }

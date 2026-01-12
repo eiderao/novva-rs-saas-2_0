@@ -1,5 +1,3 @@
-// src/utils/evaluationLogic.js
-
 export const calculatePillarScore = (sectionName, criteriaList, answers, ratingScale) => {
     if (!criteriaList || !Array.isArray(criteriaList) || criteriaList.length === 0) return null;
     if (!answers) return null;
@@ -8,15 +6,14 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
     let totalWeightAnswered = 0;
     let hasAnswers = false;
 
-    // Tenta acessar a seção (ex: answers.cultura) ou usa o objeto direto se for plano
+    // Tenta ler do objeto aninhado ou plano
     const sectionAnswers = answers[sectionName] || answers; 
 
     criteriaList.forEach(criterion => {
         const noteId = sectionAnswers[criterion.name];
         
-        // Verifica se há nota válida (não é undefined, null ou 'NA')
-        if (noteId !== undefined && noteId !== null && noteId !== 'NA') {
-            // CORREÇÃO: Força conversão para String para comparar UUIDs ou IDs numéricos
+        if (noteId && noteId !== 'NA') {
+            // Conversão para String para comparar UUIDs
             const noteObj = ratingScale.find(n => String(n.id) === String(noteId));
             
             if (noteObj) {
@@ -38,17 +35,19 @@ export const processEvaluation = (evaluationObj, parameters) => {
         return { triagem: 0, cultura: 0, tecnico: 0, total: 0 };
     }
 
-    // Pega os scores (pode estar na raiz ou em .scores)
     const answers = evaluationObj.scores || evaluationObj; 
     const ratingScale = parameters.notas || [];
     
     const pTriagem = parameters.triagem || [];
     const pCultura = parameters.cultura || [];
+    // Suporte a 'tecnico' e 'técnico' (com acento)
     const pTecnico = parameters.tecnico || parameters['técnico'] || [];
 
     const triagem = calculatePillarScore('triagem', pTriagem, answers, ratingScale);
     const cultura = calculatePillarScore('cultura', pCultura, answers, ratingScale);
-    const tecnico = calculatePillarScore('tecnico', pTecnico, answers, ratingScale);
+    // Tenta ler respostas de 'tecnico' ou 'técnico'
+    const answersTecnico = answers.tecnico || answers['técnico'] || {};
+    const tecnico = calculatePillarScore('tecnico', pTecnico, { ...answers, tecnico: answersTecnico }, ratingScale);
 
     let sum = 0;
     let count = 0;

@@ -9,41 +9,38 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // CARREGAMENTO DOS DADOS (CORREÇÃO CRÍTICA)
   useEffect(() => {
     if (initialData) {
-        // Se initialData.scores existe, usa ele (Padrão do Banco)
-        // Se não, usa um objeto vazio para evitar erro de undefined
-        const loadedScores = initialData.scores || {}; 
+        // Busca scores do objeto ou usa o próprio objeto (legado)
+        const loadedScores = initialData.scores || initialData || {}; 
         
-        // Garante que todas as seções existam, mesmo que vazias
         setAnswers({
             triagem: loadedScores.triagem || {},
             cultura: loadedScores.cultura || {},
-            tecnico: loadedScores.tecnico || {}
+            // CORREÇÃO CRÍTICA: Lê 'tecnico' (novo) OU 'técnico' (legado/banco com acento)
+            tecnico: loadedScores.tecnico || loadedScores['técnico'] || {} 
         });
 
-        // Tenta ler o campo de notas (texto)
+        // Lê notas do campo 'notes' ou do legado
         const loadedNotes = initialData.notes || loadedScores.anotacoes_gerais || '';
         setNotes(loadedNotes);
     } else {
-        // Reseta se não houver dados
         setAnswers({ triagem: {}, cultura: {}, tecnico: {} });
         setNotes('');
     }
   }, [initialData]);
 
-  // Calcula a nota em tempo real para feedback visual
+  // Calcula nota em tempo real
   const currentScores = processEvaluation({ scores: answers }, jobParameters);
 
   const handleSelection = (section, criteriaName, noteId) => {
       setAnswers(prev => {
           const newSection = { ...prev[section] };
-          // Toggle robusto: Converte para String para comparar UUIDs
+          // Toggle com conversão de String para garantir match de UUID
           if (String(newSection[criteriaName]) === String(noteId)) {
-             delete newSection[criteriaName]; // Desmarca se clicar no mesmo
+             delete newSection[criteriaName];
           } else {
-             newSection[criteriaName] = noteId; // Marca o novo
+             newSection[criteriaName] = noteId;
           }
           return { ...prev, [section]: newSection };
       });
@@ -57,12 +54,12 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       const finalCalc = processEvaluation({ scores: answers }, jobParameters);
 
-      // Prepara o objeto JSON exato que vai pro banco
+      // Padroniza o salvamento (sem acento no 'tecnico' para o futuro)
       const scoresPayload = {
         triagem: answers.triagem,
         cultura: answers.cultura,
         tecnico: answers.tecnico,
-        anotacoes_gerais: notes, // Mantido para compatibilidade
+        anotacoes_gerais: notes,
         pillar_scores: finalCalc,
         updated_at: new Date()
       };
@@ -100,12 +97,8 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                 </Box>
                 <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     {ratingScale.map(option => {
-                        // --- A CORREÇÃO VISUAL ESTÁ AQUI ---
-                        // Compara o valor salvo no estado (answers) com o ID da opção
-                        // Usa String() para garantir que UUID === UUID
-                        const savedValue = answers[key]?.[crit.name];
-                        const isSelected = savedValue !== undefined && String(savedValue) === String(option.id);
-                        
+                        // Comparação de String para garantir match
+                        const isSelected = String(answers[key]?.[crit.name]) === String(option.id);
                         return (
                             <Button 
                                 key={option.id} 
@@ -117,7 +110,6 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                                     fontSize: '0.65rem', 
                                     p: '0 8px', 
                                     textTransform: 'none', 
-                                    // Se isSelected for true, fica AZUL. Se não, CINZA.
                                     bgcolor: isSelected ? '#1976d2' : '#f5f5f5', 
                                     color: isSelected ? '#fff' : '#666', 
                                     border: isSelected ? '1px solid #1565c0' : '1px solid transparent',
