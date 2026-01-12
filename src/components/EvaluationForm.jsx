@@ -9,38 +9,41 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // CARREGAMENTO DOS DADOS (CORREÇÃO CRÍTICA)
   useEffect(() => {
     if (initialData) {
-        // CORREÇÃO: O objeto 'scores' está dentro de initialData.scores
-        // Fallback: se initialData.scores não existir, assume que initialData já são os scores (legado)
-        const loadedScores = initialData.scores || initialData || {}; 
+        // Se initialData.scores existe, usa ele (Padrão do Banco)
+        // Se não, usa um objeto vazio para evitar erro de undefined
+        const loadedScores = initialData.scores || {}; 
         
+        // Garante que todas as seções existam, mesmo que vazias
         setAnswers({
             triagem: loadedScores.triagem || {},
             cultura: loadedScores.cultura || {},
             tecnico: loadedScores.tecnico || {}
         });
 
-        // CORREÇÃO: Lê notas da coluna 'notes' (prioridade) ou do campo aninhado antigo
+        // Tenta ler o campo de notas (texto)
         const loadedNotes = initialData.notes || loadedScores.anotacoes_gerais || '';
         setNotes(loadedNotes);
     } else {
+        // Reseta se não houver dados
         setAnswers({ triagem: {}, cultura: {}, tecnico: {} });
         setNotes('');
     }
   }, [initialData]);
 
-  // Calcula em tempo real para feedback visual
+  // Calcula a nota em tempo real para feedback visual
   const currentScores = processEvaluation({ scores: answers }, jobParameters);
 
   const handleSelection = (section, criteriaName, noteId) => {
       setAnswers(prev => {
           const newSection = { ...prev[section] };
-          // Toggle robusto com String para garantir match de UUID
+          // Toggle robusto: Converte para String para comparar UUIDs
           if (String(newSection[criteriaName]) === String(noteId)) {
-             delete newSection[criteriaName];
+             delete newSection[criteriaName]; // Desmarca se clicar no mesmo
           } else {
-             newSection[criteriaName] = noteId;
+             newSection[criteriaName] = noteId; // Marca o novo
           }
           return { ...prev, [section]: newSection };
       });
@@ -54,12 +57,12 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       const finalCalc = processEvaluation({ scores: answers }, jobParameters);
 
-      // JSON para a coluna 'scores'
+      // Prepara o objeto JSON exato que vai pro banco
       const scoresPayload = {
         triagem: answers.triagem,
         cultura: answers.cultura,
         tecnico: answers.tecnico,
-        anotacoes_gerais: notes, // Mantém compatibilidade
+        anotacoes_gerais: notes, // Mantido para compatibilidade
         pillar_scores: finalCalc,
         updated_at: new Date()
       };
@@ -68,14 +71,14 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             application_id: applicationId,
             evaluator_id: user.id,
             scores: scoresPayload, 
-            notes: notes, // Salva também na coluna de texto dedicada
+            notes: notes,
             final_score: finalCalc.total
         }, { onConflict: 'application_id, evaluator_id' });
 
       if (evalError) throw evalError;
-      alert("Salvo!");
+      alert("Salvo com sucesso!");
       if (onSaved) onSaved();
-    } catch (error) { alert("Erro: " + error.message); } finally { setSaving(false); }
+    } catch (error) { alert("Erro ao salvar: " + error.message); } finally { setSaving(false); }
   };
 
   const renderSectionCompact = (key, title, criteria) => {
@@ -97,8 +100,12 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                 </Box>
                 <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     {ratingScale.map(option => {
-                        // Comparação de String para garantir match
-                        const isSelected = String(answers[key]?.[crit.name]) === String(option.id);
+                        // --- A CORREÇÃO VISUAL ESTÁ AQUI ---
+                        // Compara o valor salvo no estado (answers) com o ID da opção
+                        // Usa String() para garantir que UUID === UUID
+                        const savedValue = answers[key]?.[crit.name];
+                        const isSelected = savedValue !== undefined && String(savedValue) === String(option.id);
+                        
                         return (
                             <Button 
                                 key={option.id} 
@@ -110,6 +117,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                                     fontSize: '0.65rem', 
                                     p: '0 8px', 
                                     textTransform: 'none', 
+                                    // Se isSelected for true, fica AZUL. Se não, CINZA.
                                     bgcolor: isSelected ? '#1976d2' : '#f5f5f5', 
                                     color: isSelected ? '#fff' : '#666', 
                                     border: isSelected ? '1px solid #1565c0' : '1px solid transparent',
@@ -164,7 +172,6 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             />
           </Paper>
 
-          {/* Histórico filtrado (sem a própria avaliação) */}
           <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
               <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <MessageSquare size={14} /> Histórico de Observações ({allEvaluations?.length || 0})
@@ -179,7 +186,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                         {ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentários.'}
                       </Typography>
                   </Box>
-              )) : <Typography variant="caption" color="text.secondary">Nenhuma outra avaliação registrada.</Typography>}
+              )) : <Typography variant="caption" color="text.secondary">Nenhuma outra avaliação.</Typography>}
           </Box>
       </Box>
 
