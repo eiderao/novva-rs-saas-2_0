@@ -5,41 +5,47 @@ import { Box, Typography, Paper, Grid, Button, TextField } from '@mui/material';
 import { processEvaluation } from '../utils/evaluationLogic';
 
 export default function EvaluationForm({ applicationId, jobParameters, initialData, allEvaluations, onSaved }) {
-  // Estado inicial garantindo que as chaves existam
   const [answers, setAnswers] = useState({ triagem: {}, cultura: {}, tecnico: {} });
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Função auxiliar para normalizar a chave 'tecnico' que pode vir com acento do banco
-  const getTecnicoData = (data) => {
-    if (!data) return {};
-    return data.tecnico || data['técnico'] || data['tÃ©cnico'] || {};
-  };
-
   useEffect(() => {
     if (initialData) {
-        // Carrega os dados salvos garantindo a estrutura correta
+        // CORREÇÃO CRÍTICA:
+        // Verifica se os scores estão em uma propriedade 'scores' (V2) ou na raiz do objeto (V1/Flat).
+        // O JSON que você mostrou no banco é plano, então 'initialData.scores' é undefined.
+        // O fallback '|| initialData' pega os dados da raiz corretamente.
+        const sourceData = initialData.scores || initialData;
+
+        // Normalização da chave 'tecnico' (com ou sem acento/encoding)
+        const tecnicoData = sourceData.tecnico || sourceData['técnico'] || sourceData['tÃ©cnico'] || {};
+
         setAnswers({
-            triagem: initialData.triagem || {},
-            cultura: initialData.cultura || {},
-            tecnico: getTecnicoData(initialData)
+            triagem: sourceData.triagem || {},
+            cultura: sourceData.cultura || {},
+            tecnico: tecnicoData
         });
-        setNotes(initialData.anotacoes_gerais || '');
+
+        // Carrega notas: tenta 'notes' (novo), depois 'anotacoes_gerais' na raiz, depois dentro de scores
+        const loadedNotes = initialData.notes || initialData.anotacoes_gerais || sourceData.anotacoes_gerais || '';
+        setNotes(loadedNotes);
     }
   }, [initialData]);
 
-  // Calcula pontuação em tempo real
+  // Calcula a nota em tempo real
   const currentScores = processEvaluation({ scores: answers }, jobParameters);
 
   const handleSelection = (section, criteriaName, noteId) => {
       setAnswers(prev => {
-          const newSection = { ...prev[section] };
-          // Toggle: se clicar na mesma nota, desmarca (remove a chave)
-          if (newSection[criteriaName] === noteId) {
+          const newSection = { ...(prev[section] || {}) };
+          
+          // Lógica de Toggle com conversão para String para garantir comparação (UUID vs String)
+          if (String(newSection[criteriaName]) === String(noteId)) {
               delete newSection[criteriaName];
           } else {
               newSection[criteriaName] = noteId;
           }
+          
           return { ...prev, [section]: newSection };
       });
   };
@@ -48,10 +54,12 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuário não logado");
+      if (!user) throw new Error("Sessão expirada. Faça login novamente.");
 
       const finalCalc = processEvaluation({ scores: answers }, jobParameters);
 
+      // Prepara o payload.
+      // Nota: Salvamos 'scores' contendo as respostas para manter compatibilidade futura com 'initialData.scores'
       const payload = {
         triagem: answers.triagem,
         cultura: answers.cultura,
@@ -65,13 +73,13 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
       const { error: evalError } = await supabase.from('evaluations').upsert({
             application_id: applicationId,
             evaluator_id: user.id,
-            scores: payload, 
-            notes: notes,
+            scores: payload, // Salva o objeto completo dentro da coluna JSONB 'scores'
+            notes: notes,    // Salva também na coluna dedicada 'notes' se existir, ou redundante
             final_score: finalCalc.total
         }, { onConflict: 'application_id, evaluator_id' });
 
       if (evalError) throw evalError;
-      alert("Salvo com sucesso!");
+      alert("Avaliação salva com sucesso!");
       if (onSaved) onSaved();
     } catch (error) { 
         alert("Erro ao salvar: " + error.message); 
@@ -81,33 +89,39 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
   };
 
   const renderSectionCompact = (key, title, criteria) => {
-    // Se não houver critérios para esta seção, não renderiza nada
-    if (!criteria || !criteria.length) return null;
+    if (!criteria || criteria.length === 0) return null;
 
-    const ratingScale = jobParameters.notas || [];
-    const tempScores = processEvaluation({ scores: answers }, jobParameters);
+    const ratingScale = jobParameters?.notas || [];
+    const sectionScore = currentScores[key] || 0;
     
     return (
       <Paper variant="outlined" sx={{ p: 1.5, mb: 2, borderColor: '#e0e0e0', bgcolor: '#fff' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#1976d2' }}>{title}</Typography>
+            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#1976d2' }}>
+                {title}
+            </Typography>
             <Typography variant="caption" sx={{ fontWeight: 'bold', bgcolor: '#e3f2fd', px: 1, py: 0.5, borderRadius: 1 }}>
-                Nota: {tempScores[key].toFixed(1)}
+                Nota: {sectionScore.toFixed(1)}
             </Typography>
         </Box>
         {criteria.map((crit, idx) => {
-            // Valor salvo para este critério específico
+            // Busca o valor salvo no estado.
+            // A chave 'key' aqui é 'triagem', 'cultura' ou 'tecnico' (já normalizado no estado)
             const savedValue = answers[key]?.[crit.name];
 
             return (
                 <Box key={idx} sx={{ mb: 1.5, borderBottom: '1px dashed #eee', pb: 1 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                        <Typography variant="caption" sx={{ fontWeight: 500, width: '80%', lineHeight: 1.2 }}>{crit.name}</Typography>
-                        <Typography variant="caption" color="text.secondary">{crit.weight}%</Typography>
+                        <Typography variant="caption" sx={{ fontWeight: 500, width: '80%', lineHeight: 1.2 }}>
+                            {crit.name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                            {crit.weight}%
+                        </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                         {ratingScale.map(option => {
-                            // CORREÇÃO CRÍTICA: Converte ambos para String para comparação segura (UUID vs String vs Number)
+                            // Comparação segura convertendo tudo para String (trata UUIDs vs IDs numéricos)
                             const isSelected = String(savedValue) === String(option.id);
 
                             return (
@@ -142,8 +156,9 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
   if (!jobParameters) return <Typography variant="caption">Carregando parâmetros...</Typography>;
 
-  // Normalização da lista de critérios vindos da vaga
-  const criteriosTecnico = jobParameters.tecnico || jobParameters['técnico'] || jobParameters['tÃ©cnico'] || [];
+  // Normaliza os critérios vindos da VAGA (jobParameters)
+  // Isso garante que se a vaga foi salva como 'técnico', a gente renderiza usando a chave 'tecnico' do componente
+  const paramsTecnico = jobParameters.tecnico || jobParameters['técnico'] || jobParameters['tÃ©cnico'] || [];
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -159,9 +174,16 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       <Box sx={{ flex: 1, overflowY: 'auto', pr: 1 }}>
           <Grid container spacing={1}>
-              <Grid item xs={12} md={4}>{renderSectionCompact("triagem", "Triagem", jobParameters.triagem)}</Grid>
-              <Grid item xs={12} md={4}>{renderSectionCompact("cultura", "Fit Cultural", jobParameters.cultura)}</Grid>
-              <Grid item xs={12} md={4}>{renderSectionCompact("tecnico", "Técnico", criteriosTecnico)}</Grid>
+              <Grid item xs={12} md={4}>
+                  {renderSectionCompact("triagem", "Triagem", jobParameters.triagem)}
+              </Grid>
+              <Grid item xs={12} md={4}>
+                  {renderSectionCompact("cultura", "Fit Cultural", jobParameters.cultura)}
+              </Grid>
+              <Grid item xs={12} md={4}>
+                  {/* Usa a chave 'tecnico' (sem acento) para renderizar, passando os critérios normalizados */}
+                  {renderSectionCompact("tecnico", "Técnico", paramsTecnico)}
+              </Grid>
           </Grid>
           
           <Paper variant="outlined" sx={{ p: 2, mt: 1 }}>
@@ -180,7 +202,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             />
           </Paper>
 
-          {/* HISTÓRICO DE TODAS AS ANOTAÇÕES */}
+          {/* Histórico de Observações */}
           <Box sx={{ mt: 3, borderTop: '1px solid #eee', pt: 2 }}>
               <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ textTransform: 'uppercase', mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <MessageSquare size={14} /> Histórico de Observações ({allEvaluations?.length || 0})
