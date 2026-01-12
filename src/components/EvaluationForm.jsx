@@ -11,7 +11,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
   useEffect(() => {
     if (initialData) {
-        // CORREÇÃO: O objeto 'scores' está dentro de initialData.scores (vinda do banco)
+        // CORREÇÃO: O objeto 'scores' está dentro de initialData.scores
         // Fallback: se initialData.scores não existir, assume que initialData já são os scores (legado)
         const loadedScores = initialData.scores || initialData || {}; 
         
@@ -21,7 +21,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             tecnico: loadedScores.tecnico || {}
         });
 
-        // CORREÇÃO: Tenta ler da coluna 'notes' (padrão novo) ou do JSON legado
+        // CORREÇÃO: Lê notas da coluna 'notes' (prioridade) ou do campo aninhado antigo
         const loadedNotes = initialData.notes || loadedScores.anotacoes_gerais || '';
         setNotes(loadedNotes);
     } else {
@@ -30,13 +30,13 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
     }
   }, [initialData]);
 
-  // Calcula em tempo real para feedback
+  // Calcula em tempo real para feedback visual
   const currentScores = processEvaluation({ scores: answers }, jobParameters);
 
   const handleSelection = (section, criteriaName, noteId) => {
       setAnswers(prev => {
           const newSection = { ...prev[section] };
-          // Toggle robusto com String
+          // Toggle robusto com String para garantir match de UUID
           if (String(newSection[criteriaName]) === String(noteId)) {
              delete newSection[criteriaName];
           } else {
@@ -54,7 +54,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
 
       const finalCalc = processEvaluation({ scores: answers }, jobParameters);
 
-      // Payload para coluna JSON 'scores'
+      // JSON para a coluna 'scores'
       const scoresPayload = {
         triagem: answers.triagem,
         cultura: answers.cultura,
@@ -68,7 +68,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
             application_id: applicationId,
             evaluator_id: user.id,
             scores: scoresPayload, 
-            notes: notes, // Salva também na coluna nativa
+            notes: notes, // Salva também na coluna de texto dedicada
             final_score: finalCalc.total
         }, { onConflict: 'application_id, evaluator_id' });
 
@@ -97,7 +97,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                 </Box>
                 <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     {ratingScale.map(option => {
-                        // CORREÇÃO CRÍTICA: Comparação de String para acender o botão
+                        // Comparação de String para garantir match
                         const isSelected = String(answers[key]?.[crit.name]) === String(option.id);
                         return (
                             <Button 
@@ -179,7 +179,7 @@ export default function EvaluationForm({ applicationId, jobParameters, initialDa
                         {ev.notes || ev.scores?.anotacoes_gerais || 'Sem comentários.'}
                       </Typography>
                   </Box>
-              )) : <Typography variant="caption" color="text.secondary">Nenhuma outra avaliação.</Typography>}
+              )) : <Typography variant="caption" color="text.secondary">Nenhuma outra avaliação registrada.</Typography>}
           </Box>
       </Box>
 

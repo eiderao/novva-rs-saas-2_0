@@ -13,8 +13,11 @@ export default function ApplicationDetails() {
   
   const [appData, setAppData] = useState(null);
   const [job, setJob] = useState(null);
+  
+  // Separação dos estados para evitar conflitos de exibição
   const [currentUserEvaluation, setCurrentUserEvaluation] = useState(null);
   const [othersEvaluations, setOthersEvaluations] = useState([]);
+  
   const [globalScore, setGlobalScore] = useState(0);
   const [evaluatorsCount, setEvaluatorsCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -28,13 +31,16 @@ export default function ApplicationDetails() {
     try {
       const { data: { user } } = await supabase.auth.getSession();
       
+      // 1. Busca Aplicação e Candidato
       const { data: application } = await supabase.from('applications').select('*, candidates(*)').eq('id', appId).single();
       const candidateObj = Array.isArray(application.candidates) ? application.candidates[0] : application.candidates;
       
+      // Parse seguro do formData
       let safeFormData = application.formData;
       if (typeof safeFormData === 'string') { try { safeFormData = JSON.parse(safeFormData); } catch(e) {} }
       setAppData({ ...application, formData: safeFormData, candidate: candidateObj });
 
+      // 2. Busca Vaga (Parâmetros de Avaliação)
       let jobParams = {};
       if (application.jobId) {
         const { data: jobData } = await supabase.from('jobs').select('*').eq('id', application.jobId).single();
@@ -42,32 +48,40 @@ export default function ApplicationDetails() {
         jobParams = jobData.parameters || {};
       }
 
+      // 3. Busca Avaliações
       const { data: allEvals } = await supabase.from('evaluations').select('*').eq('application_id', appId);
+      
       if (allEvals) {
+          // Busca nomes dos avaliadores
           const userIds = [...new Set(allEvals.map(e => e.evaluator_id))];
           let usersMap = {};
           if (userIds.length > 0) {
               const { data: users } = await supabase.from('user_profiles').select('id, name, email').in('id', userIds);
               users?.forEach(u => usersMap[u.id] = u.name || u.email);
           }
-          const evalsWithNames = allEvals.map(e => ({ ...e, evaluator_name: usersMap[e.evaluator_id] || 'Avaliador' }));
+
+          const evalsWithNames = allEvals.map(e => ({ 
+              ...e, 
+              evaluator_name: usersMap[e.evaluator_id] || 'Avaliador' 
+          }));
           
           let myEval = null;
           let others = [];
 
           if (user) {
-              // Separa "Minha Avaliação" (para edição) do "Histórico" (apenas outros)
+              // Lógica de Separação: Encontra a minha avaliação e separa das outras
               myEval = evalsWithNames.find(e => e.evaluator_id === user.id);
               others = evalsWithNames.filter(e => e.evaluator_id !== user.id);
           } else {
               others = evalsWithNames;
           }
 
-          // CORREÇÃO: Passa o objeto completo (não apenas .scores) para que as notes sejam carregadas
+          // PASSO CRUCIAL: Passa o objeto 'myEval' INTEIRO (sem espalhar props)
           setCurrentUserEvaluation(myEval || null); 
           setOthersEvaluations(others); 
           setEvaluatorsCount(evalsWithNames.length);
           
+          // Cálculo da Média Global
           let sumTotal = 0, validCount = 0;
           evalsWithNames.forEach(ev => {
               const scores = processEvaluation(ev, jobParams);
@@ -84,7 +98,7 @@ export default function ApplicationDetails() {
     const institution = data.institution || data.education?.institution;
     const year = data.conclusion_date || data.completionYear || data.education?.date;
     
-    // CORREÇÃO: Prioriza o campo novo 'education_status'
+    // Status corrigido
     let status = data.education_status || data.education?.status;
     if (!status && data.hasGraduated) {
         status = data.hasGraduated === 'sim' ? 'Completo' : 'Cursando';
@@ -121,7 +135,7 @@ export default function ApplicationDetails() {
   const renderScoreBadges = (gScore, myEval, count) => {
     let myFinalScore = 0;
     if(myEval) {
-       // Calcula "Minha Nota" usando o objeto bruto (que agora funciona com a correção no logic)
+       // Calcula "Minha Nota" usando o objeto bruto recuperado do banco
        const calc = processEvaluation(myEval, job?.parameters);
        myFinalScore = calc.total;
     }
@@ -181,7 +195,7 @@ export default function ApplicationDetails() {
         </Grid>
         <Grid item xs={12} md={9}>
           <Paper sx={{ p: 0, height: '100%', overflow: 'hidden', bgcolor: 'transparent' }} elevation={0}>
-             {/* Passa "currentUserEvaluation" para edição e "othersEvaluations" para o histórico */}
+             {/* Componente recebe dados corretos agora */}
              <EvaluationForm 
                 applicationId={appData.id} 
                 jobParameters={params} 

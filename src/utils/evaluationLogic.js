@@ -1,6 +1,7 @@
 // src/utils/evaluationLogic.js
 
 export const calculatePillarScore = (sectionName, criteriaList, answers, ratingScale) => {
+    // Proteção contra dados nulos
     if (!criteriaList || !Array.isArray(criteriaList) || criteriaList.length === 0) return null;
     if (!answers) return null;
     
@@ -8,16 +9,16 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
     let totalWeightAnswered = 0;
     let hasAnswers = false;
 
-    // Garante que estamos lendo a seção correta (ex: answers.cultura)
+    // Tenta ler do objeto aninhado (padrão correto) ou plano (fallback)
     const sectionAnswers = answers[sectionName] || answers; 
 
     criteriaList.forEach(criterion => {
         const noteId = sectionAnswers[criterion.name];
         
-        // Verifica se há uma resposta salva válida
+        // Verifica se existe resposta válida e não é 'NA'
         if (noteId !== undefined && noteId !== null && noteId !== 'NA') {
-            // CORREÇÃO DEFINITIVA: Converte ambos para String antes de comparar.
-            // Isso resolve o conflito entre UUIDs e IDs numéricos legados.
+            // CORREÇÃO CRÍTICA: Converte ambos para String. 
+            // Isso resolve o conflito entre UUIDs (banco) e IDs da régua.
             const noteObj = ratingScale.find(n => String(n.id) === String(noteId));
             
             if (noteObj) {
@@ -31,6 +32,7 @@ export const calculatePillarScore = (sectionName, criteriaList, answers, ratingS
 
     if (!hasAnswers || totalWeightAnswered === 0) return null;
     
+    // Retorna a média ponderada
     return (totalScore / totalWeightAnswered); 
 };
 
@@ -39,13 +41,13 @@ export const processEvaluation = (evaluationObj, parameters) => {
         return { triagem: 0, cultura: 0, tecnico: 0, total: 0 };
     }
 
-    // Suporte para quando evaluationObj é o registro completo (com .scores) ou apenas o JSON
+    // Identifica se as respostas estão na raiz (estado local) ou dentro de 'scores' (banco)
     const answers = evaluationObj.scores || evaluationObj; 
     const ratingScale = parameters.notas || [];
     
     const pTriagem = parameters.triagem || [];
     const pCultura = parameters.cultura || [];
-    // Suporte a erro de digitação comum no banco ('técnico' com acento)
+    // Suporte a erro de digitação comum ('técnico' com acento)
     const pTecnico = parameters.tecnico || parameters['técnico'] || [];
 
     const triagem = calculatePillarScore('triagem', pTriagem, answers, ratingScale);
