@@ -13,35 +13,47 @@ import {
 } from 'recharts';
 import { 
     Delete as DeleteIcon, 
-    Add as AddIcon
+    Add as AddIcon,
+    Save as SaveIcon
 } from '@mui/icons-material';
-import { Share2, MapPin, Briefcase, Calendar, ArrowLeft, Download, Plus, Trash2, Save, Copy } from 'lucide-react'; 
+import { Share2, MapPin, Briefcase, Calendar, ArrowLeft, Download, Plus, Trash2, Copy } from 'lucide-react'; 
 import { processEvaluation } from '../utils/evaluationLogic';
-import EvaluationForm from '../components/EvaluationForm'; 
 
-// --- ÍCONE SVG ---
-const ArrowIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-);
+// --- UTILITÁRIO DE UUID SEGURO (Evita crash em navegadores antigos/http) ---
+const generateUUID = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    return Date.now().toString(36) + Math.random().toString(36).substr(2);
+};
 
 // --- ESTILOS DOS MODAIS ---
 const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 600, bgcolor: 'background.paper', boxShadow: 24, p: 4, borderRadius: 2 };
 
 // --- COMPONENTE INTERNO: SEÇÃO DE CRITÉRIOS ---
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
-  const handleChange = (i, f, v) => { const n = [...criteria]; n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; onCriteriaChange(n); };
-  const total = criteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
+  // Proteção contra dados nulos
+  const safeCriteria = Array.isArray(criteria) ? criteria : [];
+
+  const handleChange = (i, f, v) => { 
+      const n = [...safeCriteria]; 
+      n[i] = { ...n[i], [f]: f==='weight'?Number(v):v }; 
+      onCriteriaChange(n); 
+  };
+  
+  const total = safeCriteria.reduce((acc, c) => acc + (Number(c.weight)||0), 0);
+  
   return (
     <Box sx={{mt:2, bgcolor: '#f8f9fa', p: 2, borderRadius: 2}}>
-        {criteria.map((c, i) => (
+        {safeCriteria.map((c, i) => (
             <Box key={i} display="flex" gap={2} mb={1} alignItems="center">
-                <TextField value={c.name} onChange={e=>handleChange(i,'name',e.target.value)} fullWidth size="small" label={`Critério #${i+1}`} variant="outlined" sx={{ bgcolor: 'white' }} />
-                <TextField type="number" value={c.weight} onChange={e=>handleChange(i,'weight',e.target.value)} sx={{width:120, bgcolor: 'white'}} size="small" label="Peso %" />
-                <IconButton onClick={()=>onCriteriaChange(criteria.filter((_,idx)=>idx!==i))} color="error" size="small"><DeleteIcon/></IconButton>
+                <TextField value={c.name || ''} onChange={e=>handleChange(i,'name',e.target.value)} fullWidth size="small" label={`Critério #${i+1}`} variant="outlined" sx={{ bgcolor: 'white' }} />
+                <TextField type="number" value={c.weight || 0} onChange={e=>handleChange(i,'weight',e.target.value)} sx={{width:120, bgcolor: 'white'}} size="small" label="Peso %" />
+                <IconButton onClick={()=>onCriteriaChange(safeCriteria.filter((_,idx)=>idx!==i))} color="error" size="small"><DeleteIcon/></IconButton>
             </Box>
         ))}
         <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>
-            <Button onClick={()=>onCriteriaChange([...criteria, {name:'', weight:0}])} variant="outlined" size="small" startIcon={<AddIcon />}>Adicionar Critério</Button>
+            <Button onClick={()=>onCriteriaChange([...safeCriteria, {name:'', weight:0}])} variant="outlined" size="small" startIcon={<AddIcon />}>Adicionar Critério</Button>
             <Typography color={total===100?'success.main':'error.main'} variant="body2" fontWeight="bold">Total: {total}%</Typography>
         </Box>
     </Box>
@@ -50,24 +62,29 @@ const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
 
 // --- COMPONENTE INTERNO: RÉGUA DE NOTAS ---
 const RatingScaleSection = ({ notes = [], onNotesChange }) => {
+    // Proteção contra dados nulos
+    const safeNotes = Array.isArray(notes) ? notes : [];
+
     const handleChange = (i, field, value) => {
-        const newNotes = [...notes];
+        const newNotes = [...safeNotes];
         newNotes[i] = { ...newNotes[i], [field]: field === 'valor' ? Number(value) : value };
         onNotesChange(newNotes);
     };
-    const handleAdd = () => onNotesChange([...notes, { id: crypto.randomUUID(), nome: 'Novo Nível', valor: 0 }]);
-    const handleRemove = (i) => onNotesChange(notes.filter((_, idx) => idx !== i));
+    
+    const handleAdd = () => onNotesChange([...safeNotes, { id: generateUUID(), nome: 'Novo Nível', valor: 0 }]);
+    const handleRemove = (i) => onNotesChange(safeNotes.filter((_, idx) => idx !== i));
+    
     return (
         <Box sx={{ mt: 2, bgcolor: '#fff3e0', p: 2, borderRadius: 2 }}>
-            {notes.map((n, i) => (
+            {safeNotes.map((n, i) => (
                 <Box key={n.id || i} display="flex" gap={2} mb={1} alignItems="center">
-                    <TextField value={n.nome} onChange={(e) => handleChange(i, 'nome', e.target.value)} fullWidth size="small" label="Rótulo" sx={{bgcolor: 'white'}} />
-                    <TextField type="number" value={n.valor} onChange={(e) => handleChange(i, 'valor', e.target.value)} sx={{ width: 120, bgcolor: 'white' }} size="small" label="Valor (0-100)" />
+                    <TextField value={n.nome || ''} onChange={(e) => handleChange(i, 'nome', e.target.value)} fullWidth size="small" label="Rótulo" sx={{bgcolor: 'white'}} />
+                    <TextField type="number" value={n.valor || 0} onChange={(e) => handleChange(i, 'valor', e.target.value)} sx={{ width: 120, bgcolor: 'white' }} size="small" label="Valor (0-100)" />
                     <IconButton onClick={() => handleRemove(i)} color="error"><DeleteIcon /></IconButton>
                 </Box>
             ))}
             <Button onClick={handleAdd} variant="outlined" color="warning" size="small" startIcon={<AddIcon />}>Adicionar Nível</Button>
-            {notes.length < 2 && <Typography color="warning.main" variant="caption" display="block" sx={{ mt: 1 }}>Recomendado ter pelo menos 2 níveis.</Typography>}
+            {safeNotes.length < 2 && <Typography color="warning.main" variant="caption" display="block" sx={{ mt: 1 }}>Recomendado ter pelo menos 2 níveis.</Typography>}
         </Box>
     );
 };
@@ -76,6 +93,7 @@ const RatingScaleSection = ({ notes = [], onNotesChange }) => {
 const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState('');
+  
   useEffect(() => { 
       if (open) { 
           const f = async () => { 
@@ -85,12 +103,14 @@ const CopyParametersModal = ({ open, onClose, currentJobId, onCopy }) => {
           f(); 
       } 
   }, [open, currentJobId]);
+
   const handleConfirm = async () => { 
       if (!selectedJobId) return; 
       const { data } = await supabase.from('jobs').select('parameters').eq('id', selectedJobId).single(); 
       if (data?.parameters) onCopy(data.parameters); 
       onClose(); 
   };
+
   return ( 
       <Modal open={open} onClose={onClose}>
           <Box sx={modalStyle}>
@@ -139,6 +159,7 @@ export default function JobDetails() {
         const { data: jobData, error: jobError } = await supabase.from('jobs').select('*').eq('id', safeJobId).single();
         if (jobError) throw jobError;
         setJob(jobData);
+        // Garante estrutura mínima para evitar crashes
         setParameters(jobData.parameters || { triagem: [], cultura: [], tecnico: [], notas: [] });
 
         const { data: appsData } = await supabase.from('applications').select('*, candidate:candidates(name, email)').eq('jobId', safeJobId);
@@ -248,18 +269,15 @@ export default function JobDetails() {
     return { chartData, evaluators };
   }, [applicants, allEvaluations, evaluatorFilter, parameters, usersMap]);
 
-  // CORREÇÃO CRÍTICA AQUI: Adicionado hiredAt para registrar data e hora
   const handleHireToggle = async (appId, currentStatus) => {
       const newStatus = !currentStatus;
-      const hiredAt = newStatus ? new Date().toISOString() : null;
+      const hiredAtDate = newStatus ? new Date().toISOString() : null;
 
-      // Atualiza estado local
-      setApplicants(prev => prev.map(a => a.id === appId ? {...a, isHired: newStatus, hiredAt: hiredAt} : a));
+      setApplicants(prev => prev.map(a => a.id === appId ? {...a, isHired: newStatus, hiredAt: hiredAtDate} : a));
       
-      // Atualiza banco com hiredAt
       await supabase.from('applications').update({ 
           isHired: newStatus,
-          hiredAt: hiredAt 
+          hiredAt: hiredAtDate 
       }).eq('id', appId);
   };
 
@@ -455,6 +473,7 @@ export default function JobDetails() {
                     </Paper>
                     <Paper variant="outlined" sx={{p:3, mb:3}}>
                         <Typography variant="subtitle1" fontWeight="bold" gutterBottom>3. Teste Técnico</Typography>
+                        {/* Suporte duplo para chave 'tecnico' ou 'técnico' */}
                         <ParametersSection criteria={parameters?.tecnico || parameters?.['técnico'] || []} onCriteriaChange={(c) => setParameters({...parameters, tecnico: c})} />
                     </Paper>
                     
