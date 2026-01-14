@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './supabase/client';
+
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
@@ -9,7 +10,8 @@ import ApplicationDetails from './pages/ApplicationDetails';
 import Settings from './pages/Settings';
 import ApplyJob from './pages/ApplyJob';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
-import SelectCompany from './pages/SelectCompany'; // NOVO IMPORT
+import SelectCompany from './pages/SelectCompany';
+import ApprovedCandidates from './pages/ApprovedCandidates'; // <--- IMPORTAR AQUI
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -35,19 +37,21 @@ export default function App() {
       <Routes>
         {/* ROTAS PÚBLICAS */}
         <Route path="/apply/:jobId" element={<ApplyJob />} />
-
+        
         {/* ROTAS DE AUTENTICAÇÃO */}
         <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
         <Route path="/register" element={!session ? <Register /> : <Navigate to="/" />} />
-        
+
         {/* ROTAS PROTEGIDAS */}
         <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" />} />
-        
-        {/* ROTA DE SELEÇÃO DE EMPRESA (NOVA) */}
         <Route path="/select-company" element={session ? <SelectCompany /> : <Navigate to="/login" />} />
-
+        
         <Route path="/jobs/:jobId" element={session ? <JobDetails /> : <Navigate to="/login" />} />
         <Route path="/applications/:appId" element={session ? <ApplicationDetails /> : <Navigate to="/login" />} />
+        
+        {/* NOVA ROTA DE APROVADOS */}
+        <Route path="/hiring" element={session ? <ApprovedCandidates /> : <Navigate to="/login" />} />
+        
         <Route path="/settings" element={session ? <Settings /> : <Navigate to="/login" />} />
         <Route path="/admin/super" element={session ? <SuperAdminDashboard /> : <Navigate to="/login" />} />
       </Routes>
