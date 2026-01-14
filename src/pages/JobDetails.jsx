@@ -9,20 +9,14 @@ import {
     FormControl, InputLabel, Select, MenuItem, Chip, Modal, Alert, Tooltip as MuiTooltip
 } from '@mui/material';
 import { 
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList,
-    Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis 
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList
 } from 'recharts';
 import { 
     Delete as DeleteIcon, 
-    ContentCopy as ContentCopyIcon, 
-    Save as SaveIcon,
-    Add as AddIcon,
-    Star as StarIcon,
-    CheckCircle as CheckCircleIcon,
-    EmojiEvents as TrophyIcon
+    Add as AddIcon
 } from '@mui/icons-material';
 import { Share2, MapPin, Briefcase, Calendar, ArrowLeft, Download, Plus, Trash2, Save, Copy } from 'lucide-react'; 
-import { processEvaluation, generateDefaultBenchmarkScores } from '../utils/evaluationLogic';
+import { processEvaluation } from '../utils/evaluationLogic';
 import EvaluationForm from '../components/EvaluationForm'; 
 
 // --- ÍCONE SVG ---
@@ -32,7 +26,6 @@ const ArrowIcon = () => (
 
 // --- ESTILOS DOS MODAIS ---
 const modalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 600, bgcolor: 'background.paper', boxShadow: 24, p: 4, borderRadius: 2 };
-const formModalStyle = { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '90%', maxWidth: 800, height: '85vh', bgcolor: 'background.paper', boxShadow: 24, p: 0, borderRadius: 2, overflow: 'hidden' };
 
 // --- COMPONENTE INTERNO: SEÇÃO DE CRITÉRIOS ---
 const ParametersSection = ({ criteria = [], onCriteriaChange }) => {
@@ -132,7 +125,6 @@ export default function JobDetails() {
   const [allEvaluations, setAllEvaluations] = useState([]);
   const [usersMap, setUsersMap] = useState({});
   const [evaluatorFilter, setEvaluatorFilter] = useState('all');
-  // --- NOVO ESTADO DO FILTRO DE MÉTRICA ---
   const [metricFilter, setMetricFilter] = useState('all');
   
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
@@ -256,10 +248,19 @@ export default function JobDetails() {
     return { chartData, evaluators };
   }, [applicants, allEvaluations, evaluatorFilter, parameters, usersMap]);
 
+  // CORREÇÃO CRÍTICA AQUI: Adicionado hiredAt para registrar data e hora
   const handleHireToggle = async (appId, currentStatus) => {
       const newStatus = !currentStatus;
-      setApplicants(prev => prev.map(a => a.id === appId ? {...a, isHired: newStatus} : a));
-      await supabase.from('applications').update({ isHired: newStatus }).eq('id', appId);
+      const hiredAt = newStatus ? new Date().toISOString() : null;
+
+      // Atualiza estado local
+      setApplicants(prev => prev.map(a => a.id === appId ? {...a, isHired: newStatus, hiredAt: hiredAt} : a));
+      
+      // Atualiza banco com hiredAt
+      await supabase.from('applications').update({ 
+          isHired: newStatus,
+          hiredAt: hiredAt 
+      }).eq('id', appId);
   };
 
   const handleSaveParameters = async () => {
@@ -278,7 +279,6 @@ export default function JobDetails() {
             <Toolbar>
                 <Typography variant="h6" sx={{flexGrow:1}}>{job?.title}</Typography>
                 
-                {/* SELETOR DE STATUS */}
                 <FormControl size="small" sx={{ minWidth: 150, mr: 2 }}>
                     <Select 
                         value={job?.status || 'active'} 
@@ -362,7 +362,6 @@ export default function JobDetails() {
                                 <Typography variant="h6" color="text.primary" fontWeight="bold">Comparativo de Desempenho</Typography>
                                 
                                 <Box sx={{ display: 'flex', gap: 2 }}>
-                                    {/* FILTRO DE AVALIADOR */}
                                     <FormControl size="small" sx={{ minWidth: 200 }}>
                                         <InputLabel>Avaliador</InputLabel>
                                         <Select value={evaluatorFilter} label="Avaliador" onChange={(e) => setEvaluatorFilter(e.target.value)}>
@@ -371,7 +370,6 @@ export default function JobDetails() {
                                         </Select>
                                     </FormControl>
 
-                                    {/* FILTRO DE PILARES - ADICIONADO */}
                                     <FormControl size="small" sx={{ minWidth: 180 }}>
                                         <InputLabel>Critério</InputLabel>
                                         <Select value={metricFilter} label="Critério" onChange={(e) => setMetricFilter(e.target.value)}>
@@ -399,7 +397,6 @@ export default function JobDetails() {
                                             <Tooltip cursor={{fill: '#f5f5f5'}} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} formatter={(val, name) => [val, name]} />
                                             <Legend verticalAlign="top" height={40} iconType="circle" />
                                             
-                                            {/* RENDERIZAÇÃO CONDICIONAL DAS BARRAS */}
                                             {(metricFilter === 'all' || metricFilter === 'triagem') && 
                                                 <Bar dataKey="triagem" name="Triagem" fill="#90caf9" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="triagem" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/></Bar>
                                             }
@@ -409,6 +406,7 @@ export default function JobDetails() {
                                             {(metricFilter === 'all' || metricFilter === 'tecnico') && 
                                                 <Bar dataKey="tecnico" name="Técnico" fill="#ffcc80" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="tecnico" position="right" style={{fontSize:'0.7rem', fill:'#666'}} formatter={(v)=>v>0?v:''}/></Bar>
                                             }
+                                            
                                             {metricFilter === 'all' && 
                                                 <Bar dataKey="total" name="Média Geral" fill="#4caf50" barSize={20} radius={[0, 4, 4, 0]}><LabelList dataKey="total" position="right" style={{fontSize:'0.8rem', fontWeight:'bold', fill:'#2e7d32'}} /></Bar>
                                             }

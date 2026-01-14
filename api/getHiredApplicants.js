@@ -1,4 +1,4 @@
-// api/getHiredApplicants.js (CORRIGIDO: Aponta para user_profiles)
+// api/getHiredApplicants.js
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(request, response) {
@@ -14,7 +14,7 @@ export default async function handler(request, response) {
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
     if (userError) return response.status(401).json({ error: 'Token inválido.' });
     
-    // CORREÇÃO: Busca em user_profiles
+    // Busca o tenant do usuário
     const { data: userData } = await supabaseAdmin
         .from('user_profiles')
         .select('tenantId')
@@ -24,13 +24,14 @@ export default async function handler(request, response) {
     if (!userData) return response.status(404).json({ error: 'Perfil não encontrado.' });
     const tenantId = userData.tenantId;
 
+    // CORREÇÃO: Adicionados campos phone, city e state na seleção do candidato
     const { data: hiredApplications, error: fetchError } = await supabaseAdmin
       .from('applications')
       .select(`
         id,
         hiredAt,
         formData,
-        candidate:candidates ( name, email ),
+        candidate:candidates ( name, email, phone, city, state ),
         job:jobs ( id, title, tenantId )
       `)
       .eq('isHired', true);
