@@ -34,28 +34,28 @@ export default function CreateJobModal({ open, onClose, onSuccess }) {
       }
     ],
     "cultura": [
-      { "name": "O Cliente Ã© a nossa razão de existir", "weight": "20" },
-      { "name": "TransparÃªncia Ã© essencial", "weight": "20" },
+      { "name": "O Cliente é a nossa razão de existir", "weight": "20" },
+      { "name": "Transparência é essencial", "weight": "20" },
       { "name": "Colaborar mais do que competir", "weight": "20" },
       { "name": "A busca pelo melhor nunca termina", "weight": "20" },
-      { "name": "NÃ£o hÃ¡ tempo a perder", "weight": "20" }
+      { "name": "Não há tempo a perder", "weight": "20" }
     ],
     "tecnico": [
-      { "name": "CompreensÃ£o do escopo da demanda", "weight": "20" },
+      { "name": "Compreensão do escopo da demanda", "weight": "20" },
       { "name": "Capacidade de resolução de problemas", "weight": "20" },
-      { "name": "Organização e MÃ©todo", "weight": "20" },
+      { "name": "Organização e Método", "weight": "20" },
       { "name": "Capacidade de estruturar dados de forma eficaz", "weight": "20" },
       { "name": "Capacidade de otimização", "weight": "20" }
     ],
     "triagem": [
       { "name": "Escolaridade", "weight": "12.5" },
-      { "name": "Qualificação exigÃ­vel", "weight": "12.5" },
-      { "name": "Qualificação desejÃ¡vel", "weight": "12.5" },
-      { "name": "ExperiÃªncia Geral", "weight": "12.5" },
-      { "name": "ExperiÃªncia EspecÃ­fica", "weight": "12.5" },
+      { "name": "Qualificação exigível", "weight": "12.5" },
+      { "name": "Qualificação desejável", "weight": "12.5" },
+      { "name": "Experiência Geral", "weight": "12.5" },
+      { "name": "Experiência Específica", "weight": "12.5" },
       { "name": "Habilidade hard", "weight": "12.5" },
       { "name": "Habilidade soft", "weight": "12.5" },
-      { "name": "LÃ­nguas", "weight": "12.5" }
+      { "name": "Línguas", "weight": "12.5" }
     ]
   };
 
